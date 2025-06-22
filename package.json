@@ -1,0 +1,32 @@
+{
+  "name": "webgpu-raytracing",
+  "version": "0.0.0",
+  "description": "WebGPU raytracing project with SolidJS ui overlay",
+  "type": "module",
+  "scripts": {
+    "start": "vite",
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "vite preview",
+    "fmt": "prettier -w ."
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@unocss/preset-mini": "^66.0.0",
+    "@unocss/vite": "^66.0.0",
+    "@webgpu/types": "^0.1.61",
+    "prettier": "^3.5.3",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.0",
+    "vite-plugin-solid": "^2.11.6"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "cxs": "^6.2.0",
+    "gl-matrix": "^3.4.3",
+    "lucide-solid": "^0.522.0",
+    "obj-file-parser": "^0.6.2",
+    "solid-js": "^1.9.5",
+    "webgpu-utils": "^1.10.3"
+  }
+}
