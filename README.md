@@ -1,4 +1,5 @@
 ## Usage
+https://gidra5.github.io/webgpu-raytracing/
 
 Those templates dependencies are maintained via [pnpm](https://pnpm.io) via `pnpm up -Lri`.
 

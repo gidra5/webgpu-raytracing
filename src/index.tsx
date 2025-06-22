@@ -2,6 +2,11 @@ import 'uno.css';
 import { render } from 'solid-js/web';
 
 import UI from './UI';
+import { init as initControls } from './controls';
+import { init as initRender } from './render';
+
+initControls();
+initRender();
 
 const root = document.getElementById('root');
 
