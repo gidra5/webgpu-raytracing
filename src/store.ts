@@ -12,4 +12,22 @@ const [store, setStore] = createStore({
 
   exposure: 1,
   resample: false,
+
+  renderTime: 0,
+  jsTime: 0,
+  gpuTime: 0,
 });
+
+export { store };
+
+export const setRenderTime = (time: number) => {
+  setStore('renderTime', time);
+};
+
+export const setGPUTime = (time: number) => {
+  setStore('gpuTime', time);
+};
+
+export const setJSTime = (time: number) => {
+  setStore('jsTime', time);
+};
