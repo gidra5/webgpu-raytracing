@@ -1,5 +1,5 @@
 import { Accessor, createEffect, createSignal, type Component } from 'solid-js';
-import { store } from './store';
+import { setDebugBVH, store } from './store';
 import { lerp } from './utils';
 
 type Box<T> = { value: T };
@@ -46,6 +46,16 @@ const App: Component = () => {
       <div class="text-white text-sm">GPU-time: {gpuTime().toFixed(2)} µs</div>
 
       <div class="text-white text-sm">JS-time: {jsTime().toFixed(2)} ms</div>
+      <label class="flex gap-1 text-white text-sm items-baseline">
+        <input
+          class="m-0"
+          name="debugBVH"
+          type="checkbox"
+          checked={store.debugBVH}
+          onChange={(e) => setDebugBVH(e.target.checked)}
+        />
+        Debug BVH
+      </label>
     </div>
   );
 };

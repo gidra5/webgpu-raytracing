@@ -13,12 +13,18 @@ const [store, setStore] = createStore({
   exposure: 1,
   resample: false,
 
+  debugBVH: false,
+
   renderTime: 0,
   jsTime: 0,
   gpuTime: 0,
 });
 
 export { store };
+
+export const setDebugBVH = (debugBVH: boolean) => {
+  setStore('debugBVH', debugBVH);
+};
 
 export const setRenderTime = (time: number) => {
   setStore('renderTime', time);
