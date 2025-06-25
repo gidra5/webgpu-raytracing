@@ -1,3 +1,4 @@
+import { Accessor, createEffect } from 'solid-js';
 import { assert } from './utils';
 
 const features: Partial<Record<GPUFeatureName, boolean>> = {};
@@ -107,6 +108,34 @@ export const mapBuffer = async (
   await buffer.mapAsync(mode, offset, size);
   handler(buffer.getMappedRange());
   buffer.unmap();
+};
+
+export const writeBuffer = (
+  buffer: GPUBuffer,
+  offset: GPUSize64,
+  data: GPUAllowSharedBufferSource,
+  dataOffset?: GPUSize64,
+  size?: GPUSize64
+) => {
+  device.queue.writeBuffer(buffer, offset, data, dataOffset, size);
+};
+
+export const reactiveUniformBuffer = <T extends number | Iterable<number>>(
+  size: number,
+  value: Accessor<T>
+) => {
+  const buffer = createUniformBuffer(size * Float32Array.BYTES_PER_ELEMENT);
+
+  createEffect(() => {
+    const _value = value();
+    const arrayBuffer =
+      typeof _value === 'number'
+        ? new Float32Array([_value])
+        : new Float32Array(_value);
+    writeBuffer(buffer, 0, arrayBuffer);
+  });
+
+  return buffer;
 };
 
 export const renderPass = (

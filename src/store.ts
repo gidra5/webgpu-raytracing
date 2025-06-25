@@ -4,17 +4,22 @@ import { createStore } from 'solid-js/store';
 const [store, setStore] = createStore({
   position: vec3.create(),
   orientation: quat.create(),
+  view: vec2.create(),
 
   sampleCount: 0,
   bouncesCount: 0,
-  fov: 45,
+
+  fov: Math.PI / 3,
   focusDistance: 10,
   circleOfConfusion: 0.01,
+  paniniDistance: 1,
+  exposure: 1,
+  ambience: 0.1,
+
   scale: 1,
   sensitivity: 0.03,
   speed: 2,
   runSpeed: 5,
-  exposure: 1,
 
   resample: false,
   debugBVH: false,
@@ -32,6 +37,10 @@ const [store, setStore] = createStore({
 });
 
 export { store };
+
+export const setView = (view: vec2) => {
+  setStore('view', view);
+};
 
 export const setDebugBVH = (debugBVH: boolean) => {
   setStore('debugBVH', debugBVH);

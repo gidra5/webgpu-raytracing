@@ -1,36 +1,54 @@
-import { mat3, mat4, quat } from 'gl-matrix';
+import { mat4, vec2 } from 'gl-matrix';
 import {
   computePass,
   computePipeline,
   createStorageBuffer,
-  createUniformBuffer,
   getDevice,
   getTimestampHandler,
+  reactiveUniformBuffer,
   renderBundlePass,
   renderPass,
   renderPipeline,
 } from './gpu';
-import { setRenderGPUTime, setRenderJSTime, store } from './store';
-import { createEffect } from 'solid-js';
+import { setRenderGPUTime, setRenderJSTime, setView, store } from './store';
+import { createEffect, createSignal } from 'solid-js';
 import rng from './shaders/rng';
 import tonemapping from './shaders/tonemapping';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
-let imageBuffer: GPUBuffer;
-let blitRenderBundle: GPURenderBundle;
+const context = canvas.getContext('webgpu');
+const device = await getDevice(context as GPUCanvasContext);
+const [imageBuffer, setImageBuffer] = createSignal<GPUBuffer>();
+const [blitRenderBundle, setBlitRenderBundle] = createSignal<GPURenderBundle>();
+const viewBuffer = reactiveUniformBuffer(16, () =>
+  mat4.fromRotationTranslation(mat4.create(), store.orientation, store.position)
+);
+const [_computePipeline, setComputePipeline] =
+  createSignal<GPUComputePipeline>();
+const [computeBindGroups, setComputeBindGroups] =
+  createSignal<GPUBindGroup[]>();
 
 const resize = () => {
   canvas.width = canvas.clientWidth * devicePixelRatio;
   canvas.height = canvas.clientHeight * devicePixelRatio;
-
-  if (imageBuffer) imageBuffer.destroy();
-  const size =
-    Float32Array.BYTES_PER_ELEMENT * 4 * canvas.width * canvas.height;
-  imageBuffer = createStorageBuffer(size, 'Raytraced Image Buffer');
-  blitRenderBundle = getBlitToScreenBundle();
+  setView(vec2.fromValues(canvas.width, canvas.height));
 };
 
-const getBlitToScreenBundle = () => {
+resize();
+window.addEventListener('resize', () => {
+  resize();
+});
+
+createEffect<GPUBuffer>((prevBuffer) => {
+  if (prevBuffer) prevBuffer.destroy();
+  const size =
+    Float32Array.BYTES_PER_ELEMENT * 4 * store.view[0] * store.view[1];
+  const buffer = createStorageBuffer(size, 'Raytraced Image Buffer');
+  setImageBuffer(buffer);
+  return buffer;
+});
+
+createEffect(() => {
   const { pipeline, bindGroups } = renderPipeline({
     vertexShader: () => /* wgsl */ `
       // xy pos + uv
@@ -59,10 +77,10 @@ const getBlitToScreenBundle = () => {
     fragmentShader: (x) => /* wgsl */ `
       ${tonemapping}
 
-      ${x.bindVarBuffer('read-only-storage', 'imageBuffer: array<vec3f>', imageBuffer)}
+      ${x.bindVarBuffer('read-only-storage', 'imageBuffer: array<vec3f>', imageBuffer())}
       // @group(0) @binding(1) var<uniform> commonUniforms: CommonUniforms;
 
-      const viewport = vec2u(${canvas.width}, ${canvas.height});
+      const viewport = vec2u(${store.view[0]}, ${store.view[1]});
 
       @fragment
       fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4f {
@@ -83,75 +101,37 @@ const getBlitToScreenBundle = () => {
     },
   });
 
-  return renderBundlePass({}, (renderPass) => {
+  const bundle = renderBundlePass({}, (renderPass) => {
     renderPass.setPipeline(pipeline);
     bindGroups.forEach((bindGroup, i) => renderPass.setBindGroup(i, bindGroup));
     renderPass.draw(6);
   });
-};
 
-export const init = async () => {
-  const context = canvas.getContext('webgpu');
-  const device = await getDevice(context as GPUCanvasContext);
+  setBlitRenderBundle(bundle);
+});
 
-  resize();
-  window.addEventListener('resize', () => {
-    resize();
-  });
+const COMPUTE_WORKGROUP_SIZE_X = 16;
+const COMPUTE_WORKGROUP_SIZE_Y = 16;
 
-  const { canTimestamp, querySet, submit } = getTimestampHandler((times) => {
-    setRenderGPUTime(Number(times[1] - times[0]));
-  });
-
-  const debugBVHRenderBundle = renderBundlePass({}, (renderPass) => {
-    //   renderPass.setPipeline(debugBVHPipeline);
-    //   renderPass.setBindGroup(0, debugBVHBindGroup);
-    //   renderPass.draw(2, Scene.AABBS_COUNT * 12);
-  });
-
-  const rpd: GPURenderPassDescriptor = {
-    colorAttachments: [
-      {
-        view: context.getCurrentTexture().createView(),
-        clearValue: [0, 0, 0, 0], // Clear to transparent
-        loadOp: 'clear',
-        storeOp: 'store',
-      },
-    ],
-    ...(canTimestamp && {
-      timestampWrites: {
-        querySet,
-        beginningOfPassWriteIndex: 0,
-        endOfPassWriteIndex: 1,
-      },
-    }),
-  };
-
-  const COMPUTE_WORKGROUP_SIZE_X = 16;
-  const COMPUTE_WORKGROUP_SIZE_Y = 16;
-  let _computePipeline: GPUComputePipeline, computeBindGroups: GPUBindGroup[];
-  const viewBuffer = createUniformBuffer(16 * Float32Array.BYTES_PER_ELEMENT);
-
-  createEffect(() => {
-    const view = mat4.fromRotationTranslation(
-      mat4.create(),
-      store.orientation,
-      store.position
-    );
-
-    device.queue.writeBuffer(viewBuffer, 0, new Float32Array(view));
-  });
-
-  const setComputePipeline = () => {
-    ({ pipeline: _computePipeline, bindGroups: computeBindGroups } =
-      computePipeline({
-        shader: (x) => /* wgsl */ `
-          ${x.bindVarBuffer('storage', 'imageBuffer: array<vec3f>', imageBuffer)}
+createEffect(() => {
+  const { pipeline, bindGroups } = computePipeline({
+    shader: (x) => /* wgsl */ `
+          ${x.bindVarBuffer('storage', 'imageBuffer: array<vec3f>', imageBuffer())}
           ${x.bindVarBuffer('uniform', 'u_view: mat4x4f', viewBuffer)}
 
           ${rng}
 
-          const viewport = vec2u(${canvas.width}, ${canvas.height});
+          const cameraFovAngle = ${store.fov};
+          const paniniDistance = ${store.paniniDistance};
+          const lensFocusDistance = ${store.focusDistance};
+          const circleOfConfusionRadius = ${store.circleOfConfusion};
+          
+          const ambience = ${store.ambience};
+          const sun_color = vec3f(1);
+          const sun_dir = normalize(vec3f(-1, -1, 1));
+          const sphere_center = vec3f(0, 0, 4);
+
+          const viewport = vec2u(${store.view[0]}, ${store.view[0]});
           const viewportf = vec2f(viewport);
 
           struct Material {
@@ -172,7 +152,6 @@ export const init = async () => {
             material: Material
           };
 
-          const sphere_center = vec3f(0, 0, 4);
           fn scene(ray: Ray) -> Hit {
             var hitObj: Hit;
             hitObj.hit = false;
@@ -215,10 +194,6 @@ export const init = async () => {
               }
           }
 
-          const cameraFovAngle = PI / 3;
-          const paniniDistance = 1.f;
-          const lensFocusDistance = 1.f;
-          const circleOfConfusionRadius = 0.5f;
           fn pinholeRay(pixel: vec2f) -> vec3f { 
             return normalize(vec3(pixel, 1/tan(cameraFovAngle / 2.f)));
           }
@@ -246,9 +221,6 @@ export const init = async () => {
             );
           }
 
-          const ambience = 0.1;
-          const sun_color = vec3f(1);
-          const sun_dir = normalize(vec3f(-1, -1, 1));
           fn in_shadow(ray: Ray, mag_sq: f32) -> f32 {
             let hitObj = scene(ray);
             let hit = hitObj.hit;
@@ -321,41 +293,68 @@ export const init = async () => {
             imageBuffer[idx] = color;
           }
         `,
-      }));
-  };
-  window.addEventListener('resize', setComputePipeline);
-  setComputePipeline();
+  });
+  setComputeBindGroups(bindGroups);
+  setComputePipeline(pipeline);
+});
 
-  return async function frame(now: number) {
-    const encoder = device.createCommandEncoder();
-    rpd.colorAttachments[0].view = context.getCurrentTexture().createView();
+const { canTimestamp, querySet, submit } = getTimestampHandler((times) => {
+  setRenderGPUTime(Number(times[1] - times[0]));
+});
 
-    // raytrace
-    computePass(encoder, {}, (computePass) => {
-      computePass.setPipeline(_computePipeline);
-      computeBindGroups.forEach((bindGroup, i) =>
-        computePass.setBindGroup(i, bindGroup)
-      );
-      computePass.dispatchWorkgroups(
-        Math.ceil(canvas.width / COMPUTE_WORKGROUP_SIZE_X),
-        Math.ceil(canvas.height / COMPUTE_WORKGROUP_SIZE_Y),
-        1
-      );
-    });
+const debugBVHRenderBundle = renderBundlePass({}, (renderPass) => {
+  //   renderPass.setPipeline(debugBVHPipeline);
+  //   renderPass.setBindGroup(0, debugBVHBindGroup);
+  //   renderPass.draw(2, Scene.AABBS_COUNT * 12);
+});
 
-    renderPass(encoder, rpd, (renderPass) => {
-      renderPass.executeBundles([blitRenderBundle]);
-
-      // debug BVH
-      if (store.debugBVH) {
-        renderPass.executeBundles([debugBVHRenderBundle]);
-      }
-    });
-
-    submit(encoder, () => {
-      device.queue.submit([encoder.finish()]);
-    });
-
-    setRenderJSTime(performance.now() - now);
-  };
+const rpd: GPURenderPassDescriptor = {
+  colorAttachments: [
+    {
+      view: context.getCurrentTexture().createView(),
+      clearValue: [0, 0, 0, 0], // Clear to transparent
+      loadOp: 'clear',
+      storeOp: 'store',
+    },
+  ],
+  ...(canTimestamp && {
+    timestampWrites: {
+      querySet,
+      beginningOfPassWriteIndex: 0,
+      endOfPassWriteIndex: 1,
+    },
+  }),
 };
+
+export function renderFrame(now: number) {
+  const encoder = device.createCommandEncoder();
+  rpd.colorAttachments[0].view = context.getCurrentTexture().createView();
+
+  // raytrace
+  computePass(encoder, {}, (computePass) => {
+    computePass.setPipeline(_computePipeline());
+    computeBindGroups().forEach((bindGroup, i) =>
+      computePass.setBindGroup(i, bindGroup)
+    );
+    computePass.dispatchWorkgroups(
+      Math.ceil(canvas.width / COMPUTE_WORKGROUP_SIZE_X),
+      Math.ceil(canvas.height / COMPUTE_WORKGROUP_SIZE_Y),
+      1
+    );
+  });
+
+  renderPass(encoder, rpd, (renderPass) => {
+    renderPass.executeBundles([blitRenderBundle()]);
+
+    // debug BVH
+    if (store.debugBVH) {
+      renderPass.executeBundles([debugBVHRenderBundle]);
+    }
+  });
+
+  submit(encoder, () => {
+    device.queue.submit([encoder.finish()]);
+  });
+
+  setRenderJSTime(performance.now() - now);
+}

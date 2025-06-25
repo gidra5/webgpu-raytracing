@@ -2,12 +2,9 @@ import 'uno.css';
 import { render } from 'solid-js/web';
 
 import UI from './UI';
-import { init as initControls } from './controls';
-import { init as initRender } from './render';
+import { handleControls } from './controls';
+import { renderFrame } from './render';
 import { setTime } from './store';
-
-const controlsLoop = initControls();
-const renderLoop = await initRender();
 
 const root = document.getElementById('root');
 
@@ -23,8 +20,8 @@ function update() {
   const now = performance.now();
   setTime(now);
 
-  renderLoop(now);
-  controlsLoop();
+  renderFrame(now);
+  handleControls();
   requestAnimationFrame(update);
 }
 
