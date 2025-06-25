@@ -164,6 +164,13 @@ const bufferBuilder = (d: GPUBufferDescriptor = { size: 0, usage: 0 }) => {
 export const createStorageBuffer = (size: number, label?: string) =>
   device.createBuffer({ size, usage: GPUBufferUsage.STORAGE, label });
 
+export const createUniformBuffer = (size: number, label?: string) =>
+  device.createBuffer({
+    size,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    label,
+  });
+
 export const createBindGroup = (d: GPUBindGroupDescriptor) =>
   device.createBindGroup(d);
 

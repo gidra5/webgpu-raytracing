@@ -30,17 +30,17 @@ const useSmoothedValue = (
 
 const App: Component = () => {
   const smoothing = 0.02;
-  const renderTime = useSmoothedValue(
-    useDiff(() => store.renderTime),
+  const renderTime = useSmoothedValue(() => store.timings.dt * 1000, smoothing);
+  const gpuTime = useSmoothedValue(
+    () => store.timings.render.gpu / 1000,
     smoothing
   );
-  const gpuTime = useSmoothedValue(() => store.gpuTime / 1000, smoothing);
-  const jsTime = useSmoothedValue(() => store.jsTime, smoothing);
+  const jsTime = useSmoothedValue(() => store.timings.render.js, smoothing);
 
   return (
     <div class="flex flex-col bg-black/30 p-4 gap-2 min-w-[200px] m-1">
       <div class="text-white text-sm">
-        Frame-time: {renderTime().toFixed(2)} ms
+        Update-time: {renderTime().toFixed(2)} ms
       </div>
 
       <div class="text-white text-sm">GPU-time: {gpuTime().toFixed(2)} µs</div>

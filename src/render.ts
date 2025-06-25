@@ -1,14 +1,19 @@
+import { mat3, mat4, quat } from 'gl-matrix';
 import {
   computePass,
   computePipeline,
   createStorageBuffer,
+  createUniformBuffer,
   getDevice,
   getTimestampHandler,
   renderBundlePass,
   renderPass,
   renderPipeline,
 } from './gpu';
-import { setGPUTime, setJSTime, setRenderTime, store } from './store';
+import { setRenderGPUTime, setRenderJSTime, store } from './store';
+import { createEffect } from 'solid-js';
+import rng from './shaders/rng';
+import tonemapping from './shaders/tonemapping';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 let imageBuffer: GPUBuffer;
@@ -24,71 +29,6 @@ const resize = () => {
   imageBuffer = createStorageBuffer(size, 'Raytraced Image Buffer');
   blitRenderBundle = getBlitToScreenBundle();
 };
-
-const tonemapping = /* wgsl */ `
-  fn linear_to_srgb(x: vec3f) -> vec3f {
-    let rgb = clamp(x, vec3(0.), vec3(1.));
-      
-    return mix(
-      pow(rgb, vec3(1.0 / 2.4)) * 1.055 - 0.055,
-      rgb * 12.92,
-      vec3f(rgb < vec3(0.0031308))
-    );
-  }
-
-  fn srgb_to_linear(x: vec3f) -> vec3f {
-    let rgb = clamp(x, vec3(0.), vec3(1.));
-      
-    return mix(
-      pow(((rgb + 0.055) / 1.055), vec3(2.4)),
-      rgb / 12.92,
-      vec3f(rgb < vec3(0.04045))
-    );
-  }
-
-  // Narkowicz 2015, "ACES Filmic Tone Mapping Curve"
-  @must_use
-  fn aces(x: vec3f) -> vec3f {
-    let a = 2.51;
-    let b = 0.03;
-    let c = 2.43;
-    let d = 0.59;
-    let e = 0.14;
-    return saturate(x * (a * x + b)) / (x * (c * x + d) + e);
-  }
-
-  // Filmic Tonemapping Operators http://filmicworlds.com/blog/filmic-tonemapping-operators/
-  @must_use
-  fn filmic(x: vec3f) -> vec3f {
-    let X = max(vec3f(0.0), x - 0.004);
-    let result = (X * (6.2 * X + 0.5)) / (X * (6.2 * X + 1.7) + 0.06);
-    return pow(result, vec3(2.2));
-  }
-
-  // Lottes 2016, "Advanced Techniques and Optimization of HDR Color Pipelines"
-  @must_use
-  fn lottes(x: vec3f) -> vec3f {
-    let a = vec3f(1.6);
-    let d = vec3f(0.977);
-    let hdrMax = vec3f(8.0);
-    let midIn = vec3f(0.18);
-    let midOut = vec3f(0.267);
-
-    let b =
-        (-pow(midIn, a) + pow(hdrMax, a) * midOut) /
-        ((pow(hdrMax, a * d) - pow(midIn, a * d)) * midOut);
-    let c =
-        (pow(hdrMax, a * d) * pow(midIn, a) - pow(hdrMax, a) * pow(midIn, a * d) * midOut) /
-        ((pow(hdrMax, a * d) - pow(midIn, a * d)) * midOut);
-
-    return pow(x, a) / (pow(x, a * d) * b + c);
-  }
-
-  @must_use
-  fn reinhard(x: vec3f) -> vec3f {
-    return x / (1.0 + x);
-  }
-`;
 
 const getBlitToScreenBundle = () => {
   const { pipeline, bindGroups } = renderPipeline({
@@ -150,120 +90,6 @@ const getBlitToScreenBundle = () => {
   });
 };
 
-// const phi = (d: number) => {
-//   const k = 1 / (d + 1);
-//   let x = (d + 2) * k;
-//   for (let i = 0; i < 10; i++) x = Math.pow(1 + x, k);
-//   return x;
-// };
-// const alpha = (d: number) => {
-//   const g = phi(d);
-//   const a = Array.from({ length: d }, (_, i) => 0);
-//   for (let i = 0; i < d; i++) a[i] = Math.pow(1 / g, i + 1);
-//   return a;
-// };
-
-const randUtils = (outCount: number) => {
-  return `
-    @must_use
-    fn random_${outCount}u() -> vec${outCount}<u32> {
-      return vec${outCount}(${Array.from({ length: outCount }, () => `random_1u()`).join(', ')});
-    }
-
-    @must_use
-    fn random_${outCount}() -> vec${outCount}<f32> {
-      return vec${outCount}(${Array.from({ length: outCount }, () => `random_1()`).join(', ')});
-    }
-  `;
-};
-
-const constants = /* wgsl */ `
-  const PHI     = 1.61803398874989484820459; // Golden Ratio
-  const SRT     = 1.41421356237309504880169; // Square Root of Two
-  const PI      = 3.14159265358979323846264;
-  const E       = 2.71828182845904523536028;
-  const TWO_PI  = 6.28318530717958647692528;
-  const INV_PI  = 0.31830988618379067153776;
-  
-  const BV_MAX_STACK_DEPTH = 16;
-  const EPSILON = 0.001;
-  // const min_dist = 0x1p-126f;
-  const min_dist = EPSILON;
-  const max_dist = 0x1.fffffep+127;
-`;
-
-const rng = /* wgsl */ `
-  ${constants}
-  var<private> rng_state: u32 = 0;
-  @must_use
-  fn random_1u() -> u32 {
-    rng_state = rng_state * 277803737u;
-    return rng_state;
-  }
-  
-  @must_use
-  fn random_1() -> f32 {
-    return f32(random_1u()) / f32(0xffffffffu);
-  }
-
-  ${randUtils(2)}
-
-  ${randUtils(3)}
-  
-  ${randUtils(4)}
-  
-  fn cbrt(x: f32) -> f32 {
-    var y = sign(x) * bitcast<f32>( bitcast<u32>( abs(x) ) / 3u + 0x2a514067u );
-
-    for (var i = 0; i < 2; i = i + 1) { 
-      y = (2. * y + x / (y * y)) * .333333333; 
-    }
-
-    for (var i = 0; i < 1; i = i + 1)
-    {
-      let y3 = y * y * y;
-      y *= (y3 + 2. * x) / (2. * y3 + x);
-    }
-    
-    return y;
-  }
-
-  fn sample_circle(t: f32) -> vec2f {
-    let phi = t * TWO_PI;
-    return vec2(cos(phi), sin(phi));
-  }
-
-  fn sample_incircle(t: vec2f) -> vec2f {
-    return sample_circle(t.x) * sqrt(t.y);
-  }
-
-  fn sample_cosine_weighted_sphere(t: vec2f) -> vec3f {
-    let phi = TWO_PI * t.y;
-    let sin_theta = sqrt(1. - t.x);
-    let x = sin_theta * cos(phi);
-    let y = sin_theta * sin(phi);
-    let z = sqrt(t.x);
-    return vec3(x, y, z); 
-  }
-
-  fn sample_sphere(t: vec2f) -> vec3f {
-    let uv = vec2(t.x * 2. - 1., t.y);
-    let sin_theta = sqrt(1 - uv.x * uv.x); 
-    let phi = TWO_PI * uv.y; 
-    let x = sin_theta * cos(phi); 
-    let z = sin_theta * sin(phi); 
-    return vec3(x, uv.x, z);
-  }
-  
-  fn sample_insphere(t: vec3f) -> vec3f {
-    return sample_sphere(t.xy) * cbrt(t.z); 
-  }
-
-  fn sample_insquare(t: vec2f) -> vec2f {
-    return (2. * t - 1.); 
-  }
-`;
-
 export const init = async () => {
   const context = canvas.getContext('webgpu');
   const device = await getDevice(context as GPUCanvasContext);
@@ -274,7 +100,7 @@ export const init = async () => {
   });
 
   const { canTimestamp, querySet, submit } = getTimestampHandler((times) => {
-    setGPUTime(Number(times[1] - times[0]));
+    setRenderGPUTime(Number(times[1] - times[0]));
   });
 
   const debugBVHRenderBundle = renderBundlePass({}, (renderPass) => {
@@ -304,11 +130,24 @@ export const init = async () => {
   const COMPUTE_WORKGROUP_SIZE_X = 16;
   const COMPUTE_WORKGROUP_SIZE_Y = 16;
   let _computePipeline: GPUComputePipeline, computeBindGroups: GPUBindGroup[];
+  const viewBuffer = createUniformBuffer(16 * Float32Array.BYTES_PER_ELEMENT);
+
+  createEffect(() => {
+    const view = mat4.fromRotationTranslation(
+      mat4.create(),
+      store.orientation,
+      store.position
+    );
+
+    device.queue.writeBuffer(viewBuffer, 0, new Float32Array(view));
+  });
+
   const setComputePipeline = () => {
     ({ pipeline: _computePipeline, bindGroups: computeBindGroups } =
       computePipeline({
         shader: (x) => /* wgsl */ `
           ${x.bindVarBuffer('storage', 'imageBuffer: array<vec3f>', imageBuffer)}
+          ${x.bindVarBuffer('uniform', 'u_view: mat4x4f', viewBuffer)}
 
           ${rng}
 
@@ -395,17 +234,16 @@ export const init = async () => {
             // let y = tan(hvPan.y) * (z + verticalCompression);
             let y = tan(hvPan.y) * (z + pow(max(0., (3. * cameraFovAngle/PI - 1.) / 8.), 0.92));
 
-            return vec3(x, y, z);
+            return normalize(vec3(x, y, z));
           }
 
           fn thinLensRay(dir: vec3f, uv: vec2f) -> Ray {
-            // var ray: Ray;
-            // // ray.pos = vec3(uv * circleOfConfusionRadius, 0.f);
-            // // ray.dir = normalize(dir * lensFocusDistance - ray.pos);
-            // ray.pos = vec3(uv, 0.f);
-            // ray.dir = dir;
-            // return ray;
-            return Ray(vec3(uv, 0.f), dir, vec3(1.));
+            let pos = vec3(uv * circleOfConfusionRadius, 0.f);
+            return Ray(
+              pos,
+              normalize(dir * lensFocusDistance - pos),
+              vec3(1.)
+            );
           }
 
           const ambience = 0.1;
@@ -427,7 +265,6 @@ export const init = async () => {
             return max(dot(-dir, norm), 0.) * sun_color;
           }
           fn sun(pos: vec3f, norm: vec3f) -> vec3f {
-            // return dot(-sun_dir, norm) * sun_color;
             return light_vis(pos, sun_dir) * sun_light_col(sun_dir, norm) + ambience * sun_color;
           }
 
@@ -442,22 +279,23 @@ export const init = async () => {
             let upos = globalInvocationId.xy;
             let idx = upos.x + upos.y * viewport.x;
             let pos = vec2f(upos);
+            imageBuffer[idx] = vec3f(0);
 
             
             // for (int x = 0; x < int(samples); ++x) {
               let subpixel = random_2();
               let uv = (2. * (pos + subpixel) - viewportf) / viewportf.x;
-              // let rayDirection = normalize(paniniRay(uv));
+              // let rayDirection = paniniRay(uv);
               let rayDirection = pinholeRay(uv);
               
               var ray = thinLensRay(rayDirection, sample_incircle(random_2()));
 
-              // let ray_pos = u_view * vec4(ray.pos, 1.);
-              let ray_pos = vec4(ray.pos, 1.);
+              let ray_pos = u_view * vec4(ray.pos, 1.);
+              // let ray_pos = vec4(ray.pos, 1.);
               ray.pos = ray_pos.xyz;
               ray.dir = normalize(vec3(ray.dir.xy, ray.dir.z * ray_pos.w));
-              // ray.dir = (u_view * vec4(ray.dir, 0.)).xyz;
-              ray.dir = (vec4(ray.dir, 0.)).xyz;
+              ray.dir = (u_view * vec4(ray.dir, 0.)).xyz;
+              // ray.dir = (vec4(ray.dir, 0.)).xyz;
               ray.throughput = vec3(1.);
 
               // for (int i = 0; i < int(gi_reflection_depth) + 1; ++i) {
@@ -488,10 +326,7 @@ export const init = async () => {
   window.addEventListener('resize', setComputePipeline);
   setComputePipeline();
 
-  async function frame() {
-    const now = performance.now();
-    setRenderTime(now);
-
+  return async function frame(now: number) {
     const encoder = device.createCommandEncoder();
     rpd.colorAttachments[0].view = context.getCurrentTexture().createView();
 
@@ -521,9 +356,6 @@ export const init = async () => {
       device.queue.submit([encoder.finish()]);
     });
 
-    setJSTime(performance.now() - now);
-    requestAnimationFrame(frame);
-  }
-
-  requestAnimationFrame(frame);
+    setRenderJSTime(performance.now() - now);
+  };
 };
