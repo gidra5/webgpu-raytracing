@@ -10,9 +10,11 @@ import {
   renderBundlePass,
   renderPass,
   renderPipeline,
-  writeBuffer,
+  writeUint32Buffer,
 } from './gpu';
 import {
+  incrementCounter,
+  ProjectionType,
   setRenderGPUTime,
   setRenderJSTime,
   setView,
@@ -44,6 +46,18 @@ const [_computePipeline, setComputePipeline] =
   createSignal<GPUComputePipeline>();
 const [computeBindGroups, setComputeBindGroups] =
   createSignal<GPUBindGroup[]>();
+
+const models = await loadModel();
+const model = models[10];
+const facesBuffer = await loadModelToBuffer(model);
+const facesLength = model.faces.length;
+const seedUniformBuffer = createUniformBuffer(4);
+const counterUniformBuffer = createUniformBuffer(4);
+
+console.log(
+  model,
+  models.map((m) => m.name)
+);
 
 const resize = () => {
   canvas.width = canvas.clientWidth * devicePixelRatio;
@@ -95,6 +109,7 @@ createEffect(() => {
       ${tonemapping}
 
       ${x.bindVarBuffer('read-only-storage', 'imageBuffer: array<vec3f>', imageBuffer())}
+      ${x.bindVarBuffer('uniform', 'counter: u32', counterUniformBuffer)}
       // @group(0) @binding(1) var<uniform> commonUniforms: CommonUniforms;
 
       const viewport = vec2u(${store.view[0]}, ${store.view[1]});
@@ -104,7 +119,8 @@ createEffect(() => {
         let pos = vec2u(uv * vec2f(viewport));
         // let idx = fma(pos.y, viewport.x, pos.x);
         let idx = pos.y * viewport.x + pos.x; 
-        let color = imageBuffer[idx];
+        let color = imageBuffer[idx] / f32(counter + 1);
+        // let color = imageBuffer[idx];
         let tonemapped = color;
         // let color = lottes(raytraceImageBuffer[idx] / f32(commonUniforms.frameCounter + 1));
         // return aces(raytraceImageBuffer[idx] / f32(commonUniforms.frameCounter + 1));
@@ -129,16 +145,6 @@ createEffect(() => {
 
 const COMPUTE_WORKGROUP_SIZE_X = 16;
 const COMPUTE_WORKGROUP_SIZE_Y = 16;
-
-const models = await loadModel();
-const model = models[10];
-const facesBuffer = await loadModelToBuffer(model);
-const facesLength = model.faces.length;
-
-console.log(
-  model,
-  models.map((m) => m.name)
-);
 
 const intervals = /* wgsl */ `
   struct Interval {
@@ -166,6 +172,67 @@ const intervals = /* wgsl */ `
   const positiveUniverseInterval = Interval(EPSILON, f32max);
 `;
 
+const intersect = /* wgsl */ `
+  struct IntersectonResult {
+    hit: bool,
+    barycentric: vec3f,
+  }
+
+  @must_use
+  fn rayIntersectFace(
+    ray: Ray,
+    face: Face,
+    interval: Interval
+  ) -> IntersectonResult {
+    var rec: IntersectonResult;
+    rec.hit = false;
+
+    // Mäller-Trumbore algorithm
+    // https://en.wikipedia.org/wiki/Möller–Trumbore_intersection_algorithm
+    // https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection.html
+    
+    let pn0 = transpose(face.points[0].posNormalT);
+    let pn1 = transpose(face.points[1].posNormalT);
+    let pn2 = transpose(face.points[2].posNormalT);
+    let p0 = pn0[0];
+    let e1 = pn1[0];
+    let e2 = pn2[0];
+
+    let h = cross(ray.dir, e2);
+    let det = dot(e1, h);
+    
+    if abs(det) < EPSILON * EPSILON {
+      return rec;
+    }
+
+    let s = ray.pos - p0;
+    let u = dot(s, h);
+
+    if u < 0.0f || u > det {
+      return rec;
+    }
+
+    let q = cross(s, e1);
+    let v = dot(ray.dir, q);
+
+    if v < 0.0f || u + v > det {
+      return rec;
+    }
+
+    let t = dot(e2, q);
+    let pt = vec3f(t, u, v) / det;
+
+    if !intervalSurrounds(interval, pt.x) {
+      return rec;
+    }
+
+    rec.barycentric = pt;
+    rec.hit = true;
+    
+    return rec;
+  }
+`;
+
 createEffect(() => {
   const { pipeline, bindGroups } = computePipeline({
     shader: (x) => /* wgsl */ `
@@ -187,11 +254,15 @@ createEffect(() => {
       ${x.bindVarBuffer('read-only-storage', 'faces: array<Face>', facesBuffer)}
       const facesLength = ${facesLength};
 
+      ${x.bindVarBuffer('uniform', 'seed: u32', seedUniformBuffer)}
+      ${x.bindVarBuffer('uniform', 'counter: u32', counterUniformBuffer)}
+      
       const cameraFovAngle = ${store.fov};
       const paniniDistance = ${store.paniniDistance};
       const lensFocusDistance = ${store.focusDistance};
       const circleOfConfusionRadius = ${store.circleOfConfusion};
       const flatShading = ${store.shadingType};
+      const projectionType = ${store.projectionType};
       
       const ambience = ${store.ambience};
       const sun_color = vec3f(1);
@@ -219,73 +290,7 @@ createEffect(() => {
         material: Material
       };
 
-      @must_use
-      fn rayIntersectFace(
-        ray: Ray,
-        face: Face,
-        interval: Interval
-      ) -> Hit {
-        var rec: Hit;
-        rec.hit = false;
-
-        // Mäller-Trumbore algorithm
-        // https://en.wikipedia.org/wiki/Möller–Trumbore_intersection_algorithm
-        // https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection.html
-        
-        let pn0 = transpose(face.points[0].posNormalT);
-        let pn1 = transpose(face.points[1].posNormalT);
-        let pn2 = transpose(face.points[2].posNormalT);
-        let p0 = pn0[0];
-        let e1 = pn1[0];
-        let e2 = pn2[0];
-        let _n = mat3x3f(pn0[1], pn1[1], pn2[1]);
-
-        let h = cross(ray.dir, e2);
-        let det = dot(e1, h);
-        
-        if abs(det) < EPSILON * EPSILON {
-          return rec;
-        }
-
-        let s = ray.pos - p0;
-        let u = dot(s, h);
-
-        if u < 0.0f || u > det {
-          return rec;
-        }
-
-        let q = cross(s, e1);
-        let v = dot(ray.dir, q);
-
-        if v < 0.0f || u + v > det {
-          return rec;
-        }
-
-        let t = dot(e2, q);
-        let pt = vec3f(t, u, v) / det;
-
-        if !intervalSurrounds(interval, pt.x) {
-          return rec;
-        }
-
-        let p = ray.pos + pt.x * ray.dir;
-
-        rec.dist = pt.x;
-        rec.point = p;
-        // rec.materialIdx = face.materialIdx;
-        rec.material.color = vec3(1.);
-        rec.material.emission = vec3(0.);
-        if (flatShading == ${ShadingType.Flat}) {
-          rec.normal = face.faceNormal;
-        } else {
-          let b = vec3f(1f - pt.y - pt.z, pt.y, pt.z);
-          let n = _n * b;
-          rec.normal = n;
-        }
-        rec.hit = true;
-        
-        return rec;
-      }
+      ${intersect}
 
       fn scene(ray: Ray) -> Hit {
         var hitObj: Hit;
@@ -295,14 +300,26 @@ createEffect(() => {
         hitObj.material.color = vec3(1.);
         hitObj.material.emission = vec3(0.);
 
-        let ray2 = Ray(ray.pos -  4 * sphere_center, ray.dir);
-
         for (var i = 0u; i < facesLength; i = i + 1) {
           let face = faces[i];
-          // let hit = rayIntersectFace(ray2, face, Interval(min_dist, hitObj.dist));
           let hit = rayIntersectFace(ray, face, Interval(min_dist, hitObj.dist));
           if (hit.hit) {
-            hitObj = hit;
+            hitObj.hit = true;
+            hitObj.dist = hit.barycentric.x;
+            hitObj.point = ray.pos + hit.barycentric.x * ray.dir;
+            if (flatShading == ${ShadingType.Flat}) {
+              hitObj.normal = face.faceNormal;
+            } else {
+              let pn0 = transpose(face.points[0].posNormalT);
+              let pn1 = transpose(face.points[1].posNormalT);
+              let pn2 = transpose(face.points[2].posNormalT);
+              let _n = mat3x3f(pn0[1], pn1[1], pn2[1]);
+
+              let pt = hit.barycentric;
+              let b = vec3f(1f - pt.y - pt.z, pt.y, pt.z);
+              let n = _n * b;
+              hitObj.normal = n;
+            }
           }
         }
 
@@ -328,12 +345,33 @@ createEffect(() => {
         return normalize(vec3(x, y, z));
       }
 
+      fn orthographicRay(uv: vec2f) -> vec3f {
+        return vec3(0, 0, 1);
+      }
+
       fn thinLensRay(dir: vec3f, uv: vec2f) -> Ray {
         let pos = vec3(uv * circleOfConfusionRadius, 0.f);
         return Ray(
           pos,
           normalize(dir * lensFocusDistance - pos)
         );
+      }
+
+      fn cameraRay(uv: vec2f) -> vec3f {
+        switch (projectionType) {
+          case ${ProjectionType.Panini}: {
+            return paniniRay(uv);
+          }
+          case ${ProjectionType.Perspective}: {
+            return pinholeRay(uv);
+          }
+          case ${ProjectionType.Orthographic}: {
+            return orthographicRay(uv);
+          }
+          default: {
+            return vec3(0);
+          }
+        }
       }
 
       fn in_shadow(ray: Ray, mag_sq: f32) -> f32 {
@@ -375,23 +413,30 @@ createEffect(() => {
         let upos = globalInvocationId.xy;
         let idx = upos.x + upos.y * viewport.x;
         let pos = vec2f(upos);
-        imageBuffer[idx] = vec3f(0);
+        rng_state = seed + idx;
+        
+        if (counter == 0u) {
+          imageBuffer[idx] = vec3f(0);
+        }
 
         let subpixel = random_2();
         let uv = (2. * (pos + subpixel) - viewportf) / viewportf.x;
-        // let rayDirection = paniniRay(uv);
-        let rayDirection = pinholeRay(uv);
+        let rayDirection = cameraRay(uv);
         
         var ray = thinLensRay(rayDirection, sample_incircle(random_2()));
         ray = ray_transform(ray);
 
         let hitObj = scene(ray);
         let t = hitObj.dist;
-        if (!hitObj.hit) { return; }
+        if (!hitObj.hit) { 
+          // imageBuffer[idx] = vec3f(0);
+          return; 
+        }
         // color += sun(ray.pos + t * ray.dir, hitObj.normal) * hitObj.material.color; 
         color = (hitObj.normal+1)/2;
 
-        imageBuffer[idx] = color;
+        imageBuffer[idx] += color;
+        // imageBuffer[idx] = color;
       }
     `,
   });
@@ -428,6 +473,10 @@ const rpd: GPURenderPassDescriptor = {
 };
 
 export function renderFrame(now: number) {
+  writeUint32Buffer(seedUniformBuffer, Math.random() * 0xffffffff);
+  writeUint32Buffer(counterUniformBuffer, store.counter);
+  incrementCounter();
+
   const encoder = device.createCommandEncoder();
   rpd.colorAttachments[0].view = context.getCurrentTexture().createView();
 

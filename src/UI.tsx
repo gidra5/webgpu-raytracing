@@ -1,5 +1,13 @@
 import { Accessor, createEffect, createSignal, type Component } from 'solid-js';
-import { setDebugBVH, setShadingType, ShadingType, store } from './store';
+import {
+  ProjectionType,
+  setDebugBVH,
+  setFov,
+  setProjectionType,
+  setShadingType,
+  ShadingType,
+  store,
+} from './store';
 import { lerp } from './utils';
 
 type Box<T> = { value: T };
@@ -59,12 +67,34 @@ const App: Component = () => {
         Shading type
         <select
           value={store.shadingType}
-          onChange={(e) => setShadingType(e.target.value)}
+          onChange={(e) => setShadingType(Number(e.target.value))}
         >
           <option value={ShadingType.Flat}>Flat</option>
           <option value={ShadingType.Phong}>Phong</option>
         </select>
       </label>
+      <label class="flex gap-2 text-white text-sm items-baseline">
+        Projection type
+        <select
+          value={store.projectionType}
+          onChange={(e) => setProjectionType(Number(e.target.value))}
+        >
+          <option value={ProjectionType.Panini}>Panini</option>
+          <option value={ProjectionType.Perspective}>Perspective</option>
+          <option value={ProjectionType.Orthographic}>Orthographic</option>
+        </select>
+      </label>
+
+      <label class="flex gap-2 text-white text-sm items-baseline">
+        Field of view
+        <input
+          class="m-0"
+          type="number"
+          value={Math.round((store.fov * 180) / Math.PI)}
+          onChange={(e) => setFov((Number(e.target.value) * Math.PI) / 180)}
+        />
+      </label>
+
       <div class="text-white">
         Left click to lock mouse, right click to unlock.
       </div>

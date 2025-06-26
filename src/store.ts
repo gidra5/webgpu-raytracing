@@ -7,21 +7,31 @@ export enum ShadingType {
   Phong,
 }
 
+export enum ProjectionType {
+  Panini,
+  Perspective,
+  Orthographic,
+}
+
 const [store, setStore] = createStore({
+  loadingTitle: '' as string | null,
+
   position: vec3.create(),
   orientation: quat.create(),
   view: vec2.create(),
 
-  sampleCount: 0,
-  bouncesCount: 0,
+  counter: 0,
+  sampleCount: 1,
+  bouncesCount: 1,
 
   fov: Math.PI / 3,
   focusDistance: 10,
-  circleOfConfusion: 0.01,
+  circleOfConfusion: 0,
   paniniDistance: 1,
   exposure: 1,
   ambience: 0.1,
   shadingType: ShadingType.Phong,
+  projectionType: ProjectionType.Perspective,
 
   scale: 1,
   sensitivity: 0.03,
@@ -45,16 +55,45 @@ const [store, setStore] = createStore({
 
 export { store };
 
+export const setLoadingTitle = (title: string) => {
+  setStore('loadingTitle', title);
+};
+
+export const loadFinished = () => {
+  setStore('loadingTitle', null);
+};
+
+export const resetCounter = () => {
+  setStore('counter', 0);
+};
+
+export const incrementCounter = () => {
+  setStore('counter', store.counter + 1);
+};
+
+export const setFov = (fov: number) => {
+  setStore('fov', fov);
+  resetCounter();
+};
+
+export const setProjectionType = (projectionType: ProjectionType) => {
+  setStore('projectionType', projectionType);
+  resetCounter();
+};
+
 export const setShadingType = (shadingType: ShadingType) => {
   setStore('shadingType', shadingType);
+  resetCounter();
 };
 
 export const setView = (view: vec2) => {
   setStore('view', view);
+  resetCounter();
 };
 
 export const setDebugBVH = (debugBVH: boolean) => {
   setStore('debugBVH', debugBVH);
+  resetCounter();
 };
 
 export const setTime = (time: number) => {
@@ -97,6 +136,7 @@ export const rotateCamera = (d: vec2) => {
   quat.mul(orientation, qZ, orientation);
 
   setStore('orientation', orientation);
+  resetCounter();
 };
 
 export const move = (d: vec3) => {
@@ -119,6 +159,7 @@ export const move = (d: vec3) => {
   vec3.add(position, position, d);
 
   setStore('position', position);
+  resetCounter();
 };
 
 export const pressKey = (key: string) => {

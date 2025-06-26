@@ -120,6 +120,14 @@ export const writeBuffer = (
   device.queue.writeBuffer(buffer, offset, data, dataOffset, size);
 };
 
+export const writeUint32Buffer = (buffer: GPUBuffer, data: number) => {
+  device.queue.writeBuffer(buffer, 0, new Uint32Array([data]));
+};
+
+export const writeFloat32Buffer = (buffer: GPUBuffer, data: number) => {
+  device.queue.writeBuffer(buffer, 0, new Float32Array([data]));
+};
+
 export const reactiveUniformBuffer = <T extends number | Iterable<number>>(
   size: number,
   value: Accessor<T>
