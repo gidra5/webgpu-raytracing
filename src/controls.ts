@@ -99,5 +99,9 @@ export const handleControls = () => {
     vec3.scale(d, d, store.runSpeed);
   }
 
+  // why
+  d[2] = -d[2];
+  d[1] = -d[1];
+
   move(d);
 };

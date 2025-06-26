@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import solidPlugin from 'vite-plugin-solid';
+import path from 'path';
 
 import UnocssPlugin from '@unocss/vite';
 
@@ -11,5 +12,10 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
+  },
+  resolve: {
+    alias: {
+      '@assets': path.resolve(__dirname, './assets'),
+    },
   },
 });

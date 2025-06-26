@@ -21,6 +21,8 @@
     "vite-plugin-solid": "^2.11.6"
   },
   "dependencies": {
+    "@types/node": "^24.0.4",
+    "@types/obj-file-parser": "^0.5.2",
     "clsx": "^2.1.1",
     "cxs": "^6.2.0",
     "gl-matrix": "^3.4.3",

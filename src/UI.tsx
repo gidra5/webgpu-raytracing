@@ -56,6 +56,11 @@ const App: Component = () => {
         />
         Debug BVH
       </label>
+      <div>
+        Left click to lock mouse, right click to unlock. Then you can move with
+        WASD, arrow keys, Space and left Ctrl. You can also move camera while
+        mouse is locked.
+      </div>
     </div>
   );
 };

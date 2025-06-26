@@ -3,17 +3,20 @@ import {
   computePass,
   computePipeline,
   createStorageBuffer,
+  createUniformBuffer,
   getDevice,
   getTimestampHandler,
   reactiveUniformBuffer,
   renderBundlePass,
   renderPass,
   renderPipeline,
+  writeBuffer,
 } from './gpu';
 import { setRenderGPUTime, setRenderJSTime, setView, store } from './store';
 import { createEffect, createSignal } from 'solid-js';
 import rng from './shaders/rng';
 import tonemapping from './shaders/tonemapping';
+import { loadModel, loadModelToBuffer } from './scene';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const context = canvas.getContext('webgpu');
@@ -113,186 +116,291 @@ createEffect(() => {
 const COMPUTE_WORKGROUP_SIZE_X = 16;
 const COMPUTE_WORKGROUP_SIZE_Y = 16;
 
+const models = await loadModel();
+const model = models[10];
+const facesBuffer = await loadModelToBuffer(model);
+const facesLengthBuffer = createUniformBuffer(4);
+writeBuffer(facesLengthBuffer, 0, new Uint32Array([model.faces.length]));
+
+console.log(
+  model,
+  models.map((m) => m.name)
+);
+
 createEffect(() => {
   const { pipeline, bindGroups } = computePipeline({
     shader: (x) => /* wgsl */ `
-          ${x.bindVarBuffer('storage', 'imageBuffer: array<vec3f>', imageBuffer())}
-          ${x.bindVarBuffer('uniform', 'u_view: mat4x4f', viewBuffer)}
+      ${x.bindVarBuffer('storage', 'imageBuffer: array<vec3f>', imageBuffer())}
+      ${x.bindVarBuffer('uniform', 'u_view: mat4x4f', viewBuffer)}
 
-          ${rng}
+      ${rng}
 
-          const cameraFovAngle = ${store.fov};
-          const paniniDistance = ${store.paniniDistance};
-          const lensFocusDistance = ${store.focusDistance};
-          const circleOfConfusionRadius = ${store.circleOfConfusion};
+      struct FacePoint {
+        // pos: vec3f,
+        // normal: vec3f
+        posNormalT: mat3x2f // pos and normal packed into transposed 2x3 matrix. That way we don't waste space on alignment
+      }
+      struct Face {
+        faceNormal: vec3f,
+        materialIdx: u32,
+        points: array<FacePoint, 3>
+      }
+
+      ${x.bindVarBuffer('read-only-storage', 'faces: array<Face>', facesBuffer)}
+      ${x.bindVarBuffer('uniform', 'facesLength: u32', facesLengthBuffer)}
+
+      const cameraFovAngle = ${store.fov};
+      const paniniDistance = ${store.paniniDistance};
+      const lensFocusDistance = ${store.focusDistance};
+      const circleOfConfusionRadius = ${store.circleOfConfusion};
+      
+      const ambience = ${store.ambience};
+      const sun_color = vec3f(1);
+      const sun_dir = normalize(vec3f(-1, 1, 1));
+      // const sun_dir = normalize(vec3f(0, -1, 0));
+      const sphere_center = vec3f(0, 0, 4);
+
+      const viewport = vec2u(${store.view[0]}, ${store.view[0]});
+      const viewportf = vec2f(viewport);
+
+      struct Material {
+        color: vec3f,
+        emission: vec3f
+      };
+
+      struct Ray {
+        pos: vec3f, // Origin
+        dir: vec3f, // Direction (normalized)
+        throughput: vec3f
+      };
+
+      struct Hit {
+        normal: vec3f,
+        point: vec3f,
+        dist: f32,
+        hit: bool,
+        material: Material
+      };
+        
+      struct Interval {
+        min: f32,
+        max: f32,
+      };
+      
+      @must_use
+      fn intervalContains(interval: Interval, x: f32) -> bool {
+        return interval.min <= x && x <= interval.max;
+      }
+
+      @must_use
+      fn intervalSurrounds(interval: Interval, x: f32) -> bool {
+        return interval.min < x && x < interval.max;
+      }
+
+      @must_use
+      fn intervalClamp(interval: Interval, x: f32) -> f32 {
+        var out = x;
+        if (x < interval.min) {
+          out = interval.min;
+        }
+        if (x > interval.max) {
+          out = interval.max;
+        }
+        return out;
+      }
+
+      const f32min = 0x1p-126f;
+      const f32max = 0x1.fffffep+127;
+      const emptyInterval = Interval(f32max, f32min);
+      const universeInterval = Interval(f32min, f32max);
+      const positiveUniverseInterval = Interval(EPSILON, f32max);
+
+      @must_use
+      fn rayIntersectFace(
+        ray: Ray,
+        face: Face,
+        interval: Interval
+      ) -> Hit {
+        var rec: Hit;
+
+        // Mäller-Trumbore algorithm
+        // https://en.wikipedia.org/wiki/Möller–Trumbore_intersection_algorithm
+
+        let fnDotRayDir = dot(face.faceNormal, ray.dir);
+        if (abs(fnDotRayDir) < EPSILON) {
+          rec.hit = false;
+          return rec; // ray direction almost parallel
+        }
+        let pn0 = transpose(face.points[0].posNormalT);
+        let pn1 = transpose(face.points[1].posNormalT);
+        let pn2 = transpose(face.points[2].posNormalT);
+        let p0 = pn0[0];
+        let p1 = pn1[0];
+        let p2 = pn2[0];
+        let n0 = pn0[1];
+        let n1 = pn1[1];
+        let n2 = pn2[1];
+
+        let e1 = p1 - p0;
+        let e2 = p2 - p0;
+
+        let h = cross(ray.dir, e2);
+        let det = dot(e1, h);
+
+        if det > -0.00001 && det < 0.00001 {
+          rec.hit = false;
+          return rec;
+        }
+
+        let invDet = 1.0f / det;
+        let s = ray.pos - p0;
+        let u = invDet * dot(s, h);
+
+        if u < 0.0f || u > 1.0f {
+          rec.hit = false;
+          return rec;
+        }
+
+        let q = cross(s, e1);
+        let v = invDet * dot(ray.dir, q);
+
+        if v < 0.0f || u + v > 1.0f {
+          rec.hit = false;
+          return rec;
+        }
+
+        let t = invDet * dot(e2, q);
+
+        if intervalSurrounds(interval, t) {
+          // https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection.html
           
-          const ambience = ${store.ambience};
-          const sun_color = vec3f(1);
-          const sun_dir = normalize(vec3f(-1, -1, 1));
-          const sphere_center = vec3f(0, 0, 4);
+          let p = p0 + u * e1 + v * e2;
 
-          const viewport = vec2u(${store.view[0]}, ${store.view[0]});
-          const viewportf = vec2f(viewport);
+          rec.dist = t;
+          rec.point = p;
+          // rec.materialIdx = face.materialIdx;
+          rec.material.color = vec3(1.);
+          rec.material.emission = vec3(0.);
+          // if (commonUniforms.flatShading == 1u) {
+            // rec.normal = face.faceNormal;
+          // } else {
+            let b = vec3f(1f - u - v, u, v);
+            let n = b[0] * n0 + b[1] * n1 + b[2] * n2;
+            rec.normal = n;
+          // }
+          rec.hit = true;
+        } else {
+          rec.hit = false;
+        }
+        return rec;
+      }
 
-          struct Material {
-            color: vec3f,
-            emission: vec3f
-          };
+      fn scene(ray: Ray) -> Hit {
+        var hitObj: Hit;
+        hitObj.hit = false;
+        hitObj.dist = max_dist;
+        hitObj.point = ray.pos;
+        hitObj.material.color = vec3(1.);
+        hitObj.material.emission = vec3(0.);
 
-          struct Ray {
-            pos: vec3f, // Origin
-            dir: vec3f, // Direction (normalized)
-            throughput: vec3f
-          };
+        let ray2 = Ray(ray.pos -  4* sphere_center, ray.dir, vec3f(0.));
 
-          struct Hit {
-            normal: vec3f,
-            dist: f32,
-            hit: bool,
-            material: Material
-          };
-
-          fn scene(ray: Ray) -> Hit {
-            var hitObj: Hit;
-            hitObj.hit = false;
-            hitObj.dist = max_dist;
-            hitObj.material.color = vec3(1.);
-            hitObj.material.emission = vec3(0.);
-
-            var d2: f32;
-            
-            d2 = iSphere(ray.pos - sphere_center, ray.dir, vec2(min_dist, hitObj.dist), &hitObj.normal, 1.);
-            if (d2 < hitObj.dist) {
-              hitObj.hit = true;
-              hitObj.dist = d2;
-            }
-
-            return hitObj;
+        for (var i = 0u; i < facesLength; i = i + 1) {
+          let face = faces[i];
+          // let hit = rayIntersectFace(ray2, face, Interval(min_dist, hitObj.dist));
+          let hit = rayIntersectFace(ray, face, Interval(min_dist, hitObj.dist));
+          if (hit.hit) {
+            hitObj = hit;
           }
+        }
 
-          // Sphere:          https://www.shadertoy.com/view/4d2XWV
-          fn iSphere( ro: vec3f, rd: vec3f, distBound: vec2f, normal: ptr<function, vec3f>,   
-                        sphereRadius: f32 ) -> f32{
-              let b = dot(ro, rd);
-              let c = dot(ro, ro) - sphereRadius*sphereRadius;
-              var h = b*b - c;
-              if (h < 0.) {
-                  return max_dist;
-              } else {
-                h = sqrt(h);
-                  let d1 = -b-h;
-                  let d2 = -b+h;
-                  if (d1 >= distBound.x && d1 <= distBound.y) {
-                      *normal = normalize(ro + rd*d1);
-                      return d1;
-                  } else if (d2 >= distBound.x && d2 <= distBound.y) { 
-                      *normal = normalize(ro + rd*d2);            
-                      return d2;
-                  } else {
-                      return max_dist;
-                  }
-              }
-          }
+        return hitObj;
+      }
 
-          fn pinholeRay(pixel: vec2f) -> vec3f { 
-            return normalize(vec3(pixel, 1/tan(cameraFovAngle / 2.f)));
-          }
 
-          fn paniniRay(pixel: vec2f) -> vec3f {
-            let halfFOV = cameraFovAngle / 2.f;
-            let p = vec2(sin(halfFOV), cos(halfFOV) + paniniDistance);
-            let M = sqrt(dot(p, p));
-            let halfPaniniFOV = atan2(p.x, p.y);
-            let hvPan = pixel * vec2(halfPaniniFOV, halfFOV);
-            let x = sin(hvPan.x) * M;
-            let z = cos(hvPan.x) * M - paniniDistance;
-            // let y = tan(hvPan.y) * (z + verticalCompression);
-            let y = tan(hvPan.y) * (z + pow(max(0., (3. * cameraFovAngle/PI - 1.) / 8.), 0.92));
+      fn pinholeRay(pixel: vec2f) -> vec3f { 
+        return normalize(vec3(pixel, 1/tan(cameraFovAngle / 2.f)));
+      }
 
-            return normalize(vec3(x, y, z));
-          }
+      fn paniniRay(pixel: vec2f) -> vec3f {
+        let halfFOV = cameraFovAngle / 2.f;
+        let p = vec2(sin(halfFOV), cos(halfFOV) + paniniDistance);
+        let M = sqrt(dot(p, p));
+        let halfPaniniFOV = atan2(p.x, p.y);
+        let hvPan = pixel * vec2(halfPaniniFOV, halfFOV);
+        let x = sin(hvPan.x) * M;
+        let z = cos(hvPan.x) * M - paniniDistance;
+        // let y = tan(hvPan.y) * (z + verticalCompression);
+        let y = tan(hvPan.y) * (z + pow(max(0., (3. * cameraFovAngle/PI - 1.) / 8.), 0.92));
 
-          fn thinLensRay(dir: vec3f, uv: vec2f) -> Ray {
-            let pos = vec3(uv * circleOfConfusionRadius, 0.f);
-            return Ray(
-              pos,
-              normalize(dir * lensFocusDistance - pos),
-              vec3(1.)
-            );
-          }
+        return normalize(vec3(x, y, z));
+      }
 
-          fn in_shadow(ray: Ray, mag_sq: f32) -> f32 {
-            let hitObj = scene(ray);
-            let hit = hitObj.hit;
-            let ds = hitObj.dist;
+      fn thinLensRay(dir: vec3f, uv: vec2f) -> Ray {
+        let pos = vec3(uv * circleOfConfusionRadius, 0.f);
+        return Ray(
+          pos,
+          normalize(dir * lensFocusDistance - pos),
+          vec3(1.)
+        );
+      }
 
-            return select(1., 0., !hit || ds * ds >= mag_sq);
-          }
+      fn in_shadow(ray: Ray, mag_sq: f32) -> f32 {
+        let hitObj = scene(ray);
+        let hit = hitObj.hit;
+        let ds = hitObj.dist;
 
-          fn light_vis(pos: vec3f, dir: vec3f) -> f32 {
-            return in_shadow(Ray(pos, dir, vec3(1.)), 0.99 / (min_dist * min_dist));
-          }
+        return select(1., 0., !hit || ds * ds >= mag_sq);
+      }
 
-          fn sun_light_col(dir: vec3f, norm: vec3f) -> vec3f { 
-            return max(dot(-dir, norm), 0.) * sun_color;
-          }
-          fn sun(pos: vec3f, norm: vec3f) -> vec3f {
-            return light_vis(pos, sun_dir) * sun_light_col(sun_dir, norm) + ambience * sun_color;
-          }
+      fn light_vis(pos: vec3f, dir: vec3f) -> f32 {
+        return in_shadow(Ray(pos, dir, vec3(1.)), 0.99 / (min_dist * min_dist));
+      }
 
-          @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
-          fn main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>) {
-            if (any(globalInvocationId.xy > viewport)) {
-              return;
-            }
+      fn sun_light_col(dir: vec3f, norm: vec3f) -> vec3f { 
+        return max(dot(-dir, norm), 0.) * sun_color;
+      }
+      fn sun(pos: vec3f, norm: vec3f) -> vec3f {
+        return light_vis(pos, sun_dir) * sun_light_col(sun_dir, norm) + ambience * sun_color;
+      }
 
-            var color = vec3f(0);
+      @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
+      fn main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>) {
+        if (any(globalInvocationId.xy > viewport)) {
+          return;
+        }
 
-            let upos = globalInvocationId.xy;
-            let idx = upos.x + upos.y * viewport.x;
-            let pos = vec2f(upos);
-            imageBuffer[idx] = vec3f(0);
+        var color = vec3f(0);
 
-            
-            // for (int x = 0; x < int(samples); ++x) {
-              let subpixel = random_2();
-              let uv = (2. * (pos + subpixel) - viewportf) / viewportf.x;
-              // let rayDirection = paniniRay(uv);
-              let rayDirection = pinholeRay(uv);
-              
-              var ray = thinLensRay(rayDirection, sample_incircle(random_2()));
+        let upos = globalInvocationId.xy;
+        let idx = upos.x + upos.y * viewport.x;
+        let pos = vec2f(upos);
+        imageBuffer[idx] = vec3f(0);
 
-              let ray_pos = u_view * vec4(ray.pos, 1.);
-              // let ray_pos = vec4(ray.pos, 1.);
-              ray.pos = ray_pos.xyz;
-              ray.dir = normalize(vec3(ray.dir.xy, ray.dir.z * ray_pos.w));
-              ray.dir = (u_view * vec4(ray.dir, 0.)).xyz;
-              // ray.dir = (vec4(ray.dir, 0.)).xyz;
-              ray.throughput = vec3(1.);
+        let subpixel = random_2();
+        let uv = (2. * (pos + subpixel) - viewportf) / viewportf.x;
+        // let rayDirection = paniniRay(uv);
+        let rayDirection = pinholeRay(uv);
+        
+        var ray = thinLensRay(rayDirection, sample_incircle(random_2()));
 
-              // for (int i = 0; i < int(gi_reflection_depth) + 1; ++i) {
-                // float seed = x + i;
-                let hitObj = scene(ray);
-                // let material = hitObj.material;
-                let t = hitObj.dist;
-                // if (!hitObj.hit) break;
-                if (!hitObj.hit) { return; }
-                // let cos_angle = -dot(hitObj.normal, ray.dir);
-                // let incoming = int(sign(cos_angle));
-                // let pos = ray.pos + t * ray.dir;
-                // let dir: vec3f;
-                // let col: vec3f;
-                // color += sun(pos, hitObj.normal); 
-                color += sun(ray.pos + t * ray.dir, hitObj.normal); 
-                // color = vec3f(1.);
+        let ray_pos = u_view * vec4(ray.pos, 1.);
+        ray.pos = ray_pos.xyz;
+        ray.dir = normalize(vec3(ray.dir.xy, ray.dir.z * ray_pos.w));
+        ray.dir = (u_view * vec4(ray.dir, 0.)).xyz;
+        // why
+        ray.dir = ray.dir * vec3(1,-1,-1);
+        ray.throughput = vec3(1.);
 
-                // ray = Ray(pos, dir, ray.throughput);
-              // }
-            // }
+        let hitObj = scene(ray);
+        let t = hitObj.dist;
+        if (!hitObj.hit) { return; }
+        // color += sun(ray.pos + t * ray.dir, hitObj.normal) * hitObj.material.color; 
+        color = (hitObj.normal+1)/2;
 
-            imageBuffer[idx] = color;
-          }
-        `,
+        imageBuffer[idx] = color;
+      }
+    `,
   });
   setComputeBindGroups(bindGroups);
   setComputePipeline(pipeline);
