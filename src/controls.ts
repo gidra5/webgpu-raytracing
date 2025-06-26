@@ -89,19 +89,15 @@ export const handleControls = () => {
     d[0] += 1;
   }
   if (keys.includes('Space')) {
-    d[1] -= 1;
+    d[1] += 1;
   }
   if (keys.includes('ControlLeft')) {
-    d[1] += 1;
+    d[1] -= 1;
   }
   vec3.normalize(d, d);
   if (keys.includes('ShiftLeft')) {
     vec3.scale(d, d, store.runSpeed);
   }
-
-  // why
-  d[2] = -d[2];
-  d[1] = -d[1];
 
   move(d);
 };

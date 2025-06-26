@@ -23,9 +23,17 @@ const context = canvas.getContext('webgpu');
 const device = await getDevice(context as GPUCanvasContext);
 const [imageBuffer, setImageBuffer] = createSignal<GPUBuffer>();
 const [blitRenderBundle, setBlitRenderBundle] = createSignal<GPURenderBundle>();
-const viewBuffer = reactiveUniformBuffer(16, () =>
-  mat4.fromRotationTranslation(mat4.create(), store.orientation, store.position)
-);
+const viewBuffer = reactiveUniformBuffer(16, () => {
+  const m = mat4.fromRotationTranslation(
+    mat4.create(),
+    store.orientation,
+    store.position
+  );
+  const m2 = mat4.create();
+  m2[1 + 4 * 1] = -1;
+  mat4.multiply(m, m, m2);
+  return m;
+});
 const [_computePipeline, setComputePipeline] =
   createSignal<GPUComputePipeline>();
 const [computeBindGroups, setComputeBindGroups] =
@@ -127,6 +135,32 @@ console.log(
   models.map((m) => m.name)
 );
 
+const intervals = /* wgsl */ `
+  struct Interval {
+    min: f32,
+    max: f32,
+  };
+  
+  @must_use
+  fn intervalContains(interval: Interval, x: f32) -> bool {
+    return interval.min <= x && x <= interval.max;
+  }
+
+  @must_use
+  fn intervalSurrounds(interval: Interval, x: f32) -> bool {
+    return interval.min < x && x < interval.max;
+  }
+
+  @must_use
+  fn intervalClamp(interval: Interval, x: f32) -> f32 {
+    return min(max(x, interval.min), interval.max);
+  }
+
+  const emptyInterval = Interval(f32max, f32min);
+  const universeInterval = Interval(f32min, f32max);
+  const positiveUniverseInterval = Interval(EPSILON, f32max);
+`;
+
 createEffect(() => {
   const { pipeline, bindGroups } = computePipeline({
     shader: (x) => /* wgsl */ `
@@ -134,10 +168,9 @@ createEffect(() => {
       ${x.bindVarBuffer('uniform', 'u_view: mat4x4f', viewBuffer)}
 
       ${rng}
+      ${intervals}
 
       struct FacePoint {
-        // pos: vec3f,
-        // normal: vec3f
         posNormalT: mat3x2f // pos and normal packed into transposed 2x3 matrix. That way we don't waste space on alignment
       }
       struct Face {
@@ -157,7 +190,6 @@ createEffect(() => {
       const ambience = ${store.ambience};
       const sun_color = vec3f(1);
       const sun_dir = normalize(vec3f(-1, 1, 1));
-      // const sun_dir = normalize(vec3f(0, -1, 0));
       const sphere_center = vec3f(0, 0, 4);
 
       const viewport = vec2u(${store.view[0]}, ${store.view[0]});
@@ -181,39 +213,6 @@ createEffect(() => {
         hit: bool,
         material: Material
       };
-        
-      struct Interval {
-        min: f32,
-        max: f32,
-      };
-      
-      @must_use
-      fn intervalContains(interval: Interval, x: f32) -> bool {
-        return interval.min <= x && x <= interval.max;
-      }
-
-      @must_use
-      fn intervalSurrounds(interval: Interval, x: f32) -> bool {
-        return interval.min < x && x < interval.max;
-      }
-
-      @must_use
-      fn intervalClamp(interval: Interval, x: f32) -> f32 {
-        var out = x;
-        if (x < interval.min) {
-          out = interval.min;
-        }
-        if (x > interval.max) {
-          out = interval.max;
-        }
-        return out;
-      }
-
-      const f32min = 0x1p-126f;
-      const f32max = 0x1.fffffep+127;
-      const emptyInterval = Interval(f32max, f32min);
-      const universeInterval = Interval(f32min, f32max);
-      const positiveUniverseInterval = Interval(EPSILON, f32max);
 
       @must_use
       fn rayIntersectFace(
@@ -309,7 +308,7 @@ createEffect(() => {
 
 
       fn pinholeRay(pixel: vec2f) -> vec3f { 
-        return normalize(vec3(pixel, 1/tan(cameraFovAngle / 2.f)));
+        return normalize(vec3(pixel, -1/tan(cameraFovAngle / 2.f)));
       }
 
       fn paniniRay(pixel: vec2f) -> vec3f {
@@ -354,6 +353,15 @@ createEffect(() => {
         return light_vis(pos, sun_dir) * sun_light_col(sun_dir, norm) + ambience * sun_color;
       }
 
+      fn ray_transform(_ray: Ray) -> Ray {
+        var ray = _ray;
+        let ray_pos = u_view * vec4(ray.pos, 1.);
+        ray.pos = ray_pos.xyz;
+        ray.dir = normalize(vec3(ray.dir.xy, ray.dir.z * ray_pos.w));
+        ray.dir = (u_view * vec4(ray.dir, 0.)).xyz;
+        return ray;
+      }
+
       @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
       fn main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>) {
         if (any(globalInvocationId.xy > viewport)) {
@@ -373,14 +381,7 @@ createEffect(() => {
         let rayDirection = pinholeRay(uv);
         
         var ray = thinLensRay(rayDirection, sample_incircle(random_2()));
-
-        let ray_pos = u_view * vec4(ray.pos, 1.);
-        ray.pos = ray_pos.xyz;
-        ray.dir = normalize(vec3(ray.dir.xy, ray.dir.z * ray_pos.w));
-        ray.dir = (u_view * vec4(ray.dir, 0.)).xyz;
-        // why
-        ray.dir = ray.dir * vec3(1,-1,-1);
-        ray.throughput = vec3(1.);
+        ray = ray_transform(ray);
 
         let hitObj = scene(ray);
         let t = hitObj.dist;

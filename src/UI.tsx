@@ -29,7 +29,7 @@ const useSmoothedValue = (
 };
 
 const App: Component = () => {
-  const smoothing = 0.02;
+  const smoothing = 0.9;
   const renderTime = useSmoothedValue(() => store.timings.dt * 1000, smoothing);
   const gpuTime = useSmoothedValue(
     () => store.timings.render.gpu / 1000,

@@ -8,7 +8,8 @@ export default /* wgsl */ `
   
   const BV_MAX_STACK_DEPTH = 16;
   const EPSILON = 0.001;
-  // const min_dist = 0x1p-126f;
+  const f32min = 0x1p-126f;
+  const f32max = 0x1.fffffep+127;
   const min_dist = EPSILON;
-  const max_dist = 0x1.fffffep+127;
+  const max_dist = f32max;
 `;

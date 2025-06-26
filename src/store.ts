@@ -1,5 +1,6 @@
 import { mat3, quat, vec2, vec3 } from 'gl-matrix';
 import { createStore } from 'solid-js/store';
+import { front, right, up } from './camera';
 
 const [store, setStore] = createStore({
   position: vec3.create(),
@@ -64,22 +65,22 @@ export const rotateCamera = (d: vec2) => {
   vec2.scale(d, d, (dt * store.sensitivity) / store.scale);
 
   const orientation = quat.clone(store.orientation);
-  const right = vec3.fromValues(-1, 0, 0);
-  vec3.transformQuat(right, right, orientation);
+  const _right = vec3.clone(right);
+  vec3.transformQuat(_right, _right, orientation);
 
-  const mvRight = vec3.fromValues(right[0], 0, right[2]);
-  const mvFront = vec3.fromValues(0, 0, 1);
+  const mvRight = vec3.fromValues(_right[0], 0, _right[2]);
+  const mvFront = vec3.clone(front);
   vec3.transformQuat(mvFront, mvFront, orientation);
   mvFront[1] = 0;
 
   const qX = quat.create();
-  quat.setAxisAngle(qX, vec3.fromValues(0, 1, 0), d[0]);
+  quat.setAxisAngle(qX, up, d[0]);
 
   const qY = quat.create();
-  quat.setAxisAngle(qY, right, d[1]);
+  quat.setAxisAngle(qY, _right, d[1]);
 
   const qZ = quat.create();
-  quat.rotationTo(qZ, right, mvRight);
+  quat.rotationTo(qZ, _right, mvRight);
 
   quat.mul(orientation, qX, orientation);
   quat.mul(orientation, qY, orientation);
@@ -89,22 +90,22 @@ export const rotateCamera = (d: vec2) => {
 };
 
 export const move = (d: vec3) => {
-  const mvUp = vec3.fromValues(0, 1, 0);
+  const mvUp = vec3.clone(up);
 
-  const mvRight = vec3.fromValues(1, 0, 0);
+  const mvRight = vec3.clone(right);
   vec3.transformQuat(mvRight, mvRight, store.orientation);
   mvRight[1] = 0;
 
-  const mvFront = vec3.fromValues(0, 0, 1);
+  const mvFront = vec3.clone(front);
   vec3.transformQuat(mvFront, mvFront, store.orientation);
   mvFront[1] = 0;
 
   const dt = store.timings.dt;
   const position = vec3.clone(store.position);
-  vec3.scale(d, d, dt * store.speed);
 
   // @ts-ignore
   vec3.transformMat3(d, d, mat3.fromValues(...mvRight, ...mvUp, ...mvFront));
+  vec3.scale(d, d, -dt * store.speed);
   vec3.add(position, position, d);
 
   setStore('position', position);
