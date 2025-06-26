@@ -1,5 +1,5 @@
 import { Accessor, createEffect, createSignal, type Component } from 'solid-js';
-import { setDebugBVH, store } from './store';
+import { setDebugBVH, setShadingType, ShadingType, store } from './store';
 import { lerp } from './utils';
 
 type Box<T> = { value: T };
@@ -38,7 +38,7 @@ const App: Component = () => {
   const jsTime = useSmoothedValue(() => store.timings.render.js, smoothing);
 
   return (
-    <div class="flex flex-col bg-black/30 p-4 gap-2 min-w-[200px] m-1">
+    <div class="flex flex-col bg-black/30 p-4 gap-2 min-w-[200px] max-w-[400px] m-1">
       <div class="text-white text-sm">
         Update-time: {renderTime().toFixed(2)} ms
       </div>
@@ -49,17 +49,30 @@ const App: Component = () => {
       <label class="flex gap-1 text-white text-sm items-baseline">
         <input
           class="m-0"
-          name="debugBVH"
           type="checkbox"
           checked={store.debugBVH}
           onChange={(e) => setDebugBVH(e.target.checked)}
         />
         Debug BVH
       </label>
-      <div>
-        Left click to lock mouse, right click to unlock. Then you can move with
-        WASD, arrow keys, Space and left Ctrl. You can also move camera while
-        mouse is locked.
+      <label class="flex gap-2 text-white text-sm items-baseline">
+        Shading type
+        <select
+          value={store.shadingType}
+          onChange={(e) => setShadingType(e.target.value)}
+        >
+          <option value={ShadingType.Flat}>Flat</option>
+          <option value={ShadingType.Phong}>Phong</option>
+        </select>
+      </label>
+      <div class="text-white">
+        Left click to lock mouse, right click to unlock.
+      </div>
+      <div class="text-white">
+        Then you can move with WASD, arrow keys, Space and left Ctrl.
+      </div>
+      <div class="text-white">
+        You can also move camera while mouse is locked.
       </div>
     </div>
   );

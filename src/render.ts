@@ -12,7 +12,13 @@ import {
   renderPipeline,
   writeBuffer,
 } from './gpu';
-import { setRenderGPUTime, setRenderJSTime, setView, store } from './store';
+import {
+  setRenderGPUTime,
+  setRenderJSTime,
+  setView,
+  ShadingType,
+  store,
+} from './store';
 import { createEffect, createSignal } from 'solid-js';
 import rng from './shaders/rng';
 import tonemapping from './shaders/tonemapping';
@@ -127,8 +133,7 @@ const COMPUTE_WORKGROUP_SIZE_Y = 16;
 const models = await loadModel();
 const model = models[10];
 const facesBuffer = await loadModelToBuffer(model);
-const facesLengthBuffer = createUniformBuffer(4);
-writeBuffer(facesLengthBuffer, 0, new Uint32Array([model.faces.length]));
+const facesLength = model.faces.length;
 
 console.log(
   model,
@@ -180,12 +185,13 @@ createEffect(() => {
       }
 
       ${x.bindVarBuffer('read-only-storage', 'faces: array<Face>', facesBuffer)}
-      ${x.bindVarBuffer('uniform', 'facesLength: u32', facesLengthBuffer)}
+      const facesLength = ${facesLength};
 
       const cameraFovAngle = ${store.fov};
       const paniniDistance = ${store.paniniDistance};
       const lensFocusDistance = ${store.focusDistance};
       const circleOfConfusionRadius = ${store.circleOfConfusion};
+      const flatShading = ${store.shadingType};
       
       const ambience = ${store.ambience};
       const sun_color = vec3f(1);
@@ -203,7 +209,6 @@ createEffect(() => {
       struct Ray {
         pos: vec3f, // Origin
         dir: vec3f, // Direction (normalized)
-        throughput: vec3f
       };
 
       struct Hit {
@@ -225,6 +230,7 @@ createEffect(() => {
 
         // Mäller-Trumbore algorithm
         // https://en.wikipedia.org/wiki/Möller–Trumbore_intersection_algorithm
+        // https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection.html
         
         let pn0 = transpose(face.points[0].posNormalT);
         let pn1 = transpose(face.points[1].posNormalT);
@@ -262,9 +268,6 @@ createEffect(() => {
           return rec;
         }
 
-        // https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection.html
-        
-        // let p = p0 + u * e1 + v * e2;
         let p = ray.pos + pt.x * ray.dir;
 
         rec.dist = pt.x;
@@ -272,13 +275,13 @@ createEffect(() => {
         // rec.materialIdx = face.materialIdx;
         rec.material.color = vec3(1.);
         rec.material.emission = vec3(0.);
-        // if (commonUniforms.flatShading == 1u) {
-          // rec.normal = face.faceNormal;
-        // } else {
+        if (flatShading == ${ShadingType.Flat}) {
+          rec.normal = face.faceNormal;
+        } else {
           let b = vec3f(1f - pt.y - pt.z, pt.y, pt.z);
           let n = _n * b;
           rec.normal = n;
-        // }
+        }
         rec.hit = true;
         
         return rec;
@@ -292,7 +295,7 @@ createEffect(() => {
         hitObj.material.color = vec3(1.);
         hitObj.material.emission = vec3(0.);
 
-        let ray2 = Ray(ray.pos -  4* sphere_center, ray.dir, vec3f(0.));
+        let ray2 = Ray(ray.pos -  4 * sphere_center, ray.dir);
 
         for (var i = 0u; i < facesLength; i = i + 1) {
           let face = faces[i];
@@ -329,8 +332,7 @@ createEffect(() => {
         let pos = vec3(uv * circleOfConfusionRadius, 0.f);
         return Ray(
           pos,
-          normalize(dir * lensFocusDistance - pos),
-          vec3(1.)
+          normalize(dir * lensFocusDistance - pos)
         );
       }
 
@@ -343,7 +345,7 @@ createEffect(() => {
       }
 
       fn light_vis(pos: vec3f, dir: vec3f) -> f32 {
-        return in_shadow(Ray(pos, dir, vec3(1.)), 0.99 / (min_dist * min_dist));
+        return in_shadow(Ray(pos, dir), 0.99 / (min_dist * min_dist));
       }
 
       fn sun_light_col(dir: vec3f, norm: vec3f) -> vec3f { 

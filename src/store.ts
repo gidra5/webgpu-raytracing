@@ -2,6 +2,11 @@ import { mat3, quat, vec2, vec3 } from 'gl-matrix';
 import { createStore } from 'solid-js/store';
 import { front, right, up } from './camera';
 
+export enum ShadingType {
+  Flat,
+  Phong,
+}
+
 const [store, setStore] = createStore({
   position: vec3.create(),
   orientation: quat.create(),
@@ -16,6 +21,7 @@ const [store, setStore] = createStore({
   paniniDistance: 1,
   exposure: 1,
   ambience: 0.1,
+  shadingType: ShadingType.Phong,
 
   scale: 1,
   sensitivity: 0.03,
@@ -38,6 +44,10 @@ const [store, setStore] = createStore({
 });
 
 export { store };
+
+export const setShadingType = (shadingType: ShadingType) => {
+  setStore('shadingType', shadingType);
+};
 
 export const setView = (view: vec2) => {
   setStore('view', view);
