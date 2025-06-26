@@ -20,7 +20,25 @@ type ObjVector = { x: number; y: number; z: number };
 
 const objVecToVec3 = (v: ObjVector) => vec3.fromValues(v.x, v.y, v.z);
 
-export const loadModel = async (): Promise<Model[]> => {
+// offsets and counts are in faceSize units
+type Allocation = { offset: number; count: number };
+const facePointSize = 6;
+const faceSize = 4 + 3 * facePointSize + 2;
+let facesBuffer: GPUBuffer | null = null;
+let facesOffsetBuffer: GPUBuffer | null = null;
+const allocations: Allocation[] = [];
+const modelsCache: Model[] = [];
+
+const allocate = (count: number) => {
+  const lastAllocation = allocations[allocations.length - 1];
+  const offset = lastAllocation
+    ? lastAllocation.offset + lastAllocation.count
+    : 0;
+  allocations.push({ offset, count });
+  return offset;
+};
+
+export const loadModels = async (): Promise<number[]> => {
   const module = await import('@assets/raytraced-scene.obj?raw');
   const objParser = new wavefrontObjParser(module.default);
   const objFile = objParser.parse();
@@ -66,27 +84,26 @@ export const loadModel = async (): Promise<Model[]> => {
       };
     });
 
-    return { name, faces: _faces };
+    return modelsCache.push({ name, faces: _faces }) - 1;
   });
 };
 
-export const loadModelToBuffer = async (model: Model): Promise<GPUBuffer> => {
+export const getModel = (index: number): Model => {
+  return modelsCache[index];
+};
+
+const loadModelToBuffer = async (
+  _mapped: ArrayBuffer,
+  model: Model,
+  offset: number
+) => {
   // fuck alignment
   // https://www.w3.org/TR/WGSL/#alignment-and-size
-  const facePointSize = 6;
-  const faceSize = 4 + 3 * facePointSize + 2;
-  const buffer = createStorageBuffer(
-    model.faces.length * faceSize * Float32Array.BYTES_PER_ELEMENT,
-    'Faces Buffer',
-    true
-  );
-
-  const _mapped = buffer.getMappedRange();
   const mappedF32 = new Float32Array(_mapped);
   const mappedU32 = new Uint32Array(_mapped);
   for (const [face, i] of Iterator.iter(model.faces).enumerate()) {
     const { points, normal } = face;
-    const i2 = i * faceSize;
+    const i2 = offset + i * faceSize;
     mappedF32[i2 + 0] = normal[0];
     mappedF32[i2 + 1] = normal[1];
     mappedF32[i2 + 2] = normal[2];
@@ -103,6 +120,43 @@ export const loadModelToBuffer = async (model: Model): Promise<GPUBuffer> => {
       mappedF32[k + 5] = normal[2];
     }
   }
-  buffer.unmap();
-  return buffer;
+};
+
+const loadOffsets = async (mapped: ArrayBuffer) => {
+  const mappedU32 = new Uint32Array(mapped);
+  for (const [{ offset, count }, i] of Iterator.iter(allocations).enumerate()) {
+    mappedU32[2 * i + 0] = offset;
+    mappedU32[2 * i + 1] = count;
+  }
+};
+
+export const loadModelFacesToBuffer = async (): Promise<
+  [GPUBuffer, GPUBuffer, number]
+> => {
+  const facesCount = Iterator.iter(modelsCache).sum((m) => m.faces.length);
+  facesBuffer = createStorageBuffer(
+    facesCount * faceSize * Float32Array.BYTES_PER_ELEMENT,
+    'Faces Buffer',
+    true
+  );
+  const _mapped = facesBuffer.getMappedRange();
+
+  for (const model of modelsCache) {
+    const offset = allocate(model.faces.length);
+    await loadModelToBuffer(_mapped, model, offset * faceSize);
+  }
+
+  facesBuffer.unmap();
+
+  facesOffsetBuffer = createStorageBuffer(
+    2 * allocations.length * Uint32Array.BYTES_PER_ELEMENT,
+    'Faces Offsets Buffer',
+    true
+  );
+
+  await loadOffsets(facesOffsetBuffer.getMappedRange());
+
+  facesOffsetBuffer.unmap();
+
+  return [facesBuffer, facesOffsetBuffer, facesCount];
 };

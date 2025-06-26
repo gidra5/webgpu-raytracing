@@ -24,7 +24,7 @@ import {
 import { createEffect, createSignal } from 'solid-js';
 import rng from './shaders/rng';
 import tonemapping from './shaders/tonemapping';
-import { loadModel, loadModelToBuffer } from './scene';
+import { loadModels, loadModelFacesToBuffer } from './scene';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const context = canvas.getContext('webgpu');
@@ -47,17 +47,11 @@ const [_computePipeline, setComputePipeline] =
 const [computeBindGroups, setComputeBindGroups] =
   createSignal<GPUBindGroup[]>();
 
-const models = await loadModel();
-const model = models[10];
-const facesBuffer = await loadModelToBuffer(model);
-const facesLength = model.faces.length;
+const modelIds = await loadModels();
+const [facesBuffer, facesOffsetBuffer, facesLength] =
+  await loadModelFacesToBuffer();
 const seedUniformBuffer = createUniformBuffer(4);
 const counterUniformBuffer = createUniformBuffer(4);
-
-console.log(
-  model,
-  models.map((m) => m.name)
-);
 
 const resize = () => {
   canvas.width = canvas.clientWidth * devicePixelRatio;
