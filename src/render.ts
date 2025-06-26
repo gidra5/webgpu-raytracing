@@ -222,76 +222,66 @@ createEffect(() => {
         interval: Interval
       ) -> Hit {
         var rec: Hit;
+        rec.hit = false;
 
         // Mäller-Trumbore algorithm
         // https://en.wikipedia.org/wiki/Möller–Trumbore_intersection_algorithm
-
-        let fnDotRayDir = dot(face.faceNormal, ray.dir);
-        if (abs(fnDotRayDir) < EPSILON) {
-          rec.hit = false;
-          return rec; // ray direction almost parallel
-        }
+        
         let pn0 = transpose(face.points[0].posNormalT);
         let pn1 = transpose(face.points[1].posNormalT);
         let pn2 = transpose(face.points[2].posNormalT);
         let p0 = pn0[0];
-        let p1 = pn1[0];
-        let p2 = pn2[0];
-        let n0 = pn0[1];
-        let n1 = pn1[1];
-        let n2 = pn2[1];
-
-        let e1 = p1 - p0;
-        let e2 = p2 - p0;
+        let e1 = pn1[0];
+        let e2 = pn2[0];
+        let _n = mat3x3f(pn0[1], pn1[1], pn2[1]);
 
         let h = cross(ray.dir, e2);
         let det = dot(e1, h);
-
-        if det > -0.00001 && det < 0.00001 {
-          rec.hit = false;
+        
+        if abs(det) < EPSILON * EPSILON {
           return rec;
         }
 
-        let invDet = 1.0f / det;
         let s = ray.pos - p0;
-        let u = invDet * dot(s, h);
+        let u = dot(s, h);
 
-        if u < 0.0f || u > 1.0f {
-          rec.hit = false;
+        if u < 0.0f || u > det {
           return rec;
         }
 
         let q = cross(s, e1);
-        let v = invDet * dot(ray.dir, q);
+        let v = dot(ray.dir, q);
 
-        if v < 0.0f || u + v > 1.0f {
-          rec.hit = false;
+        if v < 0.0f || u + v > det {
           return rec;
         }
 
-        let t = invDet * dot(e2, q);
+        let t = dot(e2, q);
+        let pt = vec3f(t, u, v) / det;
 
-        if intervalSurrounds(interval, t) {
-          // https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection.html
-          
-          let p = p0 + u * e1 + v * e2;
-
-          rec.dist = t;
-          rec.point = p;
-          // rec.materialIdx = face.materialIdx;
-          rec.material.color = vec3(1.);
-          rec.material.emission = vec3(0.);
-          // if (commonUniforms.flatShading == 1u) {
-            // rec.normal = face.faceNormal;
-          // } else {
-            let b = vec3f(1f - u - v, u, v);
-            let n = b[0] * n0 + b[1] * n1 + b[2] * n2;
-            rec.normal = n;
-          // }
-          rec.hit = true;
-        } else {
-          rec.hit = false;
+        if !intervalSurrounds(interval, pt.x) {
+          return rec;
         }
+
+        // https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection.html
+        
+        // let p = p0 + u * e1 + v * e2;
+        let p = ray.pos + pt.x * ray.dir;
+
+        rec.dist = pt.x;
+        rec.point = p;
+        // rec.materialIdx = face.materialIdx;
+        rec.material.color = vec3(1.);
+        rec.material.emission = vec3(0.);
+        // if (commonUniforms.flatShading == 1u) {
+          // rec.normal = face.faceNormal;
+        // } else {
+          let b = vec3f(1f - pt.y - pt.z, pt.y, pt.z);
+          let n = _n * b;
+          rec.normal = n;
+        // }
+        rec.hit = true;
+        
         return rec;
       }
 
