@@ -1,4 +1,4 @@
-import { Accessor, createEffect } from 'solid-js';
+import { Accessor, createEffect, createSignal } from 'solid-js';
 import { assert } from './utils';
 
 const features: Partial<Record<GPUFeatureName, boolean>> = {};
@@ -399,4 +399,19 @@ export const computePipeline = (
     })
   );
   return { pipeline, bindGroups };
+};
+
+export const reactiveComputePipeline = (x: ComputePipelineDescriptor) => {
+  const [_computePipeline, setComputePipeline] =
+    createSignal<GPUComputePipeline>();
+  const [computeBindGroups, setComputeBindGroups] =
+    createSignal<GPUBindGroup[]>();
+
+  createEffect(() => {
+    const { pipeline, bindGroups } = computePipeline(x);
+    setComputePipeline(pipeline);
+    setComputeBindGroups(bindGroups);
+  });
+
+  return [_computePipeline, computeBindGroups] as const;
 };

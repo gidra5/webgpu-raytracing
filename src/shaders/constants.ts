@@ -6,7 +6,6 @@ export default /* wgsl */ `
   const TWO_PI  = 6.28318530717958647692528;
   const INV_PI  = 0.31830988618379067153776;
   
-  const BV_MAX_STACK_DEPTH = 16;
   const EPSILON = 0.001;
   const f32min = 0x1p-126f;
   const f32max = 0x1.fffffep+127;
