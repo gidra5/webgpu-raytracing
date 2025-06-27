@@ -1,11 +1,11 @@
-import { mat4, vec2 } from 'gl-matrix';
+import { vec2 } from 'gl-matrix';
 import {
   computePass,
-  computePipeline,
   createStorageBuffer,
   createUniformBuffer,
   getDevice,
   getTimestampHandler,
+  reactiveComputePipeline,
   reactiveUniformBuffer,
   renderBundlePass,
   renderPass,
@@ -21,6 +21,7 @@ import {
   ShadingType,
   store,
   view,
+  viewProjectionMatrix,
 } from './store';
 import { createEffect, createSignal } from 'solid-js';
 import rng from './shaders/rng';
@@ -35,10 +36,7 @@ const [blitRenderBundle, setBlitRenderBundle] = createSignal<GPURenderBundle>();
 const [debugBVHRenderBundle, setDebugBVHRenderBundle] =
   createSignal<GPURenderBundle>();
 const viewBuffer = reactiveUniformBuffer(16, view);
-const [_computePipeline, setComputePipeline] =
-  createSignal<GPUComputePipeline>();
-const [computeBindGroups, setComputeBindGroups] =
-  createSignal<GPUBindGroup[]>();
+const viewProjBuffer = reactiveUniformBuffer(16, viewProjectionMatrix);
 
 const modelIds = await loadModels();
 const [
@@ -48,7 +46,7 @@ const [
   bvhBuffer,
   bvhOffsetBuffer,
   bvhLength,
-] = await loadModelsToBuffers([10]);
+] = await loadModelsToBuffers([0, 11]);
 const seedUniformBuffer = createUniformBuffer(4);
 const counterUniformBuffer = createUniformBuffer(4);
 
@@ -249,8 +247,96 @@ const intersect = /* wgsl */ `
   }
 `;
 
+const bvh = /* wgsl */ `
+  struct BVHIntersectonResult {
+    hit: bool,
+    barycentric: vec3f,
+    faceIdx: u32,
+  }
+  
+  @must_use
+  fn rayIntersectBV(ray: Ray, bv: BoundingVolume) -> bool {
+    let t0 = (bv.min - ray.pos) / ray.dir;
+    let t1 = (bv.max - ray.pos) / ray.dir;
+    let tmin = min(t0, t1);
+    let tmax = max(t0, t1);
+    let maxMinT = max(tmin.x, max(tmin.y, tmin.z));
+    let minMaxT = min(tmax.x, min(tmax.y, tmax.z));
+    return maxMinT < minMaxT;
+  }
+
+  const BV_MAX_STACK_DEPTH = 16;
+  @must_use
+  fn rayIntersectBVH(
+    ray: Ray,
+  ) -> BVHIntersectonResult {
+    var result: BVHIntersectonResult;
+    var stack: array<u32, BV_MAX_STACK_DEPTH>;
+    var top: i32;
+
+    let objIdx = 5u;
+    // for (var objIdx = 0u; objIdx < modelsCount; objIdx++) {
+      top = 0;
+      let bvhOffset = bvhOffset[objIdx];
+      let bvhCount = bvhOffset.count;
+      let facesOffset = facesOffset[objIdx].offset;
+      stack[0] = bvhOffset.offset;
+
+      while (top > -1) {
+        var bvIdx = stack[top];
+        top--;
+        var bv = bvh[bvIdx];
+        if (!rayIntersectBV(ray, bv)) {
+          continue;
+        }
+        
+        if (bv.leftIdx != -1) {
+          top++;
+          stack[top] = u32(bv.leftIdx);
+        }
+        if (bv.rightIdx != -1) {
+          top++;
+          stack[top] = u32(bv.rightIdx);
+        }
+
+        if (bv.faces[0] != -1) {
+          let faceIdx = facesOffset + u32(bv.faces[0]);
+          let face = faces[faceIdx];
+          let p0 = face.points[0].pos;
+          let e1 = face.points[1].pos;
+          let e2 = face.points[2].pos;
+          let triangle = Triangle(p0, e1, e2);
+          let hit = rayIntersectFace(ray, triangle, Interval(EPSILON, result.barycentric.x));
+          if (hit.hit) {
+            result.barycentric = hit.barycentric;
+            result.hit = true;
+            result.faceIdx = faceIdx;
+          }
+        }
+
+        if (bv.faces[1] != -1) {
+          let faceIdx = facesOffset + u32(bv.faces[1]);
+          let face = faces[faceIdx];
+          let p0 = face.points[0].pos;
+          let e1 = face.points[1].pos;
+          let e2 = face.points[2].pos;
+          let triangle = Triangle(p0, e1, e2);
+          let hit = rayIntersectFace(ray, triangle, Interval(EPSILON, result.barycentric.x));
+          if (hit.hit) {
+            result.barycentric = hit.barycentric;
+            result.hit = true;
+            result.faceIdx = faceIdx;
+          }
+        }
+      }
+    // }
+
+    return result;
+  }
+`;
+
 const raygen = /* wgsl */ `
-  fn pinholeRay(pixel: vec2f) -> vec3f { 
+  fn pinholeRay(pixel: vec2f) -> vec3f {
     return normalize(vec3(pixel, -1/tan(cameraFovAngle / 2.f)));
   }
 
@@ -366,14 +452,15 @@ const scene = /* wgsl */ `
   }
 `;
 
-createEffect(() => {
-  const { pipeline, bindGroups } = computePipeline({
-    shader: (x) => /* wgsl */ `
+const [computePipeline, computeBindGroups] = reactiveComputePipeline({
+  shader: (x) => /* wgsl */ `
       ${x.bindVarBuffer('storage', 'imageBuffer: array<vec3f>', imageBuffer())}
       ${x.bindVarBuffer('uniform', 'u_view: mat4x4f', viewBuffer)}
 
       ${rng}
       ${intervals}
+      ${bvh}
+      ${ray}
 
       struct FacePoint {
         pos: vec3f,
@@ -384,9 +471,19 @@ createEffect(() => {
         materialIdx: u32,
         points: array<FacePoint, 3>
       }
+      struct Offset {
+        offset: u32,
+        count: u32,
+      }
 
+      const modelsCount = ${modelIds.length};
       ${x.bindVarBuffer('read-only-storage', 'faces: array<Face>', facesBuffer)}
+      ${x.bindVarBuffer('read-only-storage', 'facesOffset: array<Offset>', facesOffsetBuffer)}
       const facesLength = ${facesLength};
+      ${x.bindVarBuffer('read-only-storage', 'bvh: array<BoundingVolume>', bvhBuffer)}
+      ${x.bindVarBuffer('read-only-storage', 'bvhOffset: array<Offset>', bvhOffsetBuffer)}
+      const bvhLength = ${bvhLength};
+
 
       ${x.bindVarBuffer('uniform', 'seed: u32', seedUniformBuffer)}
       ${x.bindVarBuffer('uniform', 'counter: u32', counterUniformBuffer)}
@@ -409,11 +506,6 @@ createEffect(() => {
       struct Material {
         color: vec3f,
         emission: vec3f
-      };
-
-      struct Ray {
-        pos: vec3f, // Origin
-        dir: vec3f, // Direction (normalized)
       };
 
       struct Hit {
@@ -465,13 +557,124 @@ createEffect(() => {
         imageBuffer[idx] += color;
       }
     `,
-  });
-  setComputeBindGroups(bindGroups);
-  setComputePipeline(pipeline);
 });
 
 const { canTimestamp, querySet, submit } = getTimestampHandler((times) => {
   setRenderGPUTime(Number(times[1] - times[0]));
+});
+
+createEffect(() => {
+  const { pipeline: debugBVHPipeline, bindGroups: debugBVHBindGroup } =
+    renderPipeline({
+      vertexShader: (x) => /* wgsl */ `
+        ${ray}
+  
+        ${x.bindVarBuffer('read-only-storage', 'bvh: array<BoundingVolume>', bvhBuffer)}
+        ${x.bindVarBuffer('uniform', 'viewProjMatrix: mat4x4f', viewProjBuffer)}
+  
+        const EDGES_PER_CUBE = 12u;
+  
+        @vertex
+        fn main(
+          @builtin(instance_index) instanceIndex: u32,
+          @builtin(vertex_index) vertexIndex: u32
+        ) -> @builtin(position) vec4f {
+          let lineInstanceIdx = instanceIndex % EDGES_PER_CUBE;
+          let aabbInstanceIdx = instanceIndex / EDGES_PER_CUBE;
+          let a = bvh[aabbInstanceIdx];
+          let aMin = a.min;
+          let aMax = a.max;
+          // let aMin = vec3f(0, 0, 0);
+          // let aMax = vec3f(1, 1, 1);
+          var pos: vec3f;
+          let fVertexIndex = f32(vertexIndex);
+                        
+            //      a7 _______________ a6
+            //       / |             /|
+            //      /  |            / |
+            //  a4 /   |       a5  /  |
+            //    /____|__________/   |
+            //    |    |__________|___|
+            //    |   / a3        |   / a2
+            //    |  /            |  /
+            //    | /             | /
+            //    |/______________|/
+            //    a0              a1
+  
+          let dx = aMax.x - aMin.x;
+          let dy = aMax.y - aMin.y;
+          let dz = aMax.z - aMin.z;
+          
+          let a0 = aMin;
+          let a1 = vec3f(aMin.x + dx, aMin.y,      aMin.z     );
+          let a2 = vec3f(aMin.x + dx, aMin.y,      aMin.z + dz);
+          let a3 = vec3f(aMin.x,      aMin.y,      aMin.z + dz);
+          let a4 = vec3f(aMin.x,      aMin.y + dy, aMin.z     );
+          let a5 = vec3f(aMin.x + dx, aMin.y + dy, aMin.z     );
+          let a6 = aMax;
+          let a7 = vec3f(aMin.x,      aMin.y + dy, aMin.z + dz);
+  
+          if (lineInstanceIdx == 0) {
+            pos = mix(a0, a1, fVertexIndex);
+          } else if (lineInstanceIdx == 1) {
+            pos = mix(a1, a2, fVertexIndex);
+          } else if (lineInstanceIdx == 2) {
+            pos = mix(a2, a3, fVertexIndex);
+          } else if (lineInstanceIdx == 3) {
+            pos = mix(a0, a3, fVertexIndex);
+          } else if (lineInstanceIdx == 4) {
+            pos = mix(a0, a4, fVertexIndex);
+          } else if (lineInstanceIdx == 5) {
+            pos = mix(a1, a5, fVertexIndex);
+          } else if (lineInstanceIdx == 6) {
+            pos = mix(a2, a6, fVertexIndex);
+          } else if (lineInstanceIdx == 7) {
+            pos = mix(a3, a7, fVertexIndex);
+          } else if (lineInstanceIdx == 8) {
+            pos = mix(a4, a5, fVertexIndex);
+          } else if (lineInstanceIdx == 9) {
+            pos = mix(a5, a6, fVertexIndex);
+          } else if (lineInstanceIdx == 10) {
+            pos = mix(a6, a7, fVertexIndex);
+          } else if (lineInstanceIdx == 11) {
+            pos = mix(a7, a4, fVertexIndex);
+          }
+          return viewProjMatrix * vec4(pos, 1);
+        }
+        `,
+      fragmentShader: () => /* wgsl */ `
+        @fragment
+        fn main() -> @location(0) vec4f {
+          return vec4f(0.01);
+          // return vec4f(1);
+        }
+      `,
+      fragmentPresentationFormatTarget: {
+        blend: {
+          color: {
+            srcFactor: 'one',
+            dstFactor: 'one-minus-src-alpha',
+          },
+          alpha: {
+            srcFactor: 'one',
+            dstFactor: 'one-minus-src-alpha',
+          },
+        },
+      },
+      primitive: {
+        topology: 'line-list',
+      },
+    });
+
+  setDebugBVHRenderBundle(
+    renderBundlePass({}, (renderPass) => {
+      renderPass.setPipeline(debugBVHPipeline);
+      debugBVHBindGroup.forEach((bindGroup, i) =>
+        renderPass.setBindGroup(i, bindGroup)
+      );
+      renderPass.draw(2, bvhLength * 12);
+    })
+  );
 });
 
 const rpd: GPURenderPassDescriptor = {
@@ -502,7 +705,7 @@ export function renderFrame(now: number) {
 
   // raytrace
   computePass(encoder, {}, (computePass) => {
-    computePass.setPipeline(_computePipeline());
+    computePass.setPipeline(computePipeline());
     computeBindGroups().forEach((bindGroup, i) =>
       computePass.setBindGroup(i, bindGroup)
     );

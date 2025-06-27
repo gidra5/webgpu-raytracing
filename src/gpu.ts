@@ -223,6 +223,7 @@ export const createBindGroup = (d: GPUBindGroupDescriptor) =>
 type RenderPipelineDescriptor = {
   vertexShader: (builder: PipelineBuilder) => string;
   fragmentShader?: (builder: PipelineBuilder) => string;
+  fragmentPresentationFormatTarget?: Omit<GPUColorTargetState, 'format'>;
 } & Omit<GPURenderPipelineDescriptor, 'fragment' | 'vertex' | 'layout'>;
 type RenderPipelineBuilderResult = {
   pipeline: GPURenderPipeline;
@@ -304,7 +305,9 @@ export const renderPipeline = (
   if (fragmentShaderModule) {
     d.fragment = {
       module: fragmentShaderModule,
-      targets: [{ format: presentationFormat }],
+      targets: [
+        { format: presentationFormat, ...x.fragmentPresentationFormatTarget },
+      ],
     };
   }
 

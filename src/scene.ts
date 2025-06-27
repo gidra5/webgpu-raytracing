@@ -3,6 +3,7 @@ import wavefrontObjParser from 'obj-file-parser';
 import { createStorageBuffer } from './gpu';
 import { Iterator } from 'iterator-js';
 import { BoundingVolumeHierarchy, facesBVH } from './bv';
+import { unitCubeModel } from './testCube';
 
 type Point = {
   position: vec3;
@@ -53,7 +54,7 @@ export const loadModels = async (): Promise<number[]> => {
   let posArray: ObjVector[] = [];
   let nrmArray: ObjVector[] = [];
 
-  // modelsCache.push(unitCubeModel);
+  modelsCache.push(unitCubeModel);
 
   return objFile.models.map(({ vertices, vertexNormals, faces, name }, i) => {
     console.log(name, i);

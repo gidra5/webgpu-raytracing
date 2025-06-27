@@ -56,7 +56,25 @@ const [store, setStore] = createStore({
 export const view = () => {
   const pos = vec3.clone(store.position);
   vec3.scale(pos, pos, -1);
-  const m = mat4.fromRotationTranslation(mat4.create(), store.orientation, pos);
+  const viewMatrix = mat4.fromRotationTranslation(
+    mat4.create(),
+    store.orientation,
+    pos
+  );
+  return viewMatrix;
+};
+
+export const viewProjectionMatrix = () => {
+  const m = mat4.create();
+
+  const viewMatrix = mat4.create();
+  mat4.invert(viewMatrix, view());
+
+  const projectionMatrix = mat4.create();
+  const r = store.view[0] / store.view[1];
+  const d = Math.tan(store.fov / 2);
+  mat4.perspectiveZO(projectionMatrix, 2 * Math.atan(d / r), r, 0.1, 1000);
+  mat4.multiply(m, projectionMatrix, viewMatrix);
   return m;
 };
 
