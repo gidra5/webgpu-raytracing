@@ -20,6 +20,7 @@ import {
   setView,
   ShadingType,
   store,
+  view,
 } from './store';
 import { createEffect, createSignal } from 'solid-js';
 import rng from './shaders/rng';
@@ -31,17 +32,7 @@ const context = canvas.getContext('webgpu');
 const device = await getDevice(context as GPUCanvasContext);
 const [imageBuffer, setImageBuffer] = createSignal<GPUBuffer>();
 const [blitRenderBundle, setBlitRenderBundle] = createSignal<GPURenderBundle>();
-const viewBuffer = reactiveUniformBuffer(16, () => {
-  const m = mat4.fromRotationTranslation(
-    mat4.create(),
-    store.orientation,
-    store.position
-  );
-  const m2 = mat4.create();
-  m2[1 + 4 * 1] = -1;
-  mat4.multiply(m, m, m2);
-  return m;
-});
+const viewBuffer = reactiveUniformBuffer(16, view);
 const [_computePipeline, setComputePipeline] =
   createSignal<GPUComputePipeline>();
 const [computeBindGroups, setComputeBindGroups] =
@@ -117,7 +108,8 @@ createEffect(() => {
       const viewport = vec2u(${store.view[0]}, ${store.view[1]});
 
       @fragment
-      fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4f {
+      fn main(@location(0) _uv: vec2<f32>) -> @location(0) vec4f {
+        let uv = vec2f(_uv.x, 1. - _uv.y);
         let pos = vec2u(uv * vec2f(viewport));
         // let idx = fma(pos.y, viewport.x, pos.x);
         let idx = pos.y * viewport.x + pos.x; 
@@ -206,7 +198,7 @@ const intersect = /* wgsl */ `
     let h = cross(ray.dir, e2);
     let det = dot(e1, h);
     
-    if abs(det) < EPSILON * EPSILON {
+    if det < EPSILON * EPSILON {
       return rec;
     }
 

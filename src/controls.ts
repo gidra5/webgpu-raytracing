@@ -52,6 +52,8 @@ canvas.addEventListener('pointermove', (e) => {
   if (skipEvents()) return;
 
   const d = vec2.fromValues(e.movementX, e.movementY);
+  const dt = store.timings.dt;
+  vec2.scale(d, d, (dt * store.sensitivity) / store.scale);
   rotateCamera(d);
 });
 
@@ -98,6 +100,8 @@ export const handleControls = () => {
   if (keys.includes('ShiftLeft')) {
     vec3.scale(d, d, store.runSpeed);
   }
+  const dt = store.timings.dt;
+  vec3.scale(d, d, dt * store.speed);
 
   move(d);
 };

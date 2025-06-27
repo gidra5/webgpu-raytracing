@@ -61,40 +61,55 @@ export const loadModels = async (): Promise<number[]> => {
     posArray = posArray.concat(vertices);
     nrmArray = nrmArray.concat(vertexNormals);
 
-    const _faces = faces.map((f, i): Face => {
-      const i0 = f.vertices[0].vertexIndex - 1;
-      const i1 = f.vertices[1].vertexIndex - 1;
-      const i2 = f.vertices[2].vertexIndex - 1;
-      const p0 = objVecToVec3(posArray[i0]);
-      const p1 = objVecToVec3(posArray[i1]);
-      const p2 = objVecToVec3(posArray[i2]);
+    const _faces = faces
+      .map((f, i): Face[] => {
+        const i0 = f.vertices[0].vertexIndex - 1;
+        const i1 = f.vertices[1].vertexIndex - 1;
+        const i2 = f.vertices[2].vertexIndex - 1;
+        const p0 = objVecToVec3(posArray[i0]);
+        const p1 = objVecToVec3(posArray[i1]);
+        const p2 = objVecToVec3(posArray[i2]);
 
-      const j0 = f.vertices[0].vertexNormalIndex - 1;
-      const j1 = f.vertices[1].vertexNormalIndex - 1;
-      const j2 = f.vertices[2].vertexNormalIndex - 1;
-      const n0 = objVecToVec3(nrmArray[j0]);
-      const n1 = objVecToVec3(nrmArray[j1]);
-      const n2 = objVecToVec3(nrmArray[j2]);
+        const j0 = f.vertices[0].vertexNormalIndex - 1;
+        const j1 = f.vertices[1].vertexNormalIndex - 1;
+        const j2 = f.vertices[2].vertexNormalIndex - 1;
+        const n0 = objVecToVec3(nrmArray[j0]);
+        const n1 = objVecToVec3(nrmArray[j1]);
+        const n2 = objVecToVec3(nrmArray[j2]);
 
-      const e1 = vec3.create();
-      const e2 = vec3.create();
-      vec3.sub(e1, p1, p0);
-      vec3.sub(e2, p2, p0);
+        const e1 = vec3.create();
+        const e2 = vec3.create();
+        vec3.sub(e1, p1, p0);
+        vec3.sub(e2, p2, p0);
 
-      const normal = vec3.create();
-      vec3.cross(normal, e1, e2);
-      vec3.normalize(normal, normal);
-      return {
-        materialIdx: 0,
-        normal,
-        idx: i,
-        points: [
-          { position: p0, normal: n0 },
-          { position: e1, normal: n1 },
-          { position: e2, normal: n2 },
-        ],
-      };
-    });
+        const normal = vec3.create();
+        vec3.cross(normal, e1, e2);
+        vec3.normalize(normal, normal);
+        return [
+          {
+            materialIdx: 0,
+            normal,
+            idx: i,
+            points: [
+              { position: p0, normal: n0 },
+              { position: e1, normal: n1 },
+              { position: e2, normal: n2 },
+            ],
+          },
+          // also add backfaces
+          // {
+          //   materialIdx: 0,
+          //   normal,
+          //   idx: i,
+          //   points: [
+          //     { position: p0, normal: n0 },
+          //     { position: e2, normal: n2 },
+          //     { position: e1, normal: n1 },
+          //   ],
+          // },
+        ];
+      })
+      .flat();
 
     const bvh = facesBVH(_faces);
 

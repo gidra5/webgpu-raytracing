@@ -1,4 +1,4 @@
-import { mat3, quat, vec2, vec3 } from 'gl-matrix';
+import { mat3, mat4, quat, vec2, vec3 } from 'gl-matrix';
 import { createStore } from 'solid-js/store';
 import { front, right, up } from './camera';
 
@@ -16,7 +16,7 @@ export enum ProjectionType {
 const [store, setStore] = createStore({
   loadingTitle: '' as string | null,
 
-  position: vec3.create(),
+  position: vec3.fromValues(0, 0, 0),
   orientation: quat.create(),
   view: vec2.create(),
 
@@ -24,7 +24,7 @@ const [store, setStore] = createStore({
   sampleCount: 1,
   bouncesCount: 1,
 
-  fov: Math.PI / 3,
+  fov: Math.PI / 2,
   focusDistance: 10,
   circleOfConfusion: 0,
   paniniDistance: 1,
@@ -52,6 +52,13 @@ const [store, setStore] = createStore({
 
   keyboard: [],
 });
+
+export const view = () => {
+  const pos = vec3.clone(store.position);
+  vec3.scale(pos, pos, -1);
+  const m = mat4.fromRotationTranslation(mat4.create(), store.orientation, pos);
+  return m;
+};
 
 export { store };
 
@@ -110,9 +117,6 @@ export const setRenderJSTime = (time: number) => {
 };
 
 export const rotateCamera = (d: vec2) => {
-  const dt = store.timings.dt;
-  vec2.scale(d, d, (dt * store.sensitivity) / store.scale);
-
   const orientation = quat.clone(store.orientation);
   const _right = vec3.clone(right);
   vec3.transformQuat(_right, _right, orientation);
@@ -150,12 +154,10 @@ export const move = (d: vec3) => {
   vec3.transformQuat(mvFront, mvFront, store.orientation);
   mvFront[1] = 0;
 
-  const dt = store.timings.dt;
   const position = vec3.clone(store.position);
 
   // @ts-ignore
   vec3.transformMat3(d, d, mat3.fromValues(...mvRight, ...mvUp, ...mvFront));
-  vec3.scale(d, d, -dt * store.speed);
   vec3.add(position, position, d);
 
   setStore('position', position);
