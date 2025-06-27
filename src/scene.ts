@@ -22,8 +22,8 @@ const objVecToVec3 = (v: ObjVector) => vec3.fromValues(v.x, v.y, v.z);
 
 // offsets and counts are in faceSize units
 type Allocation = { offset: number; count: number };
-const facePointSize = 6;
-const faceSize = 4 + 3 * facePointSize + 2;
+const facePointSize = 8;
+const faceSize = 4 + 3 * facePointSize;
 let facesBuffer: GPUBuffer | null = null;
 let facesOffsetBuffer: GPUBuffer | null = null;
 const allocations: Allocation[] = [];
@@ -113,11 +113,13 @@ const loadModelToBuffer = async (
       const { position, normal } = point;
       const k = i2 + 4 + j * facePointSize;
       mappedF32[k + 0] = position[0];
-      mappedF32[k + 1] = normal[0];
-      mappedF32[k + 2] = position[1];
-      mappedF32[k + 3] = normal[1];
-      mappedF32[k + 4] = position[2];
-      mappedF32[k + 5] = normal[2];
+      mappedF32[k + 1] = position[1];
+      mappedF32[k + 2] = position[2];
+      /* padding */
+      mappedF32[k + 4] = normal[0];
+      mappedF32[k + 5] = normal[1];
+      mappedF32[k + 6] = normal[2];
+      /* padding */
     }
   }
 };

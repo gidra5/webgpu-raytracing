@@ -172,10 +172,16 @@ const intersect = /* wgsl */ `
     barycentric: vec3f,
   }
 
+  struct Triangle {
+    p0: vec3f,
+    e1: vec3f,
+    e2: vec3f,
+  }
+
   @must_use
   fn rayIntersectFace(
     ray: Ray,
-    face: Face,
+    triangle: Triangle,
     interval: Interval
   ) -> IntersectonResult {
     var rec: IntersectonResult;
@@ -185,12 +191,9 @@ const intersect = /* wgsl */ `
     // https://en.wikipedia.org/wiki/Möller–Trumbore_intersection_algorithm
     // https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection.html
     
-    let pn0 = transpose(face.points[0].posNormalT);
-    let pn1 = transpose(face.points[1].posNormalT);
-    let pn2 = transpose(face.points[2].posNormalT);
-    let p0 = pn0[0];
-    let e1 = pn1[0];
-    let e2 = pn2[0];
+    let p0 = triangle.p0;
+    let e1 = triangle.e1;
+    let e2 = triangle.e2;
 
     let h = cross(ray.dir, e2);
     let det = dot(e1, h);
@@ -237,7 +240,8 @@ createEffect(() => {
       ${intervals}
 
       struct FacePoint {
-        posNormalT: mat3x2f // pos and normal packed into transposed 2x3 matrix. That way we don't waste space on alignment
+        pos: vec3f,
+        normal: vec3f,
       }
       struct Face {
         faceNormal: vec3f,
@@ -296,7 +300,11 @@ createEffect(() => {
 
         for (var i = 0u; i < facesLength; i = i + 1) {
           let face = faces[i];
-          let hit = rayIntersectFace(ray, face, Interval(min_dist, hitObj.dist));
+          let p0 = face.points[0].pos;
+          let e1 = face.points[1].pos;
+          let e2 = face.points[2].pos;
+          let triangle = Triangle(p0, e1, e2);
+          let hit = rayIntersectFace(ray, triangle, Interval(min_dist, hitObj.dist));
           if (hit.hit) {
             hitObj.hit = true;
             hitObj.dist = hit.barycentric.x;
@@ -304,10 +312,10 @@ createEffect(() => {
             if (flatShading == ${ShadingType.Flat}) {
               hitObj.normal = face.faceNormal;
             } else {
-              let pn0 = transpose(face.points[0].posNormalT);
-              let pn1 = transpose(face.points[1].posNormalT);
-              let pn2 = transpose(face.points[2].posNormalT);
-              let _n = mat3x3f(pn0[1], pn1[1], pn2[1]);
+              let n1 = face.points[0].normal;
+              let n2 = face.points[1].normal;
+              let n3 = face.points[2].normal;
+              let _n = mat3x3f(n1, n2, n3);
 
               let pt = hit.barycentric;
               let b = vec3f(1f - pt.y - pt.z, pt.y, pt.z);
