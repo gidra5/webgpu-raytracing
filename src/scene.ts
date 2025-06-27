@@ -179,8 +179,9 @@ const loadBVHOffsets = async (mapped: ArrayBuffer) => {
   }
 };
 
-export const loadModelsToBuffers = async () => {
-  const facesCount = Iterator.iter(modelsCache).sum((m) => m.faces.length);
+export const loadModelsToBuffers = async (modelIds: number[]) => {
+  const models = modelIds.map((id) => modelsCache[id]);
+  const facesCount = Iterator.iter(models).sum((m) => m.faces.length);
   const facesBuffer = createStorageBuffer(
     facesCount * faceSize * Float32Array.BYTES_PER_ELEMENT,
     'Faces Buffer',
@@ -188,7 +189,7 @@ export const loadModelsToBuffers = async () => {
   );
   const facesMapped = facesBuffer.getMappedRange();
 
-  for (const model of modelsCache) {
+  for (const model of models) {
     // TODO: allocation counts are wrong?
     const offset = allocateFace(model.faces.length);
     // console.log(
@@ -213,7 +214,7 @@ export const loadModelsToBuffers = async () => {
 
   facesOffsetBuffer.unmap();
 
-  const bvhCount = Iterator.iter(modelsCache).sum((m) => m.bvh.length);
+  const bvhCount = Iterator.iter(models).sum((m) => m.bvh.length);
   const bvhBuffer = createStorageBuffer(
     bvhCount * bvSize * Float32Array.BYTES_PER_ELEMENT,
     'BVH Buffer',
@@ -221,7 +222,7 @@ export const loadModelsToBuffers = async () => {
   );
   const bvhMapped = bvhBuffer.getMappedRange();
 
-  for (const model of modelsCache) {
+  for (const model of models) {
     const offset = allocateBVH(model.faces.length);
     await loadBVH(bvhMapped, model, offset * bvSize);
   }

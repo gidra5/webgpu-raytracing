@@ -24,11 +24,7 @@ import {
 import { createEffect, createSignal } from 'solid-js';
 import rng from './shaders/rng';
 import tonemapping from './shaders/tonemapping';
-import {
-  loadModels,
-  loadModelFacesToBuffer,
-  loadModelsToBuffers,
-} from './scene';
+import { loadModels, loadModelsToBuffers } from './scene';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const context = canvas.getContext('webgpu');
@@ -59,13 +55,14 @@ const [
   bvhBuffer,
   bvhOffsetBuffer,
   bvhLength,
-] = await loadModelsToBuffers();
+] = await loadModelsToBuffers([10]);
 const seedUniformBuffer = createUniformBuffer(4);
 const counterUniformBuffer = createUniformBuffer(4);
 
 const resize = () => {
-  canvas.width = canvas.clientWidth * devicePixelRatio;
-  canvas.height = canvas.clientHeight * devicePixelRatio;
+  const scale = devicePixelRatio * store.resolutionScale;
+  canvas.width = canvas.clientWidth * scale;
+  canvas.height = canvas.clientHeight * scale;
   setView(vec2.fromValues(canvas.width, canvas.height));
 };
 
@@ -76,8 +73,9 @@ window.addEventListener('resize', () => {
 
 createEffect<GPUBuffer>((prevBuffer) => {
   if (prevBuffer) prevBuffer.destroy();
-  const size =
-    Float32Array.BYTES_PER_ELEMENT * 4 * store.view[0] * store.view[1];
+  const width = store.view[0] + 1;
+  const height = store.view[1];
+  const size = Float32Array.BYTES_PER_ELEMENT * 4 * width * height;
   const buffer = createStorageBuffer(size, 'Raytraced Image Buffer');
   setImageBuffer(buffer);
   return buffer;
@@ -240,6 +238,123 @@ const intersect = /* wgsl */ `
   }
 `;
 
+const raygen = /* wgsl */ `
+  fn pinholeRay(pixel: vec2f) -> vec3f { 
+    return normalize(vec3(pixel, -1/tan(cameraFovAngle / 2.f)));
+  }
+
+  fn paniniRay(pixel: vec2f) -> vec3f {
+    let halfFOV = cameraFovAngle / 2.f;
+    let p = vec2(sin(halfFOV), cos(halfFOV) + paniniDistance);
+    let M = sqrt(dot(p, p));
+    let halfPaniniFOV = atan2(p.x, p.y);
+    let hvPan = pixel * vec2(halfPaniniFOV, halfFOV);
+    let x = sin(hvPan.x) * M;
+    let z = cos(hvPan.x) * M - paniniDistance;
+    // let y = tan(hvPan.y) * (z + verticalCompression);
+    let y = tan(hvPan.y) * (z + pow(max(0., (3. * cameraFovAngle/PI - 1.) / 8.), 0.92));
+
+    return normalize(vec3(x, y, z));
+  }
+
+  fn orthographicRay(uv: vec2f) -> vec3f {
+    return vec3(0, 0, 1);
+  }
+
+  fn thinLensRay(dir: vec3f, uv: vec2f) -> Ray {
+    let pos = vec3(uv * circleOfConfusionRadius, 0.f);
+    return Ray(
+      pos,
+      normalize(dir * lensFocusDistance - pos)
+    );
+  }
+
+  fn cameraRay(uv: vec2f) -> vec3f {
+    switch (projectionType) {
+      case ${ProjectionType.Panini}: {
+        return paniniRay(uv);
+      }
+      case ${ProjectionType.Perspective}: {
+        return pinholeRay(uv);
+      }
+      case ${ProjectionType.Orthographic}: {
+        return orthographicRay(uv);
+      }
+      default: {
+        return vec3(0);
+      }
+    }
+  }
+`;
+
+const scene = /* wgsl */ `
+  fn scene(ray: Ray) -> Hit {
+    var hitObj: Hit;
+    hitObj.hit = false;
+    hitObj.dist = max_dist;
+    hitObj.point = ray.pos;
+    hitObj.material.color = vec3(1.);
+    hitObj.material.emission = vec3(0.);
+
+    for (var i = 0u; i < facesLength; i = i + 1) {
+      let face = faces[i];
+      let p0 = face.points[0].pos;
+      let e1 = face.points[1].pos;
+      let e2 = face.points[2].pos;
+      let triangle = Triangle(p0, e1, e2);
+      let hit = rayIntersectFace(ray, triangle, Interval(min_dist, hitObj.dist));
+      if (hit.hit) {
+        hitObj.hit = true;
+        hitObj.dist = hit.barycentric.x;
+        hitObj.point = ray.pos + hit.barycentric.x * ray.dir;
+        if (flatShading == ${ShadingType.Flat}) {
+          hitObj.normal = face.faceNormal;
+        } else {
+          let n1 = face.points[0].normal;
+          let n2 = face.points[1].normal;
+          let n3 = face.points[2].normal;
+          let _n = mat3x3f(n1, n2, n3);
+
+          let pt = hit.barycentric;
+          let b = vec3f(1f - pt.y - pt.z, pt.y, pt.z);
+          let n = _n * b;
+          hitObj.normal = n;
+        }
+      }
+    }
+
+    return hitObj;
+  }
+
+  fn in_shadow(ray: Ray, mag_sq: f32) -> f32 {
+    let hitObj = scene(ray);
+    let hit = hitObj.hit;
+    let ds = hitObj.dist;
+
+    return select(1., 0., !hit || ds * ds >= mag_sq);
+  }
+
+  fn light_vis(pos: vec3f, dir: vec3f) -> f32 {
+    return in_shadow(Ray(pos, dir), 0.99 / (min_dist * min_dist));
+  }
+
+  fn sun_light_col(dir: vec3f, norm: vec3f) -> vec3f { 
+    return max(dot(-dir, norm), 0.) * sun_color;
+  }
+  fn sun(pos: vec3f, norm: vec3f) -> vec3f {
+    return light_vis(pos, sun_dir) * sun_light_col(sun_dir, norm) + ambience * sun_color;
+  }
+
+  fn ray_transform(_ray: Ray) -> Ray {
+    var ray = _ray;
+    let ray_pos = u_view * vec4(ray.pos, 1.);
+    ray.pos = ray_pos.xyz;
+    ray.dir = normalize(vec3(ray.dir.xy, ray.dir.z * ray_pos.w));
+    ray.dir = (u_view * vec4(ray.dir, 0.)).xyz;
+    return ray;
+  }
+`;
+
 createEffect(() => {
   const { pipeline, bindGroups } = computePipeline({
     shader: (x) => /* wgsl */ `
@@ -277,7 +392,7 @@ createEffect(() => {
       const sun_dir = normalize(vec3f(-1, 1, 1));
       const sphere_center = vec3f(0, 0, 4);
 
-      const viewport = vec2u(${store.view[0]}, ${store.view[0]});
+      const viewport = vec2u(${store.view[0]}, ${store.view[1]});
       const viewportf = vec2f(viewport);
 
       struct Material {
@@ -299,124 +414,12 @@ createEffect(() => {
       };
 
       ${intersect}
-
-      fn scene(ray: Ray) -> Hit {
-        var hitObj: Hit;
-        hitObj.hit = false;
-        hitObj.dist = max_dist;
-        hitObj.point = ray.pos;
-        hitObj.material.color = vec3(1.);
-        hitObj.material.emission = vec3(0.);
-
-        for (var i = 0u; i < facesLength; i = i + 1) {
-          let face = faces[i];
-          let p0 = face.points[0].pos;
-          let e1 = face.points[1].pos;
-          let e2 = face.points[2].pos;
-          let triangle = Triangle(p0, e1, e2);
-          let hit = rayIntersectFace(ray, triangle, Interval(min_dist, hitObj.dist));
-          if (hit.hit) {
-            hitObj.hit = true;
-            hitObj.dist = hit.barycentric.x;
-            hitObj.point = ray.pos + hit.barycentric.x * ray.dir;
-            if (flatShading == ${ShadingType.Flat}) {
-              hitObj.normal = face.faceNormal;
-            } else {
-              let n1 = face.points[0].normal;
-              let n2 = face.points[1].normal;
-              let n3 = face.points[2].normal;
-              let _n = mat3x3f(n1, n2, n3);
-
-              let pt = hit.barycentric;
-              let b = vec3f(1f - pt.y - pt.z, pt.y, pt.z);
-              let n = _n * b;
-              hitObj.normal = n;
-            }
-          }
-        }
-
-        return hitObj;
-      }
-
-
-      fn pinholeRay(pixel: vec2f) -> vec3f { 
-        return normalize(vec3(pixel, -1/tan(cameraFovAngle / 2.f)));
-      }
-
-      fn paniniRay(pixel: vec2f) -> vec3f {
-        let halfFOV = cameraFovAngle / 2.f;
-        let p = vec2(sin(halfFOV), cos(halfFOV) + paniniDistance);
-        let M = sqrt(dot(p, p));
-        let halfPaniniFOV = atan2(p.x, p.y);
-        let hvPan = pixel * vec2(halfPaniniFOV, halfFOV);
-        let x = sin(hvPan.x) * M;
-        let z = cos(hvPan.x) * M - paniniDistance;
-        // let y = tan(hvPan.y) * (z + verticalCompression);
-        let y = tan(hvPan.y) * (z + pow(max(0., (3. * cameraFovAngle/PI - 1.) / 8.), 0.92));
-
-        return normalize(vec3(x, y, z));
-      }
-
-      fn orthographicRay(uv: vec2f) -> vec3f {
-        return vec3(0, 0, 1);
-      }
-
-      fn thinLensRay(dir: vec3f, uv: vec2f) -> Ray {
-        let pos = vec3(uv * circleOfConfusionRadius, 0.f);
-        return Ray(
-          pos,
-          normalize(dir * lensFocusDistance - pos)
-        );
-      }
-
-      fn cameraRay(uv: vec2f) -> vec3f {
-        switch (projectionType) {
-          case ${ProjectionType.Panini}: {
-            return paniniRay(uv);
-          }
-          case ${ProjectionType.Perspective}: {
-            return pinholeRay(uv);
-          }
-          case ${ProjectionType.Orthographic}: {
-            return orthographicRay(uv);
-          }
-          default: {
-            return vec3(0);
-          }
-        }
-      }
-
-      fn in_shadow(ray: Ray, mag_sq: f32) -> f32 {
-        let hitObj = scene(ray);
-        let hit = hitObj.hit;
-        let ds = hitObj.dist;
-
-        return select(1., 0., !hit || ds * ds >= mag_sq);
-      }
-
-      fn light_vis(pos: vec3f, dir: vec3f) -> f32 {
-        return in_shadow(Ray(pos, dir), 0.99 / (min_dist * min_dist));
-      }
-
-      fn sun_light_col(dir: vec3f, norm: vec3f) -> vec3f { 
-        return max(dot(-dir, norm), 0.) * sun_color;
-      }
-      fn sun(pos: vec3f, norm: vec3f) -> vec3f {
-        return light_vis(pos, sun_dir) * sun_light_col(sun_dir, norm) + ambience * sun_color;
-      }
-
-      fn ray_transform(_ray: Ray) -> Ray {
-        var ray = _ray;
-        let ray_pos = u_view * vec4(ray.pos, 1.);
-        ray.pos = ray_pos.xyz;
-        ray.dir = normalize(vec3(ray.dir.xy, ray.dir.z * ray_pos.w));
-        ray.dir = (u_view * vec4(ray.dir, 0.)).xyz;
-        return ray;
-      }
+      ${scene}
+      ${raygen}
 
       @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
       fn main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>) {
-        if (any(globalInvocationId.xy > viewport)) {
+        if (any(globalInvocationId.xy >= viewport)) {
           return;
         }
 
@@ -426,6 +429,7 @@ createEffect(() => {
         let idx = upos.x + upos.y * viewport.x;
         let pos = vec2f(upos);
         rng_state = seed + idx;
+
         
         if (counter == 0u) {
           imageBuffer[idx] = vec3f(0);
@@ -448,7 +452,6 @@ createEffect(() => {
         color = (hitObj.normal+1)/2;
 
         imageBuffer[idx] += color;
-        // imageBuffer[idx] = color;
       }
     `,
   });
