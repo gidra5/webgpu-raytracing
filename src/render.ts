@@ -32,6 +32,8 @@ const context = canvas.getContext('webgpu');
 const device = await getDevice(context as GPUCanvasContext);
 const [imageBuffer, setImageBuffer] = createSignal<GPUBuffer>();
 const [blitRenderBundle, setBlitRenderBundle] = createSignal<GPURenderBundle>();
+const [debugBVHRenderBundle, setDebugBVHRenderBundle] =
+  createSignal<GPURenderBundle>();
 const viewBuffer = reactiveUniformBuffer(16, view);
 const [_computePipeline, setComputePipeline] =
   createSignal<GPUComputePipeline>();
@@ -140,6 +142,21 @@ createEffect(() => {
 const COMPUTE_WORKGROUP_SIZE_X = 16;
 const COMPUTE_WORKGROUP_SIZE_Y = 16;
 
+const ray = /* wgsl */ `
+  struct Ray {
+    pos: vec3f, // Origin
+    dir: vec3f, // Direction (normalized)
+  };
+
+  struct BoundingVolume {
+    min: vec3f,
+    max: vec3f,
+    leftIdx: i32,
+    rightIdx: i32,
+    faces: array<i32, 2>,
+  }
+`;
+
 const intervals = /* wgsl */ `
   struct Interval {
     min: f32,
@@ -167,9 +184,9 @@ const intervals = /* wgsl */ `
 `;
 
 const intersect = /* wgsl */ `
-  struct IntersectonResult {
-    hit: bool,
+  struct FaceIntersectonResult {
     barycentric: vec3f,
+    hit: bool,
   }
 
   struct Triangle {
@@ -183,9 +200,9 @@ const intersect = /* wgsl */ `
     ray: Ray,
     triangle: Triangle,
     interval: Interval
-  ) -> IntersectonResult {
-    var rec: IntersectonResult;
-    rec.hit = false;
+  ) -> FaceIntersectonResult {
+    var result: FaceIntersectonResult;
+    result.hit = false;
 
     // Mäller-Trumbore algorithm
     // https://en.wikipedia.org/wiki/Möller–Trumbore_intersection_algorithm
@@ -198,35 +215,37 @@ const intersect = /* wgsl */ `
     let h = cross(ray.dir, e2);
     let det = dot(e1, h);
     
-    if det < EPSILON * EPSILON {
-      return rec;
+    // negative determinant will do backface culling
+    // near zero determinant will detect parallel rays
+    if det < EPSILON * EPSILON { 
+      return result;
     }
 
     let s = ray.pos - p0;
     let u = dot(s, h);
 
     if u < 0.0f || u > det {
-      return rec;
+      return result;
     }
 
     let q = cross(s, e1);
     let v = dot(ray.dir, q);
 
     if v < 0.0f || u + v > det {
-      return rec;
+      return result;
     }
 
     let t = dot(e2, q);
     let pt = vec3f(t, u, v) / det;
 
     if !intervalSurrounds(interval, pt.x) {
-      return rec;
+      return result;
     }
 
-    rec.barycentric = pt;
-    rec.hit = true;
+    result.barycentric = pt;
+    result.hit = true;
     
-    return rec;
+    return result;
   }
 `;
 
@@ -455,12 +474,6 @@ const { canTimestamp, querySet, submit } = getTimestampHandler((times) => {
   setRenderGPUTime(Number(times[1] - times[0]));
 });
 
-const debugBVHRenderBundle = renderBundlePass({}, (renderPass) => {
-  //   renderPass.setPipeline(debugBVHPipeline);
-  //   renderPass.setBindGroup(0, debugBVHBindGroup);
-  //   renderPass.draw(2, Scene.AABBS_COUNT * 12);
-});
-
 const rpd: GPURenderPassDescriptor = {
   colorAttachments: [
     {
@@ -505,7 +518,7 @@ export function renderFrame(now: number) {
 
     // debug BVH
     if (store.debugBVH) {
-      renderPass.executeBundles([debugBVHRenderBundle]);
+      renderPass.executeBundles([debugBVHRenderBundle()]);
     }
   });
 
