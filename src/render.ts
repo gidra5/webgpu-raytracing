@@ -46,7 +46,8 @@ const [
   bvhBuffer,
   bvhOffsetBuffer,
   bvhLength,
-] = await loadModelsToBuffers([0, 11]);
+] = await loadModelsToBuffers([1, 0]);
+
 const seedUniformBuffer = createUniformBuffer(4);
 const counterUniformBuffer = createUniformBuffer(4);
 
@@ -273,20 +274,43 @@ const bvh = /* wgsl */ `
     var result: BVHIntersectonResult;
     var stack: array<u32, BV_MAX_STACK_DEPTH>;
     var top: i32;
+    result.barycentric.x = f32max;
 
-    let objIdx = 5u;
-    // for (var objIdx = 0u; objIdx < modelsCount; objIdx++) {
+    for (var objIdx = 0u; objIdx < modelsCount; objIdx++) {
       top = 0;
       let bvhOffset = bvhOffset[objIdx];
-      let bvhCount = bvhOffset.count;
       let facesOffset = facesOffset[objIdx].offset;
-      stack[0] = bvhOffset.offset;
+      stack[top] = bvhOffset.offset;
 
       while (top > -1) {
         var bvIdx = stack[top];
         top--;
         var bv = bvh[bvIdx];
         if (!rayIntersectBV(ray, bv)) {
+          continue;
+        }
+
+        var isLeaf = false;
+        for (var i = 0u; i < 2; i = i + 1) {
+          if (bv.faces[i] == -1) {
+            continue;
+          }
+          isLeaf = true;
+          let faceIdx = facesOffset + u32(bv.faces[i]);
+          let face = faces[faceIdx];
+          let p0 = face.points[0].pos;
+          let e1 = face.points[1].pos;
+          let e2 = face.points[2].pos;
+          let triangle = Triangle(p0, e1, e2);
+          let hit = rayIntersectFace(ray, triangle, Interval(min_dist, result.barycentric.x));
+          if (!hit.hit) {
+            continue;
+          }
+          result.barycentric = hit.barycentric;
+          result.hit = true;
+          result.faceIdx = faceIdx;
+        }
+        if (isLeaf) {
           continue;
         }
         
@@ -299,37 +323,8 @@ const bvh = /* wgsl */ `
           stack[top] = u32(bv.rightIdx);
         }
 
-        if (bv.faces[0] != -1) {
-          let faceIdx = facesOffset + u32(bv.faces[0]);
-          let face = faces[faceIdx];
-          let p0 = face.points[0].pos;
-          let e1 = face.points[1].pos;
-          let e2 = face.points[2].pos;
-          let triangle = Triangle(p0, e1, e2);
-          let hit = rayIntersectFace(ray, triangle, Interval(EPSILON, result.barycentric.x));
-          if (hit.hit) {
-            result.barycentric = hit.barycentric;
-            result.hit = true;
-            result.faceIdx = faceIdx;
-          }
-        }
-
-        if (bv.faces[1] != -1) {
-          let faceIdx = facesOffset + u32(bv.faces[1]);
-          let face = faces[faceIdx];
-          let p0 = face.points[0].pos;
-          let e1 = face.points[1].pos;
-          let e2 = face.points[2].pos;
-          let triangle = Triangle(p0, e1, e2);
-          let hit = rayIntersectFace(ray, triangle, Interval(EPSILON, result.barycentric.x));
-          if (hit.hit) {
-            result.barycentric = hit.barycentric;
-            result.hit = true;
-            result.faceIdx = faceIdx;
-          }
-        }
       }
-    // }
+    }
 
     return result;
   }
@@ -390,33 +385,28 @@ const scene = /* wgsl */ `
     hitObj.hit = false;
     hitObj.dist = max_dist;
     hitObj.point = ray.pos;
+    hitObj.normal = vec3f(0);
     hitObj.material.color = vec3(1.);
     hitObj.material.emission = vec3(0.);
 
-    for (var i = 0u; i < facesLength; i = i + 1) {
-      let face = faces[i];
-      let p0 = face.points[0].pos;
-      let e1 = face.points[1].pos;
-      let e2 = face.points[2].pos;
-      let triangle = Triangle(p0, e1, e2);
-      let hit = rayIntersectFace(ray, triangle, Interval(min_dist, hitObj.dist));
-      if (hit.hit) {
-        hitObj.hit = true;
-        hitObj.dist = hit.barycentric.x;
-        hitObj.point = ray.pos + hit.barycentric.x * ray.dir;
-        if (flatShading == ${ShadingType.Flat}) {
-          hitObj.normal = face.faceNormal;
-        } else {
-          let n1 = face.points[0].normal;
-          let n2 = face.points[1].normal;
-          let n3 = face.points[2].normal;
-          let _n = mat3x3f(n1, n2, n3);
+    let result = rayIntersectBVH(ray);
+    if (result.hit) {
+      let face = faces[result.faceIdx];
+      hitObj.hit = true;
+      hitObj.dist = result.barycentric.x;
+      hitObj.point = ray.pos + result.barycentric.x * ray.dir;
+      if (flatShading == ${ShadingType.Flat}) {
+        hitObj.normal = face.faceNormal;
+      } else {
+        let n1 = face.points[0].normal;
+        let n2 = face.points[1].normal;
+        let n3 = face.points[2].normal;
+        let _n = mat3x3f(n1, n2, n3);
 
-          let pt = hit.barycentric;
-          let b = vec3f(1f - pt.y - pt.z, pt.y, pt.z);
-          let n = _n * b;
-          hitObj.normal = n;
-        }
+        let pt = result.barycentric;
+        let b = vec3f(1f - pt.y - pt.z, pt.y, pt.z);
+        let n = _n * b;
+        hitObj.normal = n;
       }
     }
 
@@ -646,6 +636,7 @@ createEffect(() => {
         @fragment
         fn main() -> @location(0) vec4f {
           return vec4f(0.01);
+          // return vec4f(0.2); 
           // return vec4f(1);
         }
       `,
@@ -720,9 +711,9 @@ export function renderFrame(now: number) {
     renderPass.executeBundles([blitRenderBundle()]);
 
     // debug BVH
-    if (store.debugBVH) {
-      renderPass.executeBundles([debugBVHRenderBundle()]);
-    }
+    // if (store.debugBVH) {
+    renderPass.executeBundles([debugBVHRenderBundle()]);
+    // }
   });
 
   submit(encoder, () => {

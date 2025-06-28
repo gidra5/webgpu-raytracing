@@ -3,7 +3,7 @@ import wavefrontObjParser from 'obj-file-parser';
 import { createStorageBuffer } from './gpu';
 import { Iterator } from 'iterator-js';
 import { BoundingVolumeHierarchy, facesBVH } from './bv';
-import { unitCubeModel } from './testCube';
+import { triangleModel, unitCubeModel } from './testCube';
 
 type Point = {
   position: vec3;
@@ -27,7 +27,7 @@ const objVecToVec3 = (v: ObjVector) => vec3.fromValues(v.x, v.y, v.z);
 type Allocation = { offset: number; count: number };
 const facePointSize = 8;
 const faceSize = 4 + 3 * facePointSize;
-const bvSize = 2 * 12;
+const bvSize = 12;
 // face offsets and counts are in faceSize units
 const facesAllocations: Allocation[] = [];
 // bvh offsets and counts are in bvSize units
@@ -55,6 +55,9 @@ export const loadModels = async (): Promise<number[]> => {
   let nrmArray: ObjVector[] = [];
 
   modelsCache.push(unitCubeModel);
+  modelsCache.push(triangleModel);
+
+  // return modelsCache.map((_, i) => i);
 
   return objFile.models.map(({ vertices, vertexNormals, faces, name }, i) => {
     console.log(name, i);
@@ -183,6 +186,8 @@ const loadBVH = async (mapped: ArrayBuffer, model: Model, offset: number) => {
     mappedI32[idx + 10] = bv.faces[1];
     /* padding */
   }
+
+  // console.log(mappedF32, mappedI32);
 };
 
 const loadBVHOffsets = async (mapped: ArrayBuffer) => {

@@ -33,7 +33,8 @@ const [store, setStore] = createStore({
   shadingType: ShadingType.Phong,
   projectionType: ProjectionType.Perspective,
 
-  resolutionScale: 0.3,
+  // resolutionScale: 0.3,
+  resolutionScale: 1,
   scale: 1,
   sensitivity: 0.03,
   speed: 2,

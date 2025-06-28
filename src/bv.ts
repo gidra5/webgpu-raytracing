@@ -38,8 +38,13 @@ export const facesBV = (faces: Face[]): BoundingVolume => {
   );
 
   for (const face of faces) {
+    const points = Array.from({ length: 3 }, () => vec3.create());
+    vec3.copy(points[0], face.points[0].position);
+    vec3.add(points[1], points[0], face.points[1].position);
+    vec3.add(points[2], points[0], face.points[2].position);
+
     // calculate min/max for root AABB bounding volume
-    for (const { position: p } of face.points) {
+    for (const p of points) {
       vec3.min(min, min, p);
       vec3.max(max, max, p);
     }
@@ -57,11 +62,16 @@ export const facesBV = (faces: Face[]): BoundingVolume => {
   return bv(min, max);
 };
 
-export const facesBVH = (faces: Face[]): BoundingVolumeHierarchy => {
-  const bvh: BoundingVolume[] = [];
+export const facesBVH = (
+  faces: Face[],
+  bvh: BoundingVolumeHierarchy = []
+): BoundingVolumeHierarchy => {
+  if (faces.length === 0) return bvh;
+
   const bv = facesBV(faces);
   bvh.push(bv);
-  bvh.push(...subdivide(faces, bv));
+
+  subdivide(faces, bvh);
   return bvh;
 };
 
@@ -73,44 +83,48 @@ const axisMidpoint = (axis: Axis, f: Face): number => {
   );
 };
 
-const splitAcross = (axis: Axis, faces: Face[]): BoundingVolume[] => {
+const splitAcross = (
+  axis: Axis,
+  faces: Face[],
+  bvh: BoundingVolumeHierarchy
+): BoundingVolume[] => {
+  const parent = bvh[bvh.length - 1];
   const sorted = faces.toSorted((a, b) => {
     return axisMidpoint(axis, a) - axisMidpoint(axis, b);
   });
   const mid = Math.floor(sorted.length / 2);
   const left = sorted.slice(0, mid);
   const right = sorted.slice(mid);
-  const bvh: BoundingVolume[] = [];
 
   if (left.length > 0) {
-    bvh.push(...facesBVH(left));
+    parent.leftIdx = bvh.length;
+    facesBVH(left, bvh);
   }
-
   if (right.length > 0) {
-    bvh.push(...facesBVH(right));
+    parent.rightIdx = bvh.length;
+    facesBVH(right, bvh);
   }
 
   return bvh;
 };
 
-export const subdivide = (
-  faces: Face[],
-  bv: BoundingVolume
-): BoundingVolume[] => {
+export const subdivide = (faces: Face[], bvh: BoundingVolumeHierarchy) => {
+  const parent = bvh[bvh.length - 1];
+
   if (faces.length <= 2) {
     for (let i = 0; i < faces.length; i++) {
-      bv.faces[i] = faces[i].idx;
+      parent.faces[i] = faces[i].idx;
     }
     return [];
   }
   const d = vec3.create();
-  vec3.sub(d, bv.max, bv.min);
+  vec3.sub(d, parent.max, parent.min);
   const largestDelta = Math.max(...d);
   if (largestDelta === d[0]) {
-    return splitAcross(Axis.X, faces);
+    return splitAcross(Axis.X, faces, bvh);
   } else if (largestDelta === d[1]) {
-    return splitAcross(Axis.Y, faces);
+    return splitAcross(Axis.Y, faces, bvh);
   } else {
-    return splitAcross(Axis.Z, faces);
+    return splitAcross(Axis.Z, faces, bvh);
   }
 };
