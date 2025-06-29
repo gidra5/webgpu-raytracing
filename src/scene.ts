@@ -186,8 +186,6 @@ const loadBVH = async (mapped: ArrayBuffer, model: Model, offset: number) => {
     mappedI32[idx + 10] = bv.faces[1];
     /* padding */
   }
-
-  // console.log(mappedF32, mappedI32);
 };
 
 const loadBVHOffsets = async (mapped: ArrayBuffer) => {
@@ -211,15 +209,7 @@ export const loadModelsToBuffers = async (modelIds: number[]) => {
   const facesMapped = facesBuffer.getMappedRange();
 
   for (const model of models) {
-    // TODO: allocation counts are wrong?
     const offset = allocateFace(model.faces.length);
-    // console.log(
-    //   model.name,
-    //   offset,
-    //   model.faces.length,
-    //   model.faces[0].points[0].position
-    // );
-
     await loadModelToBuffer(facesMapped, model, offset * faceSize);
   }
 
@@ -244,9 +234,10 @@ export const loadModelsToBuffers = async (modelIds: number[]) => {
   const bvhMapped = bvhBuffer.getMappedRange();
 
   for (const model of models) {
-    const offset = allocateBVH(model.faces.length);
+    const offset = allocateBVH(model.bvh.length);
     await loadBVH(bvhMapped, model, offset * bvSize);
   }
+
   bvhBuffer.unmap();
 
   const bvhOffsetBuffer = createStorageBuffer(

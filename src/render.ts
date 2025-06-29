@@ -46,7 +46,7 @@ const [
   bvhBuffer,
   bvhOffsetBuffer,
   bvhLength,
-] = await loadModelsToBuffers([1, 0]);
+] = await loadModelsToBuffers(modelIds);
 
 const seedUniformBuffer = createUniformBuffer(4);
 const counterUniformBuffer = createUniformBuffer(4);
@@ -163,6 +163,11 @@ const intervals = /* wgsl */ `
   };
   
   @must_use
+  fn intervalOverlap(interval1: Interval, interval2: Interval) -> bool {
+    return interval1.min <= interval2.max || interval2.min <= interval1.max;
+  }
+  
+  @must_use
   fn intervalContains(interval: Interval, x: f32) -> bool {
     return interval.min <= x && x <= interval.max;
   }
@@ -197,7 +202,7 @@ const intersect = /* wgsl */ `
   @must_use
   fn rayIntersectFace(
     ray: Ray,
-    triangle: Triangle,
+    face: Face,
     interval: Interval
   ) -> FaceIntersectonResult {
     var result: FaceIntersectonResult;
@@ -207,9 +212,9 @@ const intersect = /* wgsl */ `
     // https://en.wikipedia.org/wiki/Möller–Trumbore_intersection_algorithm
     // https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection.html
     
-    let p0 = triangle.p0;
-    let e1 = triangle.e1;
-    let e2 = triangle.e2;
+    let p0 = face.points[0].pos;
+    let e1 = face.points[1].pos;
+    let e2 = face.points[2].pos;
 
     let h = cross(ray.dir, e2);
     let det = dot(e1, h);
@@ -256,14 +261,14 @@ const bvh = /* wgsl */ `
   }
   
   @must_use
-  fn rayIntersectBV(ray: Ray, bv: BoundingVolume) -> bool {
+  fn rayIntersectBV(ray: Ray, bv: BoundingVolume, interval: Interval) -> bool {
     let t0 = (bv.min - ray.pos) / ray.dir;
     let t1 = (bv.max - ray.pos) / ray.dir;
     let tmin = min(t0, t1);
     let tmax = max(t0, t1);
     let maxMinT = max(tmin.x, max(tmin.y, tmin.z));
     let minMaxT = min(tmax.x, min(tmax.y, tmax.z));
-    return maxMinT < minMaxT;
+    return maxMinT < minMaxT && intervalOverlap(interval, Interval(maxMinT, minMaxT));
   }
 
   const BV_MAX_STACK_DEPTH = 16;
@@ -272,37 +277,43 @@ const bvh = /* wgsl */ `
     ray: Ray,
   ) -> BVHIntersectonResult {
     var result: BVHIntersectonResult;
+    result.barycentric = vec3f(f32max, 0, 0);
+    result.hit = false;
+    result.faceIdx = 0;
+    
     var stack: array<u32, BV_MAX_STACK_DEPTH>;
     var top: i32;
-    result.barycentric.x = f32max;
 
     for (var objIdx = 0u; objIdx < modelsCount; objIdx++) {
       top = 0;
+      stack[top] = 0;
       let bvhOffset = bvhOffset[objIdx];
-      let facesOffset = facesOffset[objIdx].offset;
-      stack[top] = bvhOffset.offset;
+      let facesOffset = facesOffset[objIdx];
 
       while (top > -1) {
-        var bvIdx = stack[top];
+        let bv = bvh[bvhOffset.offset + stack[top]];
         top--;
-        var bv = bvh[bvIdx];
-        if (!rayIntersectBV(ray, bv)) {
+        if (!rayIntersectBV(ray, bv, Interval(min_dist, result.barycentric.x))) {
           continue;
         }
 
-        var isLeaf = false;
+        let isLeaf = bv.leftIdx == -1; // right will be -1 too
+        if (!isLeaf) {
+          top++;
+          stack[top] = u32(bv.leftIdx);
+          top++;
+          stack[top] = u32(bv.rightIdx);
+          continue;
+        }
+
         for (var i = 0u; i < 2; i = i + 1) {
-          if (bv.faces[i] == -1) {
+          let offset = bv.faces[i];
+          if offset == -1 {
             continue;
           }
-          isLeaf = true;
-          let faceIdx = facesOffset + u32(bv.faces[i]);
+          let faceIdx = facesOffset.offset + u32(offset);
           let face = faces[faceIdx];
-          let p0 = face.points[0].pos;
-          let e1 = face.points[1].pos;
-          let e2 = face.points[2].pos;
-          let triangle = Triangle(p0, e1, e2);
-          let hit = rayIntersectFace(ray, triangle, Interval(min_dist, result.barycentric.x));
+          let hit = rayIntersectFace(ray, face, Interval(min_dist, result.barycentric.x));
           if (!hit.hit) {
             continue;
           }
@@ -310,19 +321,6 @@ const bvh = /* wgsl */ `
           result.hit = true;
           result.faceIdx = faceIdx;
         }
-        if (isLeaf) {
-          continue;
-        }
-        
-        if (bv.leftIdx != -1) {
-          top++;
-          stack[top] = u32(bv.leftIdx);
-        }
-        if (bv.rightIdx != -1) {
-          top++;
-          stack[top] = u32(bv.rightIdx);
-        }
-
       }
     }
 
@@ -380,37 +378,55 @@ const raygen = /* wgsl */ `
 `;
 
 const scene = /* wgsl */ `
+  struct Hit {
+    hit: bool,
+    dist: f32,
+    point: vec3f,
+    normal: vec3f,
+    material: Material
+  };
+
   fn scene(ray: Ray) -> Hit {
-    var hitObj: Hit;
-    hitObj.hit = false;
-    hitObj.dist = max_dist;
-    hitObj.point = ray.pos;
-    hitObj.normal = vec3f(0);
-    hitObj.material.color = vec3(1.);
-    hitObj.material.emission = vec3(0.);
+    let hit = rayIntersectBVH(ray);
+    if !hit.hit {
+      let result = Hit(
+        false,
+        max_dist,
+        ray.pos,
+        vec3f(0),
+        Material(
+          vec3(1.),
+          vec3(0.),
+        )
+      );
+      return result;
+    }
+    
+    let face = faces[hit.faceIdx];
+    var result = Hit(
+      true,
+      hit.barycentric.x,
+      ray.pos + hit.barycentric.x * ray.dir,
+      face.faceNormal,
+      Material(
+        vec3(1.),
+        vec3(0.),
+      )
+    );
 
-    let result = rayIntersectBVH(ray);
-    if (result.hit) {
-      let face = faces[result.faceIdx];
-      hitObj.hit = true;
-      hitObj.dist = result.barycentric.x;
-      hitObj.point = ray.pos + result.barycentric.x * ray.dir;
-      if (flatShading == ${ShadingType.Flat}) {
-        hitObj.normal = face.faceNormal;
-      } else {
-        let n1 = face.points[0].normal;
-        let n2 = face.points[1].normal;
-        let n3 = face.points[2].normal;
-        let _n = mat3x3f(n1, n2, n3);
+    if (flatShading == ${ShadingType.Phong}) {
+      let n1 = face.points[0].normal;
+      let n2 = face.points[1].normal;
+      let n3 = face.points[2].normal;
+      let _n = mat3x3f(n1, n2, n3);
 
-        let pt = result.barycentric;
-        let b = vec3f(1f - pt.y - pt.z, pt.y, pt.z);
-        let n = _n * b;
-        hitObj.normal = n;
-      }
+      let pt = hit.barycentric;
+      let b = vec3f(1f - pt.y - pt.z, pt.y, pt.z);
+      let n = _n * b;
+      result.normal = n;
     }
 
-    return hitObj;
+    return result;
   }
 
   fn in_shadow(ray: Ray, mag_sq: f32) -> f32 {
@@ -496,14 +512,6 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       struct Material {
         color: vec3f,
         emission: vec3f
-      };
-
-      struct Hit {
-        normal: vec3f,
-        point: vec3f,
-        dist: f32,
-        hit: bool,
-        material: Material
       };
 
       ${intersect}
