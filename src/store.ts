@@ -41,7 +41,7 @@ const [store, setStore] = createStore({
   runSpeed: 5,
 
   debugBVH: false,
-  debugNormals: false,
+  debugNormals: true,
 
   timings: {
     time: 0, // ms

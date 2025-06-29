@@ -38,15 +38,9 @@ const [debugBVHRenderBundle, setDebugBVHRenderBundle] =
 const viewBuffer = reactiveUniformBuffer(16, view);
 const viewProjBuffer = reactiveUniformBuffer(16, viewProjectionMatrix);
 
-const modelIds = await loadModels();
-const [
-  facesBuffer,
-  facesOffsetBuffer,
-  facesLength,
-  bvhBuffer,
-  bvhOffsetBuffer,
-  bvhLength,
-] = await loadModelsToBuffers(modelIds);
+const models = await loadModels();
+const { facesBuffer, bvhBuffer, bvhCount, modelsBuffer } =
+  await loadModelsToBuffers(models);
 
 const seedUniformBuffer = createUniformBuffer(4);
 const counterUniformBuffer = createUniformBuffer(4);
@@ -59,9 +53,7 @@ const resize = () => {
 };
 
 resize();
-window.addEventListener('resize', () => {
-  resize();
-});
+window.addEventListener('resize', resize);
 
 createEffect<GPUBuffer>((prevBuffer) => {
   if (prevBuffer) prevBuffer.destroy();
@@ -141,10 +133,16 @@ createEffect(() => {
 const COMPUTE_WORKGROUP_SIZE_X = 16;
 const COMPUTE_WORKGROUP_SIZE_Y = 16;
 
-const ray = /* wgsl */ `
+const structs = /* wgsl */ `
   struct Ray {
     pos: vec3f, // Origin
     dir: vec3f, // Direction (normalized)
+  };
+
+  struct BoundRay {
+    pos: vec3f, // Origin
+    dir: vec3f, // Direction (normalized)
+    maxDist: f32, 
   };
 
   struct BoundingVolume {
@@ -154,6 +152,32 @@ const ray = /* wgsl */ `
     rightIdx: i32,
     faces: array<i32, 2>,
   }
+  
+  struct Offset {
+    offset: u32,
+    count: u32,
+  }
+
+  struct Model {
+    faces: Offset,
+    bvh: Offset,
+  }
+
+  struct FacePoint {
+    pos: vec3f,
+    normal: vec3f,
+  }
+
+  struct Face {
+    faceNormal: vec3f,
+    materialIdx: u32,
+    points: array<FacePoint, 3>
+  }
+
+  struct Material {
+    color: vec3f,
+    emission: vec3f
+  };
 `;
 
 const intervals = /* wgsl */ `
@@ -254,7 +278,7 @@ const intersect = /* wgsl */ `
 `;
 
 const bvh = /* wgsl */ `
-  struct BVHIntersectonResult {
+  struct BVHIntersectionResult {
     hit: bool,
     barycentric: vec3f,
     faceIdx: u32,
@@ -275,8 +299,8 @@ const bvh = /* wgsl */ `
   @must_use
   fn rayIntersectBVH(
     ray: Ray,
-  ) -> BVHIntersectonResult {
-    var result: BVHIntersectonResult;
+  ) -> BVHIntersectionResult {
+    var result: BVHIntersectionResult;
     result.barycentric = vec3f(f32max, 0, 0);
     result.hit = false;
     result.faceIdx = 0;
@@ -284,14 +308,15 @@ const bvh = /* wgsl */ `
     var stack: array<u32, BV_MAX_STACK_DEPTH>;
     var top: i32;
 
-    for (var objIdx = 0u; objIdx < modelsCount; objIdx++) {
+    for (var modelIdx = 0u; modelIdx < modelsCount; modelIdx++) {
       top = 0;
       stack[top] = 0;
-      let bvhOffset = bvhOffset[objIdx];
-      let facesOffset = facesOffset[objIdx];
+      let model = models[modelIdx];
+      let bvhOffset = model.bvh;
+      let facesOffset = model.faces;
 
       while (top > -1) {
-        let bv = bvh[bvhOffset.offset + stack[top]];
+        let bv = bvh[model.bvh.offset + stack[top]];
         top--;
         if (!rayIntersectBV(ray, bv, Interval(min_dist, result.barycentric.x))) {
           continue;
@@ -311,7 +336,7 @@ const bvh = /* wgsl */ `
           if offset == -1 {
             continue;
           }
-          let faceIdx = facesOffset.offset + u32(offset);
+          let faceIdx = model.faces.offset + u32(offset);
           let face = faces[faceIdx];
           let hit = rayIntersectFace(ray, face, Interval(min_dist, result.barycentric.x));
           if (!hit.hit) {
@@ -460,105 +485,84 @@ const scene = /* wgsl */ `
 
 const [computePipeline, computeBindGroups] = reactiveComputePipeline({
   shader: (x) => /* wgsl */ `
-      ${x.bindVarBuffer('storage', 'imageBuffer: array<vec3f>', imageBuffer())}
-      ${x.bindVarBuffer('uniform', 'u_view: mat4x4f', viewBuffer)}
+    ${x.bindVarBuffer('storage', 'imageBuffer: array<vec3f>', imageBuffer())}
+    ${x.bindVarBuffer('uniform', 'u_view: mat4x4f', viewBuffer)}
 
-      ${rng}
-      ${intervals}
-      ${bvh}
-      ${ray}
+    ${rng}
+    ${intervals}
+    ${bvh}
+    ${structs}
 
-      struct FacePoint {
-        pos: vec3f,
-        normal: vec3f,
+    const modelsCount = ${models.length};
+    ${x.bindVarBuffer('read-only-storage', 'faces: array<Face>', facesBuffer)}
+    ${x.bindVarBuffer('read-only-storage', 'bvh: array<BoundingVolume>', bvhBuffer)}
+    ${x.bindVarBuffer('read-only-storage', 'models: array<Model>', modelsBuffer)}
+
+
+    ${x.bindVarBuffer('uniform', 'seed: u32', seedUniformBuffer)}
+    ${x.bindVarBuffer('uniform', 'counter: u32', counterUniformBuffer)}
+    
+    const cameraFovAngle = ${store.fov};
+    const paniniDistance = ${store.paniniDistance};
+    const lensFocusDistance = ${store.focusDistance};
+    const circleOfConfusionRadius = ${store.circleOfConfusion};
+    const flatShading = ${store.shadingType};
+    const debugNormals = ${store.debugNormals};
+    const projectionType = ${store.projectionType};
+    
+    const ambience = ${store.ambience};
+    const sun_color = vec3f(1);
+    const sun_dir = normalize(vec3f(-1, 1, 1));
+    const sphere_center = vec3f(0, 0, 4);
+
+    const viewport = vec2u(${store.view[0]}, ${store.view[1]});
+    const viewportf = vec2f(viewport);
+
+
+    ${intersect}
+    ${scene}
+    ${raygen}
+
+    @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
+    fn main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>) {
+      if (any(globalInvocationId.xy >= viewport)) {
+        return;
       }
-      struct Face {
-        faceNormal: vec3f,
-        materialIdx: u32,
-        points: array<FacePoint, 3>
-      }
-      struct Offset {
-        offset: u32,
-        count: u32,
-      }
 
-      const modelsCount = ${modelIds.length};
-      ${x.bindVarBuffer('read-only-storage', 'faces: array<Face>', facesBuffer)}
-      ${x.bindVarBuffer('read-only-storage', 'facesOffset: array<Offset>', facesOffsetBuffer)}
-      const facesLength = ${facesLength};
-      ${x.bindVarBuffer('read-only-storage', 'bvh: array<BoundingVolume>', bvhBuffer)}
-      ${x.bindVarBuffer('read-only-storage', 'bvhOffset: array<Offset>', bvhOffsetBuffer)}
-      const bvhLength = ${bvhLength};
+      var color = vec3f(0);
 
+      let upos = globalInvocationId.xy;
+      let idx = upos.x + upos.y * viewport.x;
+      let pos = vec2f(upos);
+      rng_state = seed + idx;
 
-      ${x.bindVarBuffer('uniform', 'seed: u32', seedUniformBuffer)}
-      ${x.bindVarBuffer('uniform', 'counter: u32', counterUniformBuffer)}
       
-      const cameraFovAngle = ${store.fov};
-      const paniniDistance = ${store.paniniDistance};
-      const lensFocusDistance = ${store.focusDistance};
-      const circleOfConfusionRadius = ${store.circleOfConfusion};
-      const flatShading = ${store.shadingType};
-      const debugNormals = ${store.debugNormals};
-      const projectionType = ${store.projectionType};
-      
-      const ambience = ${store.ambience};
-      const sun_color = vec3f(1);
-      const sun_dir = normalize(vec3f(-1, 1, 1));
-      const sphere_center = vec3f(0, 0, 4);
-
-      const viewport = vec2u(${store.view[0]}, ${store.view[1]});
-      const viewportf = vec2f(viewport);
-
-      struct Material {
-        color: vec3f,
-        emission: vec3f
-      };
-
-      ${intersect}
-      ${scene}
-      ${raygen}
-
-      @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
-      fn main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>) {
-        if (any(globalInvocationId.xy >= viewport)) {
-          return;
-        }
-
-        var color = vec3f(0);
-
-        let upos = globalInvocationId.xy;
-        let idx = upos.x + upos.y * viewport.x;
-        let pos = vec2f(upos);
-        rng_state = seed + idx;
-
-        
-        if (counter == 0u) {
-          imageBuffer[idx] = vec3f(0);
-        }
-
-        let subpixel = random_2();
-        let uv = (2. * (pos + subpixel) - viewportf) / viewportf.x;
-        let rayDirection = cameraRayDirection(uv);
-        
-        var ray = thinLensRay(rayDirection, sample_incircle(random_2()));
-        ray = ray_transform(ray);
-
-        let hitObj = scene(ray);
-        let t = hitObj.dist;
-        if !hitObj.hit { 
-          return; 
-        }
-
-        if debugNormals {
-          color = (hitObj.normal+1)/2;
-        } else {
-          color += sun(ray.pos + t * ray.dir, hitObj.normal) * hitObj.material.color; 
-        }
-
-        imageBuffer[idx] += color;
+      if (counter == 0u) {
+        imageBuffer[idx] = vec3f(0);
       }
-    `,
+
+      let subpixel = random_2();
+      let uv = (2. * (pos + subpixel) - viewportf) / viewportf.x;
+      let rayDirection = cameraRayDirection(uv);
+      
+      var ray = thinLensRay(rayDirection, sample_incircle(random_2()));
+      ray = ray_transform(ray);
+
+      let hitObj = scene(ray);
+      let t = hitObj.dist;
+      if !hitObj.hit { 
+        return; 
+      }
+
+      if debugNormals {
+        color = (hitObj.normal+1)/2;
+      } else {
+        color += sun(ray.pos + t * ray.dir, hitObj.normal) * hitObj.material.color; 
+      }
+
+      imageBuffer[idx] += color;
+    }
+  `,
 });
 
 const { canTimestamp, querySet, submit } = getTimestampHandler((times) => {
@@ -569,7 +573,7 @@ createEffect(() => {
   const { pipeline: debugBVHPipeline, bindGroups: debugBVHBindGroup } =
     renderPipeline({
       vertexShader: (x) => /* wgsl */ `
-        ${ray}
+        ${structs}
   
         ${x.bindVarBuffer('read-only-storage', 'bvh: array<BoundingVolume>', bvhBuffer)}
         ${x.bindVarBuffer('uniform', 'viewProjMatrix: mat4x4f', viewProjBuffer)}
@@ -675,7 +679,7 @@ createEffect(() => {
       debugBVHBindGroup.forEach((bindGroup, i) =>
         renderPass.setBindGroup(i, bindGroup)
       );
-      renderPass.draw(2, bvhLength * 12);
+      renderPass.draw(2, bvhCount * 12);
     })
   );
 });
