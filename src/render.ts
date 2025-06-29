@@ -106,7 +106,7 @@ createEffect(() => {
         let pos = vec2u(uv * vec2f(viewport));
         // let idx = fma(pos.y, viewport.x, pos.x);
         let idx = pos.y * viewport.x + pos.x; 
-        let color = imageBuffer[idx] / f32(counter + 1);
+        let color = imageBuffer[idx] / f32(counter + ${store.sampleCount});
         // let color = imageBuffer[idx];
         let tonemapped = color;
         // let color = lottes(raytraceImageBuffer[idx] / f32(commonUniforms.frameCounter + 1));
@@ -283,18 +283,29 @@ const bvh = /* wgsl */ `
     barycentric: vec3f,
     faceIdx: u32,
   }
+  struct BVIntersectionResult {
+    hit: bool,
+    t: f32,
+  }
   
   @must_use
-  fn rayIntersectBV(ray: Ray, bv: BoundingVolume, interval: Interval) -> bool {
+  fn rayIntersectBV(ray: Ray, bv: BoundingVolume, interval: Interval) -> BVIntersectionResult {
     let t0 = (bv.min - ray.pos) / ray.dir;
     let t1 = (bv.max - ray.pos) / ray.dir;
     let tmin = min(t0, t1);
     let tmax = max(t0, t1);
-    let maxMinT = max(tmin.x, max(tmin.y, tmin.z));
-    let minMaxT = min(tmax.x, min(tmax.y, tmax.z));
-    return maxMinT < minMaxT && intervalOverlap(interval, Interval(maxMinT, minMaxT));
+    let near = max(tmin.x, max(tmin.y, tmin.z));
+    let far = min(tmax.x, min(tmax.y, tmax.z));
+    if near < far && intervalOverlap(interval, Interval(near, far)) {
+      return BVIntersectionResult(true, near);
+    }
+    return BVIntersectionResult(false, f32max);
   }
 
+  struct BVHIntersectionStackEntry {
+    idx: u32,
+    t: f32,
+  }
   const BV_MAX_STACK_DEPTH = 16;
   @must_use
   fn rayIntersectBVH(
@@ -305,46 +316,75 @@ const bvh = /* wgsl */ `
     result.hit = false;
     result.faceIdx = 0;
     
-    var stack: array<u32, BV_MAX_STACK_DEPTH>;
+    var stack: array<BVHIntersectionStackEntry, BV_MAX_STACK_DEPTH>;
     var top: i32;
 
     for (var modelIdx = 0u; modelIdx < modelsCount; modelIdx++) {
-      top = 0;
-      stack[top] = 0;
       let model = models[modelIdx];
-      let bvhOffset = model.bvh;
-      let facesOffset = model.faces;
+      let bv = bvh[model.bvh.offset];
+      let bvResult = rayIntersectBV(ray, bv, Interval(min_dist, result.barycentric.x));
+      if (!bvResult.hit) {
+        continue;
+      }
+
+      top = 0;
+      stack[top] = BVHIntersectionStackEntry(0, bvResult.t);
 
       while (top > -1) {
-        let bv = bvh[model.bvh.offset + stack[top]];
+        let stackEntry = stack[top];
         top--;
-        if (!rayIntersectBV(ray, bv, Interval(min_dist, result.barycentric.x))) {
+        if stackEntry.t > result.barycentric.x {
           continue;
         }
+
+        let bv = bvh[model.bvh.offset + stackEntry.idx];
 
         let isLeaf = bv.leftIdx == -1; // right will be -1 too
-        if (!isLeaf) {
-          top++;
-          stack[top] = u32(bv.leftIdx);
-          top++;
-          stack[top] = u32(bv.rightIdx);
+        if (isLeaf) {
+          for (var i = 0u; i < 2; i = i + 1) {
+            let offset = bv.faces[i];
+            if offset == -1 {
+              continue;
+            }
+            let faceIdx = model.faces.offset + u32(offset);
+            let face = faces[faceIdx];
+            let hit = rayIntersectFace(ray, face, Interval(min_dist, result.barycentric.x));
+            if (!hit.hit) {
+              continue;
+            }
+            result.barycentric = hit.barycentric;
+            result.hit = true;
+            result.faceIdx = faceIdx;
+          }
           continue;
         }
 
-        for (var i = 0u; i < 2; i = i + 1) {
-          let offset = bv.faces[i];
-          if offset == -1 {
-            continue;
+        let leftIdx = u32(bv.leftIdx);
+        let rightIdx = u32(bv.rightIdx);
+        let left = bvh[model.bvh.offset + u32(bv.leftIdx)];
+        let right = bvh[model.bvh.offset + u32(bv.rightIdx)];
+        let resultLeft = rayIntersectBV(ray, left, Interval(min_dist, result.barycentric.x));
+        let resultRight = rayIntersectBV(ray, right, Interval(min_dist, result.barycentric.x));
+        if resultLeft.hit && resultRight.hit {
+          let leftEntry = BVHIntersectionStackEntry(leftIdx, resultLeft.t);
+          let rightEntry = BVHIntersectionStackEntry(rightIdx, resultRight.t);
+          if resultLeft.t < resultRight.t {
+            top++;
+            stack[top] = rightEntry;
+            top++;
+            stack[top] = leftEntry;
+          } else {
+            top++;
+            stack[top] = leftEntry;
+            top++;
+            stack[top] = rightEntry;
           }
-          let faceIdx = model.faces.offset + u32(offset);
-          let face = faces[faceIdx];
-          let hit = rayIntersectFace(ray, face, Interval(min_dist, result.barycentric.x));
-          if (!hit.hit) {
-            continue;
-          }
-          result.barycentric = hit.barycentric;
-          result.hit = true;
-          result.faceIdx = faceIdx;
+        } else if resultLeft.hit {
+          top++;
+          stack[top] = BVHIntersectionStackEntry(leftIdx, resultLeft.t);
+        } else if resultRight.hit {
+          top++;
+          stack[top] = BVHIntersectionStackEntry(rightIdx, resultRight.t);
         }
       }
     }
@@ -481,6 +521,10 @@ const scene = /* wgsl */ `
     ray.dir = (u_view * vec4(ray.dir, 0.)).xyz;
     return ray;
   }
+
+  fn skyColor(dir: vec3f) -> vec3f {
+    return vec3f(0.1);
+  }
 `;
 
 const [computePipeline, computeBindGroups] = reactiveComputePipeline({
@@ -541,26 +585,29 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
         imageBuffer[idx] = vec3f(0);
       }
 
-      let subpixel = random_2();
-      let uv = (2. * (pos + subpixel) - viewportf) / viewportf.x;
-      let rayDirection = cameraRayDirection(uv);
-      
-      var ray = thinLensRay(rayDirection, sample_incircle(random_2()));
-      ray = ray_transform(ray);
+      for (var i = 0u; i < ${store.sampleCount}; i++) {
+        let subpixel = random_2();
+        let uv = (2. * (pos + subpixel) - viewportf) / viewportf.x;
+        let rayDirection = cameraRayDirection(uv);
+        
+        var ray = thinLensRay(rayDirection, sample_incircle(random_2()));
+        ray = ray_transform(ray);
 
-      let hitObj = scene(ray);
-      let t = hitObj.dist;
-      if !hitObj.hit { 
-        return; 
+        let hitObj = scene(ray);
+        let t = hitObj.dist;
+        if !hitObj.hit {
+          imageBuffer[idx] = skyColor(ray.dir);
+          continue; 
+        }
+
+        if debugNormals {
+          color = (hitObj.normal+1)/2;
+        } else {
+          color += sun(ray.pos + t * ray.dir, hitObj.normal) * hitObj.material.color; 
+        }
+
+        imageBuffer[idx] += color;
       }
-
-      if debugNormals {
-        color = (hitObj.normal+1)/2;
-      } else {
-        color += sun(ray.pos + t * ray.dir, hitObj.normal) * hitObj.material.color; 
-      }
-
-      imageBuffer[idx] += color;
     }
   `,
 });

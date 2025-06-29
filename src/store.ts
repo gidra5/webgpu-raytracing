@@ -21,7 +21,7 @@ const [store, setStore] = createStore({
   view: vec2.create(),
 
   counter: 0,
-  sampleCount: 1,
+  sampleCount: 16,
   bouncesCount: 1,
 
   fov: Math.PI / 2,
@@ -34,11 +34,15 @@ const [store, setStore] = createStore({
   projectionType: ProjectionType.Perspective,
 
   // resolutionScale: 0.3,
-  resolutionScale: 3,
+  resolutionScale: 1,
   scale: 1,
   sensitivity: 0.03,
   speed: 2,
   runSpeed: 5,
+  bvh: {
+    maxDepth: 16,
+    leafSoftMaxSize: 2,
+  },
 
   debugBVH: false,
   debugNormals: true,
@@ -95,7 +99,7 @@ export const resetCounter = () => {
 };
 
 export const incrementCounter = () => {
-  setStore('counter', store.counter + 1);
+  setStore('counter', store.counter + store.sampleCount);
 };
 
 export const setFov = (fov: number) => {
