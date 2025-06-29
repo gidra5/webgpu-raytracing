@@ -34,13 +34,14 @@ const [store, setStore] = createStore({
   projectionType: ProjectionType.Perspective,
 
   // resolutionScale: 0.3,
-  resolutionScale: 1,
+  resolutionScale: 3,
   scale: 1,
   sensitivity: 0.03,
   speed: 2,
   runSpeed: 5,
 
   debugBVH: false,
+  debugNormals: false,
 
   timings: {
     time: 0, // ms
@@ -119,6 +120,11 @@ export const setView = (view: vec2) => {
 
 export const setDebugBVH = (debugBVH: boolean) => {
   setStore('debugBVH', debugBVH);
+  resetCounter();
+};
+
+export const setDebugNormals = (debugNormals: boolean) => {
+  setStore('debugNormals', debugNormals);
   resetCounter();
 };
 

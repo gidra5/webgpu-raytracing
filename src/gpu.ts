@@ -18,7 +18,12 @@ export const getDevice = async (context: GPUCanvasContext) => {
     requiredFeatures.push('timestamp-query');
   }
 
-  device = await adapter.requestDevice({ requiredFeatures });
+  device = await adapter.requestDevice({
+    requiredFeatures,
+    requiredLimits: {
+      maxStorageBufferBindingSize: 2147483644,
+    },
+  });
   presentationFormat =
     navigator.gpu.getPreferredCanvasFormat?.() ?? 'bgra8unorm';
 

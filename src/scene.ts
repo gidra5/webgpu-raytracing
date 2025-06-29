@@ -59,7 +59,7 @@ export const loadModels = async (): Promise<number[]> => {
 
   // return modelsCache.map((_, i) => i);
 
-  return objFile.models.map(({ vertices, vertexNormals, faces, name }, i) => {
+  objFile.models.forEach(({ vertices, vertexNormals, faces, name }, i) => {
     console.log(name, i);
 
     posArray = posArray.concat(vertices);
@@ -117,8 +117,10 @@ export const loadModels = async (): Promise<number[]> => {
 
     const bvh = facesBVH(_faces);
 
-    return modelsCache.push({ name, faces: _faces, bvh }) - 1;
+    modelsCache.push({ name, faces: _faces, bvh });
   });
+
+  return modelsCache.map((_, i) => i);
 };
 
 export const getModel = (index: number): Model => {

@@ -329,11 +329,11 @@ const bvh = /* wgsl */ `
 `;
 
 const raygen = /* wgsl */ `
-  fn pinholeRay(pixel: vec2f) -> vec3f {
+  fn pinholeRayDirection(pixel: vec2f) -> vec3f {
     return normalize(vec3(pixel, -1/tan(cameraFovAngle / 2.f)));
   }
 
-  fn paniniRay(pixel: vec2f) -> vec3f {
+  fn paniniRayDirection(pixel: vec2f) -> vec3f {
     let halfFOV = cameraFovAngle / 2.f;
     let p = vec2(sin(halfFOV), cos(halfFOV) + paniniDistance);
     let M = sqrt(dot(p, p));
@@ -347,7 +347,7 @@ const raygen = /* wgsl */ `
     return normalize(vec3(x, y, z));
   }
 
-  fn orthographicRay(uv: vec2f) -> vec3f {
+  fn orthographicRayDirection(uv: vec2f) -> vec3f {
     return vec3(0, 0, 1);
   }
 
@@ -359,16 +359,16 @@ const raygen = /* wgsl */ `
     );
   }
 
-  fn cameraRay(uv: vec2f) -> vec3f {
+  fn cameraRayDirection(uv: vec2f) -> vec3f {
     switch (projectionType) {
       case ${ProjectionType.Panini}: {
-        return paniniRay(uv);
+        return paniniRayDirection(uv);
       }
       case ${ProjectionType.Perspective}: {
-        return pinholeRay(uv);
+        return pinholeRayDirection(uv);
       }
       case ${ProjectionType.Orthographic}: {
-        return orthographicRay(uv);
+        return orthographicRayDirection(uv);
       }
       default: {
         return vec3(0);
@@ -499,6 +499,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       const lensFocusDistance = ${store.focusDistance};
       const circleOfConfusionRadius = ${store.circleOfConfusion};
       const flatShading = ${store.shadingType};
+      const debugNormals = ${store.debugNormals};
       const projectionType = ${store.projectionType};
       
       const ambience = ${store.ambience};
@@ -538,19 +539,22 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
 
         let subpixel = random_2();
         let uv = (2. * (pos + subpixel) - viewportf) / viewportf.x;
-        let rayDirection = cameraRay(uv);
+        let rayDirection = cameraRayDirection(uv);
         
         var ray = thinLensRay(rayDirection, sample_incircle(random_2()));
         ray = ray_transform(ray);
 
         let hitObj = scene(ray);
         let t = hitObj.dist;
-        if (!hitObj.hit) { 
-          // imageBuffer[idx] = vec3f(0);
+        if !hitObj.hit { 
           return; 
         }
-        // color += sun(ray.pos + t * ray.dir, hitObj.normal) * hitObj.material.color; 
-        color = (hitObj.normal+1)/2;
+
+        if debugNormals {
+          color = (hitObj.normal+1)/2;
+        } else {
+          color += sun(ray.pos + t * ray.dir, hitObj.normal) * hitObj.material.color; 
+        }
 
         imageBuffer[idx] += color;
       }
@@ -719,9 +723,9 @@ export function renderFrame(now: number) {
     renderPass.executeBundles([blitRenderBundle()]);
 
     // debug BVH
-    // if (store.debugBVH) {
-    renderPass.executeBundles([debugBVHRenderBundle()]);
-    // }
+    if (store.debugBVH) {
+      renderPass.executeBundles([debugBVHRenderBundle()]);
+    }
   });
 
   submit(encoder, () => {

@@ -2,6 +2,7 @@ import { Accessor, createEffect, createSignal, type Component } from 'solid-js';
 import {
   ProjectionType,
   setDebugBVH,
+  setDebugNormals,
   setFov,
   setProjectionType,
   setShadingType,
@@ -62,6 +63,15 @@ const App: Component = () => {
           onChange={(e) => setDebugBVH(e.target.checked)}
         />
         Debug BVH
+      </label>
+      <label class="flex gap-1 text-white text-sm items-baseline">
+        <input
+          class="m-0"
+          type="checkbox"
+          checked={store.debugNormals}
+          onChange={(e) => setDebugNormals(e.target.checked)}
+        />
+        Debug Normals
       </label>
       <label class="flex gap-2 text-white text-sm items-baseline">
         Shading type
