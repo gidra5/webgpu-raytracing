@@ -14,14 +14,14 @@ export type BoundingVolume = {
   min: vec3;
   max: vec3;
 
-  leftIdx: number; // left child BV index
+  // left child BV index is implicitly the next value
   rightIdx: number; // right child BV index
   faces: number[]; // face indices
 };
 export type BoundingVolumeHierarchy = BoundingVolume[];
 
 const bv = (min: vec3, max: vec3): BoundingVolume => {
-  return { min, max, leftIdx: -1, rightIdx: -1, faces: [-1, -1] };
+  return { min, max, rightIdx: -1, faces: [-1, -1] };
 };
 
 export const facesBV = (faces: Face[]): BoundingVolume => {
@@ -97,7 +97,6 @@ const splitAcross = (
   const right = sorted.slice(mid);
 
   if (left.length > 0) {
-    parent.leftIdx = bvh.length;
     facesBVH(left, bvh);
   }
   if (right.length > 0) {

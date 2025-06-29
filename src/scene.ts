@@ -177,15 +177,12 @@ const loadBVH = async (mapped: ArrayBuffer, model: Model, offset: number) => {
     mappedF32[idx + 0] = bv.min[0];
     mappedF32[idx + 1] = bv.min[1];
     mappedF32[idx + 2] = bv.min[2];
-    /* padding */
+    mappedI32[idx + 3] = bv.rightIdx;
     mappedF32[idx + 4] = bv.max[0];
     mappedF32[idx + 5] = bv.max[1];
     mappedF32[idx + 6] = bv.max[2];
-    mappedI32[idx + 7] = bv.leftIdx;
-    mappedI32[idx + 8] = bv.rightIdx;
-    mappedI32[idx + 9] = bv.faces[0];
-    mappedI32[idx + 10] = bv.faces[1];
-    /* padding */
+    mappedI32[idx + 7] = bv.faces[0];
+    mappedI32[idx + 8] = bv.faces[1];
   }
 };
 

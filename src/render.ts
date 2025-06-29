@@ -147,9 +147,8 @@ const structs = /* wgsl */ `
 
   struct BoundingVolume {
     min: vec3f,
-    max: vec3f,
-    leftIdx: i32,
     rightIdx: i32,
+    max: vec3f,
     faces: array<i32, 2>,
   }
   
@@ -337,9 +336,10 @@ const bvh = /* wgsl */ `
           continue;
         }
 
-        let bv = bvh[model.bvh.offset + stackEntry.idx];
+        let idx = stackEntry.idx;
+        let bv = bvh[model.bvh.offset + idx];
 
-        let isLeaf = bv.leftIdx == -1; // right will be -1 too
+        let isLeaf = bv.rightIdx == -1; // right will be -1 too
         if (isLeaf) {
           for (var i = 0u; i < 2; i = i + 1) {
             let offset = bv.faces[i];
@@ -359,10 +359,10 @@ const bvh = /* wgsl */ `
           continue;
         }
 
-        let leftIdx = u32(bv.leftIdx);
+        let leftIdx = u32(idx + 1);
         let rightIdx = u32(bv.rightIdx);
-        let left = bvh[model.bvh.offset + u32(bv.leftIdx)];
-        let right = bvh[model.bvh.offset + u32(bv.rightIdx)];
+        let left = bvh[model.bvh.offset + leftIdx];
+        let right = bvh[model.bvh.offset + rightIdx];
         let resultLeft = rayIntersectBV(ray, left, Interval(min_dist, result.barycentric.x));
         let resultRight = rayIntersectBV(ray, right, Interval(min_dist, result.barycentric.x));
         if resultLeft.hit && resultRight.hit {
