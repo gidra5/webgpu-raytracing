@@ -215,7 +215,7 @@ const intervals = /* wgsl */ `
   const positiveUniverseInterval = Interval(EPSILON, f32max);
 `;
 
-const intersect = /* wgsl */ `
+const rayIntersect = /* wgsl */ `
   struct FaceIntersectonResult {
     barycentric: vec3f,
     hit: bool,
@@ -281,12 +281,7 @@ const intersect = /* wgsl */ `
   }
 `;
 
-const bvh = /* wgsl */ `
-  struct BVHIntersectionResult {
-    hit: bool,
-    barycentric: vec3f,
-    faceIdx: u32,
-  }
+const bvIntersect = /* wgsl */ `
   struct BVIntersectionResult {
     hit: bool,
     t: f32,
@@ -304,6 +299,14 @@ const bvh = /* wgsl */ `
       return BVIntersectionResult(true, near);
     }
     return BVIntersectionResult(false, f32max);
+  }
+`;
+
+const bvh = () => /* wgsl */ `
+  struct BVHIntersectionResult {
+    hit: bool,
+    barycentric: vec3f,
+    faceIdx: u32,
   }
 
   struct BVHIntersectionStackEntry {
@@ -398,7 +401,13 @@ const bvh = /* wgsl */ `
   }
 `;
 
-const raygen = /* wgsl */ `
+const raygen = () => /* wgsl */ `
+  const cameraFovAngle = ${store.fov};
+  const paniniDistance = ${store.paniniDistance};
+  const lensFocusDistance = ${store.focusDistance};
+  const circleOfConfusionRadius = ${store.circleOfConfusion};
+  const projectionType = ${store.projectionType};
+
   fn pinholeRayDirection(pixel: vec2f) -> vec3f {
     return normalize(vec3(pixel, -1/tan(cameraFovAngle / 2.f)));
   }
@@ -447,7 +456,14 @@ const raygen = /* wgsl */ `
   }
 `;
 
-const scene = /* wgsl */ `
+const scene = () => /* wgsl */ `
+  const flatShading = ${store.shadingType};
+    
+  const ambience = ${store.ambience};
+  const sun_color = vec3f(1);
+  const sun_dir = normalize(vec3f(-1, 1, 1));
+  const sphere_center = vec3f(0, 0, 4);
+
   struct Hit {
     hit: bool,
     dist: f32,
@@ -478,10 +494,7 @@ const scene = /* wgsl */ `
       hit.barycentric.x,
       ray.pos + hit.barycentric.x * ray.dir,
       face.faceNormal,
-      Material(
-        vec3(1.),
-        vec3(0.),
-      )
+      materials[face.materialIdx]
     );
 
     if (flatShading == ${ShadingType.Phong}) {
@@ -537,11 +550,6 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindVarBuffer('storage', 'imageBuffer: array<vec3f>', imageBuffer())}
     ${x.bindVarBuffer('uniform', 'u_view: mat4x4f', viewBuffer)}
 
-    ${rng}
-    ${intervals}
-    ${bvh}
-    ${structs}
-
     const modelsCount = ${models.length};
     ${x.bindVarBuffer('read-only-storage', 'faces: array<Face>', facesBuffer)}
     ${x.bindVarBuffer('read-only-storage', 'bvh: array<BoundingVolume>', bvhBuffer)}
@@ -552,26 +560,19 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindVarBuffer('uniform', 'seed: u32', seedUniformBuffer)}
     ${x.bindVarBuffer('uniform', 'counter: u32', counterUniformBuffer)}
     
-    const cameraFovAngle = ${store.fov};
-    const paniniDistance = ${store.paniniDistance};
-    const lensFocusDistance = ${store.focusDistance};
-    const circleOfConfusionRadius = ${store.circleOfConfusion};
-    const flatShading = ${store.shadingType};
     const debugNormals = ${store.debugNormals};
-    const projectionType = ${store.projectionType};
-    
-    const ambience = ${store.ambience};
-    const sun_color = vec3f(1);
-    const sun_dir = normalize(vec3f(-1, 1, 1));
-    const sphere_center = vec3f(0, 0, 4);
 
     const viewport = vec2u(${store.view[0]}, ${store.view[1]});
     const viewportf = vec2f(viewport);
 
-
-    ${intersect}
-    ${scene}
-    ${raygen}
+    ${rng}
+    ${intervals}
+    ${bvh()}
+    ${structs}
+    ${rayIntersect}
+    ${bvIntersect}
+    ${scene()}
+    ${raygen()}
 
     @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
     fn main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>) {
@@ -609,6 +610,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
         if debugNormals {
           color = (hitObj.normal+1)/2;
         } else {
+          let material = hitObj.material;
           color += sun(ray.pos + t * ray.dir, hitObj.normal) * hitObj.material.color; 
         }
 

@@ -2,6 +2,7 @@ import { vec3 } from 'gl-matrix';
 import { Face } from './scene';
 import { Iterator } from 'iterator-js';
 import { assert } from './utils';
+import { store } from './store';
 
 export enum Axis {
   X,
@@ -64,14 +65,15 @@ export const facesBV = (faces: Face[]): BoundingVolume => {
 
 export const facesBVH = (
   faces: Face[],
-  bvh: BoundingVolumeHierarchy = []
+  bvh: BoundingVolumeHierarchy = [],
+  depth = 0
 ): BoundingVolumeHierarchy => {
   if (faces.length === 0) return bvh;
 
   const bv = facesBV(faces);
   bvh.push(bv);
 
-  subdivide(faces, bvh);
+  subdivide(faces, bvh, depth);
   return bvh;
 };
 
@@ -86,7 +88,8 @@ const axisMidpoint = (axis: Axis, f: Face): number => {
 const splitAcross = (
   axis: Axis,
   faces: Face[],
-  bvh: BoundingVolumeHierarchy
+  bvh: BoundingVolumeHierarchy,
+  depth: number
 ): BoundingVolume[] => {
   const parent = bvh[bvh.length - 1];
   const sorted = faces.toSorted((a, b) => {
@@ -97,18 +100,33 @@ const splitAcross = (
   const right = sorted.slice(mid);
 
   if (left.length > 0) {
-    facesBVH(left, bvh);
+    facesBVH(left, bvh, depth);
   }
   if (right.length > 0) {
     parent.rightIdx = bvh.length;
-    facesBVH(right, bvh);
+    facesBVH(right, bvh, depth);
   }
 
   return bvh;
 };
 
-export const subdivide = (faces: Face[], bvh: BoundingVolumeHierarchy) => {
+export const subdivide = (
+  faces: Face[],
+  bvh: BoundingVolumeHierarchy,
+  depth: number
+) => {
   const parent = bvh[bvh.length - 1];
+  depth++;
+
+  // if (
+  //   faces.length <= store.bvh.leafSoftMaxSize ||
+  //   depth >= store.bvh.maxDepth
+  // ) {
+  //   for (let i = 0; i < faces.length; i++) {
+  //     parent.faces.push(faces[i].idx);
+  //   }
+  //   return [];
+  // }
 
   if (faces.length <= 2) {
     for (let i = 0; i < faces.length; i++) {
@@ -116,14 +134,15 @@ export const subdivide = (faces: Face[], bvh: BoundingVolumeHierarchy) => {
     }
     return [];
   }
+
   const d = vec3.create();
   vec3.sub(d, parent.max, parent.min);
   const largestDelta = Math.max(...d);
   if (largestDelta === d[0]) {
-    return splitAcross(Axis.X, faces, bvh);
+    return splitAcross(Axis.X, faces, bvh, depth);
   } else if (largestDelta === d[1]) {
-    return splitAcross(Axis.Y, faces, bvh);
+    return splitAcross(Axis.Y, faces, bvh, depth);
   } else {
-    return splitAcross(Axis.Z, faces, bvh);
+    return splitAcross(Axis.Z, faces, bvh, depth);
   }
 };
