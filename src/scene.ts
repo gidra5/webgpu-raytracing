@@ -4,10 +4,13 @@ import { createStorageBuffer } from './gpu';
 import { Iterator } from 'iterator-js';
 import { BoundingVolumeHierarchy, facesBVH } from './bv';
 import { triangleModel, unitCubeModel } from './testModels';
+import MTLFile from './mtl';
+import { makeShaderDataDefinitions, makeStructuredView } from 'webgpu-utils';
 
 type Point = {
   position: vec3;
   normal: vec3;
+  texture: vec3;
 };
 export type Face = {
   points: [Point, Point, Point];
@@ -20,15 +23,22 @@ export type Model = {
   faces: Face[];
   bvh: BoundingVolumeHierarchy;
 };
-type ObjVector = { x: number; y: number; z: number };
+export type Material = {
+  color: vec3;
+  emission: vec3;
+};
+type ObjVertex = { x: number; y: number; z: number };
+type ObjTexture = { u: number; v: number; w: number };
 
-const objVecToVec3 = (v: ObjVector) => vec3.fromValues(v.x, v.y, v.z);
+const objVertToVec3 = (v: ObjVertex) => vec3.fromValues(v.x, v.y, v.z);
+const objTexToVec3 = (v: ObjTexture) => vec3.fromValues(v.u, v.v, v.w);
 
 type Allocation = { offset: number; count: number };
 const facePointSize = 8;
 const faceSize = 4 + 3 * facePointSize;
 const bvSize = 12;
 const modelSize = 4;
+const materialSize = 8;
 // face offsets and counts are in faceSize units
 const facesAllocations: Allocation[] = [];
 // bvh offsets and counts are in bvSize units
@@ -46,82 +56,97 @@ const allocate = (allocations: Allocation[], count: number) => {
 const allocateFace = (count: number) => allocate(facesAllocations, count);
 const allocateBVH = (count: number) => allocate(bvhAllocations, count);
 
-export const loadModels = async (): Promise<Model[]> => {
-  const module = await import('@assets/raytraced-scene.obj?raw');
-  const objParser = new wavefrontObjParser(module.default);
-  const objFile = objParser.parse();
+export const loadModels = async () => {
+  const objFile = await import('@assets/raytraced-scene.obj?raw');
+  const objParser = new wavefrontObjParser(objFile.default);
+  const objParsed = objParser.parse();
 
-  let posArray: ObjVector[] = [];
-  let nrmArray: ObjVector[] = [];
-  const modelsCache: Model[] = [];
+  const mtlFile = await import('@assets/raytraced-scene.mtl?raw');
+  const mtlParser = new MTLFile(mtlFile.default);
+  const mtlParsed = mtlParser.parse();
 
-  modelsCache.push(unitCubeModel);
-  modelsCache.push(triangleModel);
+  const materials = mtlParsed.map(({ Kd, Ke }) => ({
+    color: vec3.fromValues(Kd.red, Kd.green, Kd.blue),
+    emission: vec3.fromValues(Ke.red, Ke.green, Ke.blue),
+  }));
+
+  let posArray: vec3[] = [];
+  let nrmArray: vec3[] = [];
+  let uvArray: vec3[] = [];
+  const models: Model[] = [];
+
+  models.push(unitCubeModel);
+  models.push(triangleModel);
 
   // return modelsCache.map((_, i) => i);
 
-  objFile.models.forEach(({ vertices, vertexNormals, faces, name }, i) => {
-    console.log(name, i);
+  objParsed.models.forEach(
+    ({ vertices, vertexNormals, textureCoords, faces, name }, i) => {
+      console.log(name, i);
 
-    posArray = posArray.concat(vertices);
-    nrmArray = nrmArray.concat(vertexNormals);
+      posArray = posArray.concat(vertices.map(objVertToVec3));
+      nrmArray = nrmArray.concat(vertexNormals.map(objVertToVec3));
+      uvArray = uvArray.concat(textureCoords.map(objTexToVec3));
 
-    const _faces = faces
-      .map((f, i): Face[] => {
-        const i0 = f.vertices[0].vertexIndex - 1;
-        const i1 = f.vertices[1].vertexIndex - 1;
-        const i2 = f.vertices[2].vertexIndex - 1;
-        const p0 = objVecToVec3(posArray[i0]);
-        const p1 = objVecToVec3(posArray[i1]);
-        const p2 = objVecToVec3(posArray[i2]);
+      const _faces = faces
+        .map((f, i): Face[] => {
+          const i0 = f.vertices[0].vertexIndex - 1;
+          const i1 = f.vertices[1].vertexIndex - 1;
+          const i2 = f.vertices[2].vertexIndex - 1;
+          const p0 = posArray[i0];
+          const p1 = posArray[i1];
+          const p2 = posArray[i2];
 
-        const j0 = f.vertices[0].vertexNormalIndex - 1;
-        const j1 = f.vertices[1].vertexNormalIndex - 1;
-        const j2 = f.vertices[2].vertexNormalIndex - 1;
-        const n0 = objVecToVec3(nrmArray[j0]);
-        const n1 = objVecToVec3(nrmArray[j1]);
-        const n2 = objVecToVec3(nrmArray[j2]);
+          const j0 = f.vertices[0].vertexNormalIndex - 1;
+          const j1 = f.vertices[1].vertexNormalIndex - 1;
+          const j2 = f.vertices[2].vertexNormalIndex - 1;
+          const k1 = f.vertices[0].textureCoordsIndex - 1;
+          const k2 = f.vertices[1].textureCoordsIndex - 1;
+          const k3 = f.vertices[2].textureCoordsIndex - 1;
 
-        const e1 = vec3.create();
-        const e2 = vec3.create();
-        vec3.sub(e1, p1, p0);
-        vec3.sub(e2, p2, p0);
+          const e1 = vec3.create();
+          const e2 = vec3.create();
+          vec3.sub(e1, p1, p0);
+          vec3.sub(e2, p2, p0);
 
-        const normal = vec3.create();
-        vec3.cross(normal, e1, e2);
-        vec3.normalize(normal, normal);
-        return [
-          {
-            materialIdx: 0,
-            normal,
-            idx: i,
-            points: [
-              { position: p0, normal: n0 },
-              { position: e1, normal: n1 },
-              { position: e2, normal: n2 },
-            ],
-          },
-          // also add backfaces
-          // {
-          //   materialIdx: 0,
-          //   normal,
-          //   idx: i,
-          //   points: [
-          //     { position: p0, normal: n0 },
-          //     { position: e2, normal: n2 },
-          //     { position: e1, normal: n1 },
-          //   ],
-          // },
-        ];
-      })
-      .flat();
+          const normal = vec3.create();
+          vec3.cross(normal, e1, e2);
+          vec3.normalize(normal, normal);
+          return [
+            {
+              materialIdx: mtlParsed.findIndex(
+                ({ name }) => name === f.material
+              ),
+              normal,
+              idx: i,
+              points: [
+                { position: p0, normal: nrmArray[j0], texture: uvArray[k1] },
+                { position: e1, normal: nrmArray[j1], texture: uvArray[k2] },
+                { position: e2, normal: nrmArray[j2], texture: uvArray[k3] },
+              ],
+            },
+            // also add backfaces
+            // {
+            //   materialIdx: 0,
+            //   normal,
+            //   idx: i,
+            //   points: [
+            //     { position: p0, normal: n0 },
+            //     { position: e2, normal: n2 },
+            //     { position: e1, normal: n1 },
+            //   ],
+            // },
+          ];
+        })
+        .flat();
 
-    const bvh = facesBVH(_faces);
+      const bvh = facesBVH(_faces);
 
-    modelsCache.push({ name, faces: _faces, bvh });
-  });
+      models.push({ name, faces: _faces, bvh });
+    }
+  );
 
-  return modelsCache;
+  return { models, materials };
 };
 
 const loadModelFacesToBuffer = async (
@@ -184,6 +209,43 @@ const loadBVH = async (mapped: ArrayBuffer, model: Model, offset: number) => {
     mappedI32[idx + 7] = bv.faces[0];
     mappedI32[idx + 8] = bv.faces[1];
   }
+};
+
+const loadMaterialToBuffer = async (
+  mapped: ArrayBuffer,
+  material: Material,
+  offset: number
+) => {
+  const code = `
+    struct Material {
+      color: vec3f,
+      emission: vec3f
+    };
+  `;
+  const defs = makeShaderDataDefinitions(code);
+  const values = makeStructuredView(defs.structs.Material, mapped, offset);
+
+  values.set({
+    color: material.color,
+    emission: material.emission,
+  });
+};
+
+export const loadMaterialsToBuffers = async (materials: Material[]) => {
+  const materialsBuffer = createStorageBuffer(
+    materials.length * materialSize * Float32Array.BYTES_PER_ELEMENT,
+    'Materials Buffer',
+    true
+  );
+  const materialsMapped = materialsBuffer.getMappedRange();
+
+  for (const [material, i] of Iterator.iter(materials).enumerate()) {
+    await loadMaterialToBuffer(materialsMapped, material, i * materialSize);
+  }
+
+  materialsBuffer.unmap();
+
+  return { materialsBuffer };
 };
 
 export const loadModelsToBuffers = async (models: Model[]) => {

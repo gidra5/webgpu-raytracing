@@ -26,7 +26,11 @@ import {
 import { createEffect, createSignal } from 'solid-js';
 import rng from './shaders/rng';
 import tonemapping from './shaders/tonemapping';
-import { loadModels, loadModelsToBuffers } from './scene';
+import {
+  loadMaterialsToBuffers,
+  loadModels,
+  loadModelsToBuffers,
+} from './scene';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const context = canvas.getContext('webgpu');
@@ -38,7 +42,8 @@ const [debugBVHRenderBundle, setDebugBVHRenderBundle] =
 const viewBuffer = reactiveUniformBuffer(16, view);
 const viewProjBuffer = reactiveUniformBuffer(16, viewProjectionMatrix);
 
-const models = await loadModels();
+const { models, materials } = await loadModels();
+const { materialsBuffer } = await loadMaterialsToBuffers(materials);
 const { facesBuffer, bvhBuffer, bvhCount, modelsBuffer } =
   await loadModelsToBuffers(models);
 
@@ -540,6 +545,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     const modelsCount = ${models.length};
     ${x.bindVarBuffer('read-only-storage', 'faces: array<Face>', facesBuffer)}
     ${x.bindVarBuffer('read-only-storage', 'bvh: array<BoundingVolume>', bvhBuffer)}
+    ${x.bindVarBuffer('read-only-storage', 'materials: array<Material>', materialsBuffer)}
     ${x.bindVarBuffer('read-only-storage', 'models: array<Model>', modelsBuffer)}
 
 
