@@ -25,9 +25,9 @@ const makeModel = (
     vec3.normalize(normal, normal);
     return {
       points: [
-        { position: p0, normal },
-        { position: e1, normal },
-        { position: e2, normal },
+        { position: p0, normal, texture: vec3.create() },
+        { position: e1, normal, texture: vec3.create() },
+        { position: e2, normal, texture: vec3.create() },
       ],
       normal,
       materialIdx: 0,
@@ -75,7 +75,7 @@ export const unitCubeModel = makeModel(
   cubeModelMatrix
 );
 
-console.log(unitCubeModel);
+// console.log(unitCubeModel);
 
 const triangleModelMatrix = mat4.create();
 mat4.translate(
@@ -95,4 +95,4 @@ export const triangleModel = makeModel(
   triangleModelMatrix
 );
 
-console.log(triangleModel);
+// console.log(triangleModel);

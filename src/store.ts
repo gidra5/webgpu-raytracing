@@ -21,7 +21,7 @@ const [store, setStore] = createStore({
   view: vec2.create(),
 
   counter: 0,
-  sampleCount: 16,
+  sampleCount: 1,
   bouncesCount: 1,
 
   fov: Math.PI / 2,
@@ -45,7 +45,7 @@ const [store, setStore] = createStore({
   },
 
   debugBVH: false,
-  debugNormals: true,
+  debugNormals: false,
 
   timings: {
     time: 0, // ms
@@ -99,7 +99,7 @@ export const resetCounter = () => {
 };
 
 export const incrementCounter = () => {
-  setStore('counter', store.counter + store.sampleCount);
+  setStore('counter', store.counter + 1);
 };
 
 export const setFov = (fov: number) => {

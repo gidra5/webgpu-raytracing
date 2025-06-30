@@ -9,6 +9,7 @@ export default /* wgsl */ `
   const EPSILON = 0.001;
   const f32min = 0x1p-126f;
   const f32max = 0x1.fffffep+127;
-  const min_dist = EPSILON;
+  // const min_dist = EPSILON;
+  const min_dist = 0;
   const max_dist = f32max;
 `;

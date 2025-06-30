@@ -24,6 +24,7 @@ export type Model = {
   bvh: BoundingVolumeHierarchy;
 };
 export type Material = {
+  name: string;
   color: vec3;
   emission: vec3;
 };
@@ -65,10 +66,16 @@ export const loadModels = async () => {
   const mtlParser = new MTLFile(mtlFile.default);
   const mtlParsed = mtlParser.parse();
 
-  const materials = mtlParsed.map(({ Kd, Ke }) => ({
-    color: vec3.fromValues(Kd.red, Kd.green, Kd.blue),
-    emission: vec3.fromValues(Ke.red, Ke.green, Ke.blue),
-  }));
+  const materials = mtlParsed.map((mtl): Material => {
+    const { Kd, Ke } = mtl;
+    // console.log(mtl);
+
+    return {
+      color: vec3.fromValues(Kd.red, Kd.green, Kd.blue),
+      emission: vec3.fromValues(Ke.red, Ke.green, Ke.blue),
+      name: mtl.name,
+    };
+  });
 
   let posArray: vec3[] = [];
   let nrmArray: vec3[] = [];
@@ -82,7 +89,7 @@ export const loadModels = async () => {
 
   objParsed.models.forEach(
     ({ vertices, vertexNormals, textureCoords, faces, name }, i) => {
-      console.log(name, i);
+      console.log(name, i, faces[0].material);
 
       posArray = posArray.concat(vertices.map(objVertToVec3));
       nrmArray = nrmArray.concat(vertexNormals.map(objVertToVec3));
@@ -114,7 +121,7 @@ export const loadModels = async () => {
           vec3.normalize(normal, normal);
           return [
             {
-              materialIdx: mtlParsed.findIndex(
+              materialIdx: materials.findIndex(
                 ({ name }) => name === f.material
               ),
               normal,
@@ -216,6 +223,7 @@ const loadMaterialToBuffer = async (
   material: Material,
   offset: number
 ) => {
+  const f32Offset = offset * Float32Array.BYTES_PER_ELEMENT;
   const code = `
     struct Material {
       color: vec3f,
@@ -223,12 +231,21 @@ const loadMaterialToBuffer = async (
     };
   `;
   const defs = makeShaderDataDefinitions(code);
-  const values = makeStructuredView(defs.structs.Material, mapped, offset);
+  const values = makeStructuredView(defs.structs.Material, mapped, f32Offset);
 
   values.set({
     color: material.color,
     emission: material.emission,
   });
+
+  // console.log(
+  //   material.name,
+  //   new Float32Array(
+  //     mapped,
+  //     offset * Float32Array.BYTES_PER_ELEMENT,
+  //     materialSize
+  //   )
+  // );
 };
 
 export const loadMaterialsToBuffers = async (materials: Material[]) => {

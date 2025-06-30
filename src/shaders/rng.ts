@@ -97,4 +97,8 @@ export default /* wgsl */ `
   fn sample_insquare(t: vec2f) -> vec2f {
     return (2. * t - 1.); 
   }
+
+  fn sample_intriangle(t: vec2f) -> vec2f {
+    return select(t, vec2f(1. - t.y, t.x), t.x < t.y);
+  }
 `;

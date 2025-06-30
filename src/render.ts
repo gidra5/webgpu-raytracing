@@ -45,7 +45,7 @@ const viewProjBuffer = reactiveUniformBuffer(16, viewProjectionMatrix);
 const { models, materials } = await loadModels();
 const { materialsBuffer } = await loadMaterialsToBuffers(materials);
 const { facesBuffer, bvhBuffer, bvhCount, modelsBuffer } =
-  await loadModelsToBuffers(models);
+  await loadModelsToBuffers([models[10], models[6], models[3], models[2]]);
 
 const seedUniformBuffer = createUniformBuffer(4);
 const counterUniformBuffer = createUniformBuffer(4);
@@ -111,7 +111,7 @@ createEffect(() => {
         let pos = vec2u(uv * vec2f(viewport));
         // let idx = fma(pos.y, viewport.x, pos.x);
         let idx = pos.y * viewport.x + pos.x; 
-        let color = imageBuffer[idx] / f32(counter + ${store.sampleCount});
+        let color = imageBuffer[idx] / f32(counter + 1);
         // let color = imageBuffer[idx];
         let tonemapped = color;
         // let color = lottes(raytraceImageBuffer[idx] / f32(commonUniforms.frameCounter + 1));
@@ -461,7 +461,7 @@ const scene = () => /* wgsl */ `
     
   const ambience = ${store.ambience};
   const sun_color = vec3f(1);
-  const sun_dir = normalize(vec3f(-1, 1, 1));
+  const sun_dir = normalize(vec3f(1, 1, 1));
   const sphere_center = vec3f(0, 0, 4);
 
   struct Hit {
@@ -469,7 +469,8 @@ const scene = () => /* wgsl */ `
     dist: f32,
     point: vec3f,
     normal: vec3f,
-    material: Material
+    materialIdx: u32, 
+    uv: vec2f
   };
 
   fn scene(ray: Ray) -> Hit {
@@ -480,36 +481,111 @@ const scene = () => /* wgsl */ `
         max_dist,
         ray.pos,
         vec3f(0),
-        Material(
-          vec3(1.),
-          vec3(0.),
-        )
+        0,
+        vec2f(0)
       );
       return result;
     }
     
+    // https://www.realtimerendering.com/raytracinggems/unofficial_RayTracingGems_v1.9.pdf
+    // p. 83
+    // TODO: correct uv texture coords
     let face = faces[hit.faceIdx];
-    var result = Hit(
+    let uv = hit.barycentric.yz;
+    let result = Hit(
       true,
       hit.barycentric.x,
+      // facePoint(face, uv),
       ray.pos + hit.barycentric.x * ray.dir,
-      face.faceNormal,
-      materials[face.materialIdx]
+      faceNormal(face, uv),
+      face.materialIdx,
+      faceTexCoords(face, uv)
     );
 
+    return result;
+  }
+
+  struct SceneSample {
+    point: vec3f,
+    normal: vec3f,
+    materialIdx: u32,
+    uv: vec2f
+  }
+
+  fn sampleScene() -> SceneSample {
+    let randomModelIdx = u32(floor(random_1() * f32(modelsCount))); 
+    let model = models[randomModelIdx];
+    let randomFaceIdx = u32(floor(random_1() * f32(model.faces.count)));
+    let face = faces[model.faces.offset + randomFaceIdx];
+    return sampleFace(face);
+  }
+
+  fn sampleFace(face: Face) -> SceneSample {
+    let uv = sample_intriangle(random_2());
+    let point = facePoint(face, uv);
+    let normal = faceNormal(face, uv);
+    let texUV = faceTexCoords(face, uv);
+    return SceneSample(point, normal, face.materialIdx, texUV);
+  }
+
+  fn facePoint(face: Face, uv: vec2f) -> vec3f {
+    let p1 = face.points[0].pos;
+    let e1 = face.points[1].pos;
+    let e2 = face.points[2].pos;
+    let p = p1 + mat2x3f(e1, e2) * uv;
+    // return offsetRay(p, face.faceNormal);
+    return p;
+  }
+
+  fn faceNormal(face: Face, uv: vec2f) -> vec3f {
     if (flatShading == ${ShadingType.Phong}) {
       let n1 = face.points[0].normal;
       let n2 = face.points[1].normal;
       let n3 = face.points[2].normal;
-      let _n = mat3x3f(n1, n2, n3);
-
-      let pt = hit.barycentric;
-      let b = vec3f(1f - pt.y - pt.z, pt.y, pt.z);
-      let n = _n * b;
-      result.normal = n;
+      return mat3x3f(n1, n2, n3) * uv2toUV3(uv);
+    } else {
+      return face.faceNormal;
     }
+  }
 
-    return result;
+  const origin = 1.0 / 32.0;
+  const floatScale = 1.0 / 65536.0;
+  const intScale = 256.0;
+  fn offsetRay(p: vec3f, n: vec3f) -> vec3f {
+    // let ofI = vec3f(int_scale * n[0], int_scale * n[1], int_scale * n[2]); 
+    // let pI = vec3f(
+    //   int_as_float(float_as_int(p[0]) + (p[0] < 0 ? -ofI[0] : ofI[0])),
+    //   int_as_float(float_as_int(p[1]) + (p[1] < 0 ? -ofI[1] : ofI[1])),
+    //   int_as_float(float_as_int(p[2]) + (p[2] < 0 ? -ofI[2] : ofI[2]))
+    // );
+    // return vec3f(
+    //   fabsf(p.x) < origin ? p.x + float_scale() * n.x : pI.x,
+    //   fabsf(p.y) < origin ? p.y + float_scale() * n.y : pI.y,
+    //   fabsf(p.z) < origin ? p.z + float_scale() * n.z : pI.z
+    // )
+    let ofI = vec3i(intScale * n);
+    let pI = vec3f(
+      bitcast<f32>(bitcast<i32>(p.x) + select(-ofI.x, ofI.x, p.x < 0)),
+      bitcast<f32>(bitcast<i32>(p.y) + select(-ofI.y, ofI.y, p.y < 0)),
+      bitcast<f32>(bitcast<i32>(p.z) + select(-ofI.z, ofI.z, p.z < 0))
+    );
+    return vec3f(
+      select(p.x + floatScale * n.x, pI.x, abs(p.x) < origin),
+      select(p.y + floatScale * n.y, pI.y, abs(p.y) < origin),
+      select(p.z + floatScale * n.z, pI.z, abs(p.z) < origin)
+    );
+  }
+
+  fn faceTexCoords(face: Face, uv: vec2f) -> vec2f {
+    // let p1 = face.points[0].uv;
+    // let e1 = face.points[1].uv;
+    // let e2 = face.points[2].uv;
+    // return mat3x2f(p1, e1, e2) * uv2toUV3(uv);
+    return uv;
+  }
+
+  fn uv2toUV3(uv: vec2f) -> vec3f {
+    return vec3f(1-uv.x-uv.y, uv.x, uv.y);
   }
 
   fn in_shadow(ray: Ray, mag_sq: f32) -> f32 {
@@ -517,18 +593,19 @@ const scene = () => /* wgsl */ `
     let hit = hitObj.hit;
     let ds = hitObj.dist;
 
-    return select(1., 0., !hit || ds * ds >= mag_sq);
+    return select(0., 1., !hit || ds * ds >= mag_sq);
   }
 
   fn light_vis(pos: vec3f, dir: vec3f) -> f32 {
-    return in_shadow(Ray(pos, dir), 0.99 / (min_dist * min_dist));
+    return in_shadow(Ray(pos, dir), f32max);
   }
 
-  fn sun_light_col(dir: vec3f, norm: vec3f) -> vec3f { 
-    return max(dot(-dir, norm), 0.) * sun_color;
+  fn attenuation(dir: vec3f, norm: vec3f) -> f32 { 
+    return max(dot(dir, norm), 0.);
   }
+
   fn sun(pos: vec3f, norm: vec3f) -> vec3f {
-    return light_vis(pos, sun_dir) * sun_light_col(sun_dir, norm) + ambience * sun_color;
+    return (light_vis(pos, sun_dir) * attenuation(sun_dir, norm) + ambience) * sun_color;
   }
 
   fn ray_transform(_ray: Ray) -> Ray {
@@ -541,7 +618,7 @@ const scene = () => /* wgsl */ `
   }
 
   fn skyColor(dir: vec3f) -> vec3f {
-    return vec3f(0.1);
+    return ambience * sun_color;
   }
 `;
 
@@ -580,18 +657,16 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
         return;
       }
 
-      var color = vec3f(0);
-
       let upos = globalInvocationId.xy;
       let idx = upos.x + upos.y * viewport.x;
       let pos = vec2f(upos);
       rng_state = seed + idx;
-
       
       if (counter == 0u) {
         imageBuffer[idx] = vec3f(0);
       }
 
+      var color = vec3f(0);
       for (var i = 0u; i < ${store.sampleCount}; i++) {
         let subpixel = random_2();
         let uv = (2. * (pos + subpixel) - viewportf) / viewportf.x;
@@ -600,22 +675,24 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
         var ray = thinLensRay(rayDirection, sample_incircle(random_2()));
         ray = ray_transform(ray);
 
-        let hitObj = scene(ray);
-        let t = hitObj.dist;
-        if !hitObj.hit {
-          imageBuffer[idx] = skyColor(ray.dir);
+        let hit = scene(ray);
+        if !hit.hit {
+          color += skyColor(ray.dir);
           continue; 
         }
 
         if debugNormals {
-          color = (hitObj.normal+1)/2;
-        } else {
-          let material = hitObj.material;
-          color += sun(ray.pos + t * ray.dir, hitObj.normal) * hitObj.material.color; 
+          color += (hit.normal + 1) / 2;
+          continue;
         }
 
-        imageBuffer[idx] += color;
+        let material = materials[hit.materialIdx];
+        let t = hit.dist;
+        let p = hit.point;
+        color += sun(p, hit.normal) * material.color;
       }
+
+      imageBuffer[idx] += color / ${store.sampleCount};
     }
   `,
 });
