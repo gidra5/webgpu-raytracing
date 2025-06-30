@@ -68,7 +68,14 @@ export const loadModels = async () => {
 
   const materials = mtlParsed.map((mtl): Material => {
     const { Kd, Ke } = mtl;
-    // console.log(mtl);
+    console.log(mtl);
+
+    if (mtl.name === 'Light')
+      return {
+        color: vec3.fromValues(0, 0, 0),
+        emission: vec3.fromValues(1, 1, 1),
+        name: mtl.name,
+      };
 
     return {
       color: vec3.fromValues(Kd.red, Kd.green, Kd.blue),
@@ -96,7 +103,7 @@ export const loadModels = async () => {
       uvArray = uvArray.concat(textureCoords.map(objTexToVec3));
 
       const _faces = faces
-        .map((f, i): Face[] => {
+        .map((f): Face[] => {
           const i0 = f.vertices[0].vertexIndex - 1;
           const i1 = f.vertices[1].vertexIndex - 1;
           const i2 = f.vertices[2].vertexIndex - 1;
@@ -119,33 +126,51 @@ export const loadModels = async () => {
           const normal = vec3.create();
           vec3.cross(normal, e1, e2);
           vec3.normalize(normal, normal);
+          const materialIdx = materials.findIndex(
+            ({ name }) => name === f.material
+          );
           return [
             {
-              materialIdx: materials.findIndex(
-                ({ name }) => name === f.material
-              ),
+              materialIdx,
               normal,
-              idx: i,
+              idx: 0,
               points: [
                 { position: p0, normal: nrmArray[j0], texture: uvArray[k1] },
                 { position: e1, normal: nrmArray[j1], texture: uvArray[k2] },
                 { position: e2, normal: nrmArray[j2], texture: uvArray[k3] },
               ],
             },
-            // also add backfaces
-            // {
-            //   materialIdx: 0,
-            //   normal,
-            //   idx: i,
-            //   points: [
-            //     { position: p0, normal: n0 },
-            //     { position: e2, normal: n2 },
-            //     { position: e1, normal: n1 },
-            //   ],
-            // },
+            // also add backfaces for lights
+            ...(name === 'Light'
+              ? [
+                  {
+                    materialIdx,
+                    idx: 0,
+                    points: [
+                      {
+                        position: p0,
+                        normal: vec3.negate(vec3.create(), nrmArray[j0]),
+                        texture: uvArray[k1],
+                      },
+                      {
+                        position: e2,
+                        normal: vec3.negate(vec3.create(), nrmArray[j2]),
+                        texture: uvArray[k3],
+                      },
+                      {
+                        position: e1,
+                        normal: vec3.negate(vec3.create(), nrmArray[j1]),
+                        texture: uvArray[k2],
+                      },
+                    ],
+                    normal: vec3.negate(vec3.create(), normal),
+                  } satisfies Face,
+                ]
+              : []),
           ];
         })
-        .flat();
+        .flat()
+        .map((face, i) => ({ ...face, idx: i }));
 
       const bvh = facesBVH(_faces);
 

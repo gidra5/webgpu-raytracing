@@ -5,6 +5,7 @@ import {
   createUniformBuffer,
   getDevice,
   getTimestampHandler,
+  PipelineBuilder,
   reactiveComputePipeline,
   reactiveUniformBuffer,
   renderBundlePass,
@@ -45,7 +46,13 @@ const viewProjBuffer = reactiveUniformBuffer(16, viewProjectionMatrix);
 const { models, materials } = await loadModels();
 const { materialsBuffer } = await loadMaterialsToBuffers(materials);
 const { facesBuffer, bvhBuffer, bvhCount, modelsBuffer } =
-  await loadModelsToBuffers([models[10], models[6], models[3], models[2]]);
+  await loadModelsToBuffers([
+    models[2],
+    models[10],
+    models[6],
+    models[3],
+    models[4],
+  ]);
 
 const seedUniformBuffer = createUniformBuffer(4);
 const counterUniformBuffer = createUniformBuffer(4);
@@ -302,7 +309,9 @@ const bvIntersect = /* wgsl */ `
   }
 `;
 
-const bvh = () => /* wgsl */ `
+const bvh = (x: PipelineBuilder) => /* wgsl */ `
+  ${x.bindVarBuffer('read-only-storage', 'bvh: array<BoundingVolume>', bvhBuffer)}
+
   struct BVHIntersectionResult {
     hit: bool,
     barycentric: vec3f,
@@ -487,16 +496,12 @@ const scene = () => /* wgsl */ `
       return result;
     }
     
-    // https://www.realtimerendering.com/raytracinggems/unofficial_RayTracingGems_v1.9.pdf
-    // p. 83
-    // TODO: correct uv texture coords
     let face = faces[hit.faceIdx];
     let uv = hit.barycentric.yz;
     let result = Hit(
       true,
       hit.barycentric.x,
-      // facePoint(face, uv),
-      ray.pos + hit.barycentric.x * ray.dir,
+      facePoint(face, uv),
       faceNormal(face, uv),
       face.materialIdx,
       faceTexCoords(face, uv)
@@ -506,18 +511,32 @@ const scene = () => /* wgsl */ `
   }
 
   struct SceneSample {
+    p: f32, // 1/pdf
     point: vec3f,
     normal: vec3f,
+    uv: vec2f,
     materialIdx: u32,
-    uv: vec2f
   }
 
   fn sampleScene() -> SceneSample {
-    let randomModelIdx = u32(floor(random_1() * f32(modelsCount))); 
+    let randomModelIdx = random_1u() % modelsCount; 
     let model = models[randomModelIdx];
-    let randomFaceIdx = u32(floor(random_1() * f32(model.faces.count)));
+    var sample = sampleModel(model);
+    sample.p *= f32(modelsCount);
+    return sample;
+  }
+
+  fn sampleLights() -> SceneSample {
+    var sample = sampleModel(models[0]);
+    return sample;
+  }
+
+  fn sampleModel(model: Model) -> SceneSample {
+    let randomFaceIdx = random_1u() % model.faces.count;
     let face = faces[model.faces.offset + randomFaceIdx];
-    return sampleFace(face);
+    var sample = sampleFace(face);
+    sample.p *= f32(model.faces.count);
+    return sample;
   }
 
   fn sampleFace(face: Face) -> SceneSample {
@@ -525,16 +544,21 @@ const scene = () => /* wgsl */ `
     let point = facePoint(face, uv);
     let normal = faceNormal(face, uv);
     let texUV = faceTexCoords(face, uv);
-    return SceneSample(point, normal, face.materialIdx, texUV);
+    let p = cross(face.points[1].pos, face.points[2].pos); // TODO: precompute area
+    return SceneSample(length(p)/2, point, normal, texUV, face.materialIdx);
   }
 
+  // https://www.realtimerendering.com/raytracinggems/unofficial_RayTracingGems_v1.9.pdf
+  // p. 83
+  // computing from uv and offsetting the point 
+  // makes sure there are no self-intersections 
+  // due to floating point errors
   fn facePoint(face: Face, uv: vec2f) -> vec3f {
     let p1 = face.points[0].pos;
     let e1 = face.points[1].pos;
     let e2 = face.points[2].pos;
     let p = p1 + mat2x3f(e1, e2) * uv;
-    // return offsetRay(p, face.faceNormal);
-    return p;
+    return offsetRay(p, face.faceNormal);
   }
 
   fn faceNormal(face: Face, uv: vec2f) -> vec3f {
@@ -552,17 +576,6 @@ const scene = () => /* wgsl */ `
   const floatScale = 1.0 / 65536.0;
   const intScale = 256.0;
   fn offsetRay(p: vec3f, n: vec3f) -> vec3f {
-    // let ofI = vec3f(int_scale * n[0], int_scale * n[1], int_scale * n[2]); 
-    // let pI = vec3f(
-    //   int_as_float(float_as_int(p[0]) + (p[0] < 0 ? -ofI[0] : ofI[0])),
-    //   int_as_float(float_as_int(p[1]) + (p[1] < 0 ? -ofI[1] : ofI[1])),
-    //   int_as_float(float_as_int(p[2]) + (p[2] < 0 ? -ofI[2] : ofI[2]))
-    // );
-    // return vec3f(
-    //   fabsf(p.x) < origin ? p.x + float_scale() * n.x : pI.x,
-    //   fabsf(p.y) < origin ? p.y + float_scale() * n.y : pI.y,
-    //   fabsf(p.z) < origin ? p.z + float_scale() * n.z : pI.z
-    // )
     let ofI = vec3i(intScale * n);
     let pI = vec3f(
       bitcast<f32>(bitcast<i32>(p.x) + select(-ofI.x, ofI.x, p.x < 0)),
@@ -576,6 +589,7 @@ const scene = () => /* wgsl */ `
     );
   }
 
+  // TODO: correct uv texture coords
   fn faceTexCoords(face: Face, uv: vec2f) -> vec2f {
     // let p1 = face.points[0].uv;
     // let e1 = face.points[1].uv;
@@ -593,7 +607,7 @@ const scene = () => /* wgsl */ `
     let hit = hitObj.hit;
     let ds = hitObj.dist;
 
-    return select(0., 1., !hit || ds * ds >= mag_sq);
+    return select(1., 0., hit && ds * ds <= mag_sq);
   }
 
   fn light_vis(pos: vec3f, dir: vec3f) -> f32 {
@@ -629,7 +643,6 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
 
     const modelsCount = ${models.length};
     ${x.bindVarBuffer('read-only-storage', 'faces: array<Face>', facesBuffer)}
-    ${x.bindVarBuffer('read-only-storage', 'bvh: array<BoundingVolume>', bvhBuffer)}
     ${x.bindVarBuffer('read-only-storage', 'materials: array<Material>', materialsBuffer)}
     ${x.bindVarBuffer('read-only-storage', 'models: array<Model>', modelsBuffer)}
 
@@ -644,7 +657,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
 
     ${rng}
     ${intervals}
-    ${bvh()}
+    ${bvh(x)}
     ${structs}
     ${rayIntersect}
     ${bvIntersect}
@@ -690,6 +703,15 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
         let t = hit.dist;
         let p = hit.point;
         color += sun(p, hit.normal) * material.color;
+        color += material.emission;
+
+        let s = sampleLights();
+        let sMaterial = materials[s.materialIdx];
+        let ds = s.point - p;
+        let d_sq = dot(ds, ds);
+        let d = ds * inverseSqrt(d_sq);
+        let r = Ray(p, d);
+        color += in_shadow(r, d_sq) * attenuation(d, hit.normal) * sMaterial.emission * material.color / d_sq * s.p;
       }
 
       imageBuffer[idx] += color / ${store.sampleCount};

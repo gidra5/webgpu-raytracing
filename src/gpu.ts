@@ -235,7 +235,7 @@ type RenderPipelineBuilderResult = {
   pipeline: GPURenderPipeline;
   bindGroups: GPUBindGroup[];
 };
-type PipelineBuilder = {
+export type PipelineBuilder = {
   bindGroup(): string;
   bindVarBuffer(
     access: GPUBufferBindingType,
