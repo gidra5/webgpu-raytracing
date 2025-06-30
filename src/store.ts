@@ -59,7 +59,7 @@ const [store, setStore] = createStore({
   keyboard: [],
 });
 
-export const view = () => {
+export const viewMatrix = () => {
   const pos = vec3.clone(store.position);
   vec3.scale(pos, pos, -1);
   const viewMatrix = mat4.fromRotationTranslation(
@@ -73,14 +73,14 @@ export const view = () => {
 export const viewProjectionMatrix = () => {
   const m = mat4.create();
 
-  const viewMatrix = mat4.create();
-  mat4.invert(viewMatrix, view());
+  const _viewMatrix = mat4.create();
+  mat4.invert(_viewMatrix, viewMatrix());
 
   const projectionMatrix = mat4.create();
   const r = store.view[0] / store.view[1];
   const d = Math.tan(store.fov / 2);
   mat4.perspectiveZO(projectionMatrix, 2 * Math.atan(d / r), r, 0.1, 1000);
-  mat4.multiply(m, projectionMatrix, viewMatrix);
+  mat4.multiply(m, projectionMatrix, _viewMatrix);
   return m;
 };
 

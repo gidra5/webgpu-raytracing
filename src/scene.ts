@@ -57,6 +57,27 @@ const allocate = (allocations: Allocation[], count: number) => {
 const allocateFace = (count: number) => allocate(facesAllocations, count);
 const allocateBVH = (count: number) => allocate(bvhAllocations, count);
 
+const backface = (face: Face): Face => {
+  const p0 = face.points[0].position;
+  const e1 = face.points[1].position;
+  const e2 = face.points[2].position;
+  const n1 = vec3.negate(vec3.create(), face.points[0].normal);
+  const n2 = vec3.negate(vec3.create(), face.points[1].normal);
+  const n3 = vec3.negate(vec3.create(), face.points[2].normal);
+  const normal = vec3.negate(vec3.create(), face.normal);
+
+  return {
+    materialIdx: face.materialIdx,
+    idx: 0,
+    normal,
+    points: [
+      { position: p0, normal: n1, texture: face.points[0].texture },
+      { position: e2, normal: n3, texture: face.points[2].texture },
+      { position: e1, normal: n2, texture: face.points[1].texture },
+    ],
+  };
+};
+
 export const loadModels = async () => {
   const objFile = await import('@assets/raytraced-scene.obj?raw');
   const objParser = new wavefrontObjParser(objFile.default);
@@ -129,45 +150,17 @@ export const loadModels = async () => {
           const materialIdx = materials.findIndex(
             ({ name }) => name === f.material
           );
-          return [
-            {
-              materialIdx,
-              normal,
-              idx: 0,
-              points: [
-                { position: p0, normal: nrmArray[j0], texture: uvArray[k1] },
-                { position: e1, normal: nrmArray[j1], texture: uvArray[k2] },
-                { position: e2, normal: nrmArray[j2], texture: uvArray[k3] },
-              ],
-            },
-            // also add backfaces for lights
-            ...(name === 'Light'
-              ? [
-                  {
-                    materialIdx,
-                    idx: 0,
-                    points: [
-                      {
-                        position: p0,
-                        normal: vec3.negate(vec3.create(), nrmArray[j0]),
-                        texture: uvArray[k1],
-                      },
-                      {
-                        position: e2,
-                        normal: vec3.negate(vec3.create(), nrmArray[j2]),
-                        texture: uvArray[k3],
-                      },
-                      {
-                        position: e1,
-                        normal: vec3.negate(vec3.create(), nrmArray[j1]),
-                        texture: uvArray[k2],
-                      },
-                    ],
-                    normal: vec3.negate(vec3.create(), normal),
-                  } satisfies Face,
-                ]
-              : []),
-          ];
+          const face: Face = {
+            materialIdx,
+            normal,
+            idx: 0,
+            points: [
+              { position: p0, normal: nrmArray[j0], texture: uvArray[k1] },
+              { position: e1, normal: nrmArray[j1], texture: uvArray[k2] },
+              { position: e2, normal: nrmArray[j2], texture: uvArray[k3] },
+            ],
+          };
+          return [face, backface(face)];
         })
         .flat()
         .map((face, i) => ({ ...face, idx: i }));
@@ -277,6 +270,7 @@ export const loadMaterialsToBuffers = async (materials: Material[]) => {
   const materialsBuffer = createStorageBuffer(
     materials.length * materialSize * Float32Array.BYTES_PER_ELEMENT,
     'Materials Buffer',
+    0,
     true
   );
   const materialsMapped = materialsBuffer.getMappedRange();
@@ -295,6 +289,7 @@ export const loadModelsToBuffers = async (models: Model[]) => {
   const facesBuffer = createStorageBuffer(
     facesCount * faceSize * Float32Array.BYTES_PER_ELEMENT,
     'Faces Buffer',
+    0,
     true
   );
   const facesMapped = facesBuffer.getMappedRange();
@@ -310,6 +305,7 @@ export const loadModelsToBuffers = async (models: Model[]) => {
   const bvhBuffer = createStorageBuffer(
     bvhCount * bvSize * Float32Array.BYTES_PER_ELEMENT,
     'BVH Buffer',
+    0,
     true
   );
   const bvhMapped = bvhBuffer.getMappedRange();
@@ -323,7 +319,8 @@ export const loadModelsToBuffers = async (models: Model[]) => {
 
   const modelsBuffer = createStorageBuffer(
     models.length * modelSize * Uint32Array.BYTES_PER_ELEMENT,
-    'Faces Offsets Buffer',
+    'Models Buffer',
+    0,
     true
   );
 

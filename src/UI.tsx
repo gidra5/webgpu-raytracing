@@ -9,36 +9,10 @@ import {
   ShadingType,
   store,
 } from './store';
-import { lerp } from './utils';
-
-type Box<T> = { value: T };
-const usePrev = <T,>(value: Accessor<T>): Accessor<T | null> => {
-  let [prev, setPrev] = createSignal<T | null>(null);
-  createEffect<T>((_prev) => {
-    setPrev(() => _prev);
-    return value();
-  });
-  return prev;
-};
-const useDiff = (value: Accessor<number>, init = 0): Accessor<number> => {
-  const prevValue = usePrev(value);
-  return () => value() - (prevValue() ?? 0);
-};
-const useSmoothedValue = (
-  value: Accessor<number>,
-  smooth: number
-): Accessor<number> => {
-  const [_value, setValue] = createSignal(value());
-  createEffect<number>((prev) => {
-    const next = lerp(prev, value(), smooth);
-    setValue(next);
-    return next;
-  }, value());
-  return _value;
-};
+import { useSmoothedValue } from './utils';
 
 const App: Component = () => {
-  const smoothing = 0.9;
+  const smoothing = 0.1;
   const renderTime = useSmoothedValue(() => store.timings.dt * 1000, smoothing);
   const gpuTime = useSmoothedValue(
     () => store.timings.render.gpu / 1000,

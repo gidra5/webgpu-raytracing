@@ -207,11 +207,12 @@ const bufferBuilder = (d: GPUBufferDescriptor = { size: 0, usage: 0 }) => {
 export const createStorageBuffer = (
   size: number,
   label?: string,
+  usage: GPUBufferUsageFlags = 0,
   mapped = false
 ) =>
   device.createBuffer({
     size,
-    usage: GPUBufferUsage.STORAGE,
+    usage: GPUBufferUsage.STORAGE | usage,
     label,
     mappedAtCreation: mapped,
   });

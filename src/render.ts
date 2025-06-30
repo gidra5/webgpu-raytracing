@@ -1,4 +1,4 @@
-import { vec2 } from 'gl-matrix';
+import { mat4, vec2 } from 'gl-matrix';
 import {
   computePass,
   createStorageBuffer,
@@ -21,7 +21,7 @@ import {
   setView,
   ShadingType,
   store,
-  view,
+  viewMatrix,
   viewProjectionMatrix,
 } from './store';
 import { createEffect, createSignal } from 'solid-js';
@@ -32,15 +32,25 @@ import {
   loadModels,
   loadModelsToBuffers,
 } from './scene';
+import { usePrevious } from './utils';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const context = canvas.getContext('webgpu');
 const device = await getDevice(context as GPUCanvasContext);
 const [imageBuffer, setImageBuffer] = createSignal<GPUBuffer>();
+const [prevImageBuffer, setPrevImageBuffer] = createSignal<GPUBuffer>();
 const [blitRenderBundle, setBlitRenderBundle] = createSignal<GPURenderBundle>();
 const [debugBVHRenderBundle, setDebugBVHRenderBundle] =
   createSignal<GPURenderBundle>();
-const viewBuffer = reactiveUniformBuffer(16, view);
+const prevView = usePrevious(viewMatrix);
+const prevViewBuffer = reactiveUniformBuffer(16, prevView);
+const prevViewInvBuffer = reactiveUniformBuffer(16, () => {
+  const _prevView = prevView();
+  if (_prevView) {
+    return mat4.invert(mat4.create(), _prevView);
+  }
+});
+const viewBuffer = reactiveUniformBuffer(16, viewMatrix);
 const viewProjBuffer = reactiveUniformBuffer(16, viewProjectionMatrix);
 
 const { models, materials } = await loadModels();
@@ -67,14 +77,24 @@ const resize = () => {
 resize();
 window.addEventListener('resize', resize);
 
-createEffect<GPUBuffer>((prevBuffer) => {
-  if (prevBuffer) prevBuffer.destroy();
+createEffect<GPUBuffer[]>((prevBuffers) => {
+  if (prevBuffers) prevBuffers.forEach((b) => b.destroy());
   const width = store.view[0] + 1;
   const height = store.view[1];
   const size = Float32Array.BYTES_PER_ELEMENT * 4 * width * height;
-  const buffer = createStorageBuffer(size, 'Raytraced Image Buffer');
-  setImageBuffer(buffer);
-  return buffer;
+  const current = createStorageBuffer(
+    size,
+    'Raytraced Image Buffer',
+    GPUBufferUsage.COPY_SRC
+  );
+  setImageBuffer(current);
+  const prev = createStorageBuffer(
+    size,
+    'Prev Raytraced Image Buffer',
+    GPUBufferUsage.COPY_DST
+  );
+  setPrevImageBuffer(prev);
+  return [current, prev];
 });
 
 createEffect(() => {
@@ -412,13 +432,14 @@ const bvh = (x: PipelineBuilder) => /* wgsl */ `
 
 const raygen = () => /* wgsl */ `
   const cameraFovAngle = ${store.fov};
+  const cameraRayZ = -1/tan(cameraFovAngle / 2.f);
   const paniniDistance = ${store.paniniDistance};
   const lensFocusDistance = ${store.focusDistance};
   const circleOfConfusionRadius = ${store.circleOfConfusion};
   const projectionType = ${store.projectionType};
 
   fn pinholeRayDirection(pixel: vec2f) -> vec3f {
-    return normalize(vec3(pixel, -1/tan(cameraFovAngle / 2.f)));
+    return normalize(vec3(pixel, cameraRayZ));
   }
 
   fn paniniRayDirection(pixel: vec2f) -> vec3f {
@@ -462,6 +483,22 @@ const raygen = () => /* wgsl */ `
         return vec3(0);
       }
     }
+  }
+
+  fn ray_transform(_ray: Ray) -> Ray {
+    var ray = _ray;
+    let ray_pos = viewMatrix * vec4(ray.pos, 1.);
+    ray.pos = ray_pos.xyz;
+    ray.dir = normalize(vec3(ray.dir.xy, ray.dir.z * ray_pos.w));
+    ray.dir = (viewMatrix * vec4(ray.dir, 0.)).xyz;
+    return ray;
+  }
+
+  fn cameraRay(uv: vec2f) -> Ray {
+    let rayDirection = cameraRayDirection(uv);
+    
+    let ray = thinLensRay(rayDirection, sample_incircle(random_2()));
+    return ray_transform(ray);
   }
 `;
 
@@ -622,15 +659,6 @@ const scene = () => /* wgsl */ `
     return (light_vis(pos, sun_dir) * attenuation(sun_dir, norm) + ambience) * sun_color;
   }
 
-  fn ray_transform(_ray: Ray) -> Ray {
-    var ray = _ray;
-    let ray_pos = u_view * vec4(ray.pos, 1.);
-    ray.pos = ray_pos.xyz;
-    ray.dir = normalize(vec3(ray.dir.xy, ray.dir.z * ray_pos.w));
-    ray.dir = (u_view * vec4(ray.dir, 0.)).xyz;
-    return ray;
-  }
-
   fn skyColor(dir: vec3f) -> vec3f {
     return ambience * sun_color;
   }
@@ -638,8 +666,11 @@ const scene = () => /* wgsl */ `
 
 const [computePipeline, computeBindGroups] = reactiveComputePipeline({
   shader: (x) => /* wgsl */ `
+    ${x.bindVarBuffer('storage', 'prevImageBuffer: array<vec3f>', prevImageBuffer())}
     ${x.bindVarBuffer('storage', 'imageBuffer: array<vec3f>', imageBuffer())}
-    ${x.bindVarBuffer('uniform', 'u_view: mat4x4f', viewBuffer)}
+    ${x.bindVarBuffer('uniform', 'viewMatrix: mat4x4f', viewBuffer)}
+    ${x.bindVarBuffer('uniform', 'prevViewMatrix: mat4x4f', prevViewBuffer)}
+    ${x.bindVarBuffer('uniform', 'prevViewInvMatrix: mat4x4f', prevViewInvBuffer)}
 
     const modelsCount = ${models.length};
     ${x.bindVarBuffer('read-only-storage', 'faces: array<Face>', facesBuffer)}
@@ -654,6 +685,8 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
 
     const viewport = vec2u(${store.view[0]}, ${store.view[1]});
     const viewportf = vec2f(viewport);
+    const aspect = viewportf.y / viewportf.x;
+    const viewportNormalized = viewportf / viewportf.x;
 
     ${rng}
     ${intervals}
@@ -663,6 +696,19 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${bvIntersect}
     ${scene()}
     ${raygen()}
+
+    fn reprojectedPoint(p: vec3f, d: f32) -> vec3f {
+      let prevCameraPos = prevViewMatrix[3].xyz;
+      let pp4 = prevViewInvMatrix * vec4(p, 1.);
+      let _uv = pp4.xy * cameraRayZ / pp4.z;
+      let uv = (_uv + viewportNormalized)/2;
+      if uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > aspect {
+        return vec3f(0);
+      }
+      let uv2 = vec2u(uv * viewportf.x);
+      let idx = uv2.y * viewport.x + uv2.x;
+      return prevImageBuffer[idx] / f32(max(counter, 1));
+    }
 
     @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
     fn main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>) {
@@ -675,18 +721,15 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       let pos = vec2f(upos);
       rng_state = seed + idx;
       
-      if (counter == 0u) {
+      // if (counter == 0u) {
         imageBuffer[idx] = vec3f(0);
-      }
+      // }
 
       var color = vec3f(0);
       for (var i = 0u; i < ${store.sampleCount}; i++) {
         let subpixel = random_2();
         let uv = (2. * (pos + subpixel) - viewportf) / viewportf.x;
-        let rayDirection = cameraRayDirection(uv);
-        
-        var ray = thinLensRay(rayDirection, sample_incircle(random_2()));
-        ray = ray_transform(ray);
+        let ray = cameraRay(uv);
 
         let hit = scene(ray);
         if !hit.hit {
@@ -700,8 +743,8 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
         }
 
         let material = materials[hit.materialIdx];
-        let t = hit.dist;
         let p = hit.point;
+        color += reprojectedPoint(p, hit.dist) * 0.2;
         color += sun(p, hit.normal) * material.color;
         color += material.emission;
 
@@ -715,6 +758,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       }
 
       imageBuffer[idx] += color / ${store.sampleCount};
+      imageBuffer[idx] *= f32(max(counter, 1));
     }
   `,
 });
@@ -885,6 +929,8 @@ export function renderFrame(now: number) {
       renderPass.executeBundles([debugBVHRenderBundle()]);
     }
   });
+
+  encoder.copyBufferToBuffer(imageBuffer(), 0, prevImageBuffer(), 0);
 
   submit(encoder, () => {
     device.queue.submit([encoder.finish()]);
