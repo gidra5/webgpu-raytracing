@@ -24,7 +24,7 @@ import {
   viewMatrix,
   viewProjectionMatrix,
 } from './store';
-import { createEffect, createSignal } from 'solid-js';
+import { createEffect, createMemo, createSignal } from 'solid-js';
 import rng from './shaders/rng';
 import tonemapping from './shaders/tonemapping';
 import {
@@ -38,18 +38,26 @@ const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const context = canvas.getContext('webgpu');
 const device = await getDevice(context as GPUCanvasContext);
 const [imageBuffer, setImageBuffer] = createSignal<GPUBuffer>();
+const [depthBuffer, setDepthBuffer] = createSignal<GPUBuffer>();
+const [prevDepthBuffer, setPrevDepthBuffer] = createSignal<GPUBuffer>();
 const [prevImageBuffer, setPrevImageBuffer] = createSignal<GPUBuffer>();
+const [counterBuffer, setCounterBuffer] = createSignal<GPUBuffer>();
+const [prevCounterBuffer, setPrevCounterBuffer] = createSignal<GPUBuffer>();
 const [blitRenderBundle, setBlitRenderBundle] = createSignal<GPURenderBundle>();
 const [debugBVHRenderBundle, setDebugBVHRenderBundle] =
   createSignal<GPURenderBundle>();
-const prevView = usePrevious(viewMatrix);
-const prevViewBuffer = reactiveUniformBuffer(16, prevView);
-const prevViewInvBuffer = reactiveUniformBuffer(16, () => {
+const [prevView, setPrevView] = createSignal<mat4>();
+const prevViewInv = createMemo(() => {
   const _prevView = prevView();
   if (_prevView) {
+    console.log('inv');
+
     return mat4.invert(mat4.create(), _prevView);
   }
+  return mat4.create();
 });
+const prevViewBuffer = reactiveUniformBuffer(16, prevView);
+const prevViewInvBuffer = reactiveUniformBuffer(16, prevViewInv);
 const viewBuffer = reactiveUniformBuffer(16, viewMatrix);
 const viewProjBuffer = reactiveUniformBuffer(16, viewProjectionMatrix);
 
@@ -81,20 +89,46 @@ createEffect<GPUBuffer[]>((prevBuffers) => {
   if (prevBuffers) prevBuffers.forEach((b) => b.destroy());
   const width = store.view[0] + 1;
   const height = store.view[1];
-  const size = Float32Array.BYTES_PER_ELEMENT * 4 * width * height;
+  const imageSize = Float32Array.BYTES_PER_ELEMENT * 4 * width * height;
   const current = createStorageBuffer(
-    size,
+    imageSize,
     'Raytraced Image Buffer',
     GPUBufferUsage.COPY_SRC
   );
   setImageBuffer(current);
   const prev = createStorageBuffer(
-    size,
+    imageSize,
     'Prev Raytraced Image Buffer',
     GPUBufferUsage.COPY_DST
   );
   setPrevImageBuffer(prev);
-  return [current, prev];
+
+  const depthImageSize = Float32Array.BYTES_PER_ELEMENT * width * height;
+  const depth = createStorageBuffer(
+    depthImageSize,
+    'Depth Buffer',
+    GPUBufferUsage.COPY_SRC
+  );
+  setDepthBuffer(depth);
+  const prevDepth = createStorageBuffer(
+    depthImageSize,
+    'Prev Depth Buffer',
+    GPUBufferUsage.COPY_DST
+  );
+  setPrevDepthBuffer(prevDepth);
+
+  const accumulation = createStorageBuffer(
+    depthImageSize,
+    'Accumulation Buffer'
+  );
+  setCounterBuffer(accumulation);
+
+  const prevAccumulation = createStorageBuffer(
+    depthImageSize,
+    'Prev Accumulation Buffer'
+  );
+  setPrevCounterBuffer(prevAccumulation);
+  return [current, prev, prevDepth, depth, accumulation, prevAccumulation];
 });
 
 createEffect(() => {
@@ -127,19 +161,46 @@ createEffect(() => {
       ${tonemapping}
 
       ${x.bindVarBuffer('read-only-storage', 'imageBuffer: array<vec3f>', imageBuffer())}
+      ${x.bindVarBuffer('read-only-storage', 'depthBuffer: array<f32>', depthBuffer())}
+      ${x.bindVarBuffer('read-only-storage', 'prevDepthBuffer: array<f32>', prevDepthBuffer())}
+      ${x.bindVarBuffer('read-only-storage', 'prevImageBuffer: array<vec3f>', prevImageBuffer())}
+      ${x.bindVarBuffer('read-only-storage', 'counterBuffer: array<u32>', counterBuffer())}
       ${x.bindVarBuffer('uniform', 'counter: u32', counterUniformBuffer)}
-      // @group(0) @binding(1) var<uniform> commonUniforms: CommonUniforms;
+      ${x.bindVarBuffer('uniform', 'prevViewMatrix: mat4x4f', prevViewBuffer)}
+      ${x.bindVarBuffer('uniform', 'prevViewInvMatrix: mat4x4f', prevViewInvBuffer)}
+      ${x.bindVarBuffer('uniform', 'viewMatrix: mat4x4f', viewBuffer)}
 
       const viewport = vec2u(${store.view[0]}, ${store.view[1]});
+      const viewportf = vec2f(viewport);
+
+      fn getColor(idx: u32, pos: vec2f) -> vec3f {
+        if ${store.blitView == 'image'} {
+          return imageBuffer[idx];
+        } else if ${store.blitView == 'accumulated'} {
+          return imageBuffer[idx] / f32(counterBuffer[idx]);
+        } else if ${store.blitView == 'normals'} {
+          return imageBuffer[idx];
+        } else if ${store.blitView == 'depth'} {
+          return vec3f(depthBuffer[idx]) / 10;
+        } else if ${store.blitView == 'prevDepth'} {
+          return vec3f(prevDepthBuffer[idx]) / 10;
+        } else if ${store.blitView == 'depthDelta'} {
+          return vec3f(depthBuffer[idx] - prevDepthBuffer[idx]);
+        } else if ${store.blitView == 'reprojected'} {
+          // return imageBuffer[idx];
+          return imageBuffer[idx] / f32(counterBuffer[idx]);
+        }
+        return vec3f(0);
+      }
 
       @fragment
-      fn main(@location(0) _uv: vec2<f32>) -> @location(0) vec4f {
-        let uv = vec2f(_uv.x, 1. - _uv.y);
-        let pos = vec2u(uv * vec2f(viewport));
+      fn main(@location(0) _uv: vec2f) -> @location(0) vec4f {
+        let uv = vec2f(_uv.x, 1 - _uv.y);
+        let pos = uv * viewportf;
+        let upos = vec2u(pos);
         // let idx = fma(pos.y, viewport.x, pos.x);
-        let idx = pos.y * viewport.x + pos.x; 
-        let color = imageBuffer[idx] / f32(counter + 1);
-        // let color = imageBuffer[idx];
+        let idx = upos.y * viewport.x + upos.x;
+        let color = getColor(idx, pos);
         let tonemapped = color;
         // let color = lottes(raytraceImageBuffer[idx] / f32(commonUniforms.frameCounter + 1));
         // return aces(raytraceImageBuffer[idx] / f32(commonUniforms.frameCounter + 1));
@@ -485,20 +546,20 @@ const raygen = () => /* wgsl */ `
     }
   }
 
-  fn ray_transform(_ray: Ray) -> Ray {
+  fn ray_transform(_ray: Ray, view: mat4x4f) -> Ray {
     var ray = _ray;
-    let ray_pos = viewMatrix * vec4(ray.pos, 1.);
+    let ray_pos = view * vec4(ray.pos, 1.);
     ray.pos = ray_pos.xyz;
     ray.dir = normalize(vec3(ray.dir.xy, ray.dir.z * ray_pos.w));
-    ray.dir = (viewMatrix * vec4(ray.dir, 0.)).xyz;
+    ray.dir = (view * vec4(ray.dir, 0.)).xyz;
     return ray;
   }
 
-  fn cameraRay(uv: vec2f) -> Ray {
+  fn cameraRay(uv: vec2f, view: mat4x4f) -> Ray {
     let rayDirection = cameraRayDirection(uv);
     
     let ray = thinLensRay(rayDirection, sample_incircle(random_2()));
-    return ray_transform(ray);
+    return ray_transform(ray, view);
   }
 `;
 
@@ -668,6 +729,10 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
   shader: (x) => /* wgsl */ `
     ${x.bindVarBuffer('storage', 'prevImageBuffer: array<vec3f>', prevImageBuffer())}
     ${x.bindVarBuffer('storage', 'imageBuffer: array<vec3f>', imageBuffer())}
+    ${x.bindVarBuffer('storage', 'prevDepthBuffer: array<f32>', prevDepthBuffer())}
+    ${x.bindVarBuffer('storage', 'depthBuffer: array<f32>', depthBuffer())}
+    ${x.bindVarBuffer('storage', 'counterBuffer: array<u32>', counterBuffer())}
+    ${x.bindVarBuffer('storage', 'prevCounterBuffer: array<u32>', prevCounterBuffer())}
     ${x.bindVarBuffer('uniform', 'viewMatrix: mat4x4f', viewBuffer)}
     ${x.bindVarBuffer('uniform', 'prevViewMatrix: mat4x4f', prevViewBuffer)}
     ${x.bindVarBuffer('uniform', 'prevViewInvMatrix: mat4x4f', prevViewInvBuffer)}
@@ -679,9 +744,10 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
 
 
     ${x.bindVarBuffer('uniform', 'seed: u32', seedUniformBuffer)}
-    ${x.bindVarBuffer('uniform', 'counter: u32', counterUniformBuffer)}
+    ${x.bindVarBuffer('uniform', '_counter: u32', counterUniformBuffer)}
     
-    const debugNormals = ${store.debugNormals};
+    const debugNormals = ${store.blitView === 'normals'};
+    const accumulated = ${store.blitView === 'accumulated'};
 
     const viewport = vec2u(${store.view[0]}, ${store.view[1]});
     const viewportf = vec2f(viewport);
@@ -697,17 +763,99 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${scene()}
     ${raygen()}
 
-    fn reprojectedPoint(p: vec3f, d: f32) -> vec3f {
-      let prevCameraPos = prevViewMatrix[3].xyz;
+
+    struct ReprojectionResult {
+      success: bool,
+      idx: u32,
+    }
+    fn reproject(p: vec3f) -> ReprojectionResult {
       let pp4 = prevViewInvMatrix * vec4(p, 1.);
       let _uv = pp4.xy * cameraRayZ / pp4.z;
-      let uv = (_uv + viewportNormalized)/2;
-      if uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > aspect {
-        return vec3f(0);
+      let uv = (_uv * viewportf.x + viewportf)/2;
+      if uv.x < 0 || uv.x > viewportf.x || uv.y < 0 || uv.y > viewportf.y {
+        return ReprojectionResult(false, 0);
       }
-      let uv2 = vec2u(uv * viewportf.x);
+      let uv2 = vec2u(uv);
       let idx = uv2.y * viewport.x + uv2.x;
-      return prevImageBuffer[idx] / f32(max(counter, 1));
+      let prevDepth = prevDepthBuffer[idx];
+
+      // let prevCameraPos = prevViewMatrix[3].xyz;
+      // let d2_len = length(p - prevCameraPos);
+      // if !(abs(d2_len - prevDepth) < 0.001) {
+      //   return ReprojectionResult(false, 0);
+      // }
+
+      let old_ray = cameraRay(_uv, prevViewMatrix);
+      let old_p = old_ray.pos + old_ray.dir * prevDepth;
+      let dp = p - old_p;
+      let d = dot(dp, dp);
+      if !(d < 0.001) {
+        return ReprojectionResult(false, 0);
+      }
+
+      return ReprojectionResult(true, idx);
+    }
+    // fn reproject2(p: vec3f) -> vec3f {
+    //   let pp4 = prevViewInvMatrix * vec4(p, 1.);
+    //   let _uv = pp4.xy * cameraRayZ / pp4.z;
+    //   let uv = (_uv * viewportf.x + viewportf)/2;
+    //   if uv.x < 0 || uv.x > viewportf.x || uv.y < 0 || uv.y > viewportf.y {
+    //     return vec3f(0, 0, 1); // Blue for out-of-bounds
+    //   }
+    //   // let f = round(uv) - uv;
+    //   // let uv2 = vec2u(uv + f*0.99);
+    //   // let uv2 = vec2u((uv));
+    //   let uv2 = vec2u(round(uv));
+    //   let idx = uv2.y * viewport.x + uv2.x;
+    //   let prevDepth = prevDepthBuffer[idx];
+    //   // let prevCameraPos = prevViewMatrix[3].xyz;
+    //   // let d2_len = length(p - prevCameraPos);
+    //   // if !(abs(d2_len - prevDepth) < 0.001) {
+    //   //   return vec3f(abs(d2_len - prevDepth), 0, 0) *0.1;
+    //   // }
+    //   // if !(abs(depthBuffer[idx] - prevDepth) < 0.001) {
+    //   //   return vec3f(abs(depthBuffer[idx] - prevDepth), 0, 0) *0.1;
+    //   // }
+
+    //   let old_ray = cameraRay(_uv, prevViewMatrix);
+    //   let old_p = old_ray.pos + old_ray.dir * prevDepth;
+    //   let d = length(p - old_p);
+
+    //   if !(d < 0.1) {
+    //     return vec3f(d, 0, 0) * 10;
+    //   }
+
+    //   return vec3f(1);
+    // }
+
+    fn computeColor(pos: vec2f, _hit: ptr<function, Hit>) -> vec3f {
+      let uv = (2. * pos - viewportf) / viewportf.x;
+      let ray = cameraRay(uv, viewMatrix);
+      let hit = scene(ray);
+      *_hit = hit;
+      if !hit.hit {
+        return skyColor(ray.dir);
+      }
+
+      if debugNormals {
+        return (hit.normal + 1) / 2;
+      }
+
+      let material = materials[hit.materialIdx];
+      let p = hit.point;
+      var color = vec3f(0);
+      color += sun(p, hit.normal) * material.color;
+      color += material.emission;
+
+      let s = sampleLights();
+      let sMaterial = materials[s.materialIdx];
+      let ds = s.point - p;
+      let d_sq = dot(ds, ds);
+      let d = ds * inverseSqrt(d_sq);
+      let r = Ray(p, d);
+      color += in_shadow(r, d_sq) * attenuation(d, hit.normal) * sMaterial.emission * material.color / d_sq * s.p;
+
+      return color;
     }
 
     @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
@@ -720,45 +868,59 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       let idx = upos.x + upos.y * viewport.x;
       let pos = vec2f(upos);
       rng_state = seed + idx;
+      let prevCounter = counterBuffer[idx];
+      let prevDepth = depthBuffer[idx];
+      let prevColor = imageBuffer[idx];
       
-      // if (counter == 0u) {
-        imageBuffer[idx] = vec3f(0);
-      // }
-
-      var color = vec3f(0);
-      for (var i = 0u; i < ${store.sampleCount}; i++) {
-        let subpixel = random_2();
-        let uv = (2. * (pos + subpixel) - viewportf) / viewportf.x;
-        let ray = cameraRay(uv);
-
-        let hit = scene(ray);
-        if !hit.hit {
-          color += skyColor(ray.dir);
-          continue; 
-        }
-
-        if debugNormals {
-          color += (hit.normal + 1) / 2;
-          continue;
-        }
-
-        let material = materials[hit.materialIdx];
-        let p = hit.point;
-        color += reprojectedPoint(p, hit.dist) * 0.2;
-        color += sun(p, hit.normal) * material.color;
-        color += material.emission;
-
-        let s = sampleLights();
-        let sMaterial = materials[s.materialIdx];
-        let ds = s.point - p;
-        let d_sq = dot(ds, ds);
-        let d = ds * inverseSqrt(d_sq);
-        let r = Ray(p, d);
-        color += in_shadow(r, d_sq) * attenuation(d, hit.normal) * sMaterial.emission * material.color / d_sq * s.p;
+      if !accumulated && _counter > 0u {
+        counterBuffer[idx] = 0u;
+        return;
       }
 
-      imageBuffer[idx] += color / ${store.sampleCount};
-      imageBuffer[idx] *= f32(max(counter, 1));
+      var color = vec3f(0);
+      var centerHit: Hit;
+
+      color += computeColor(pos, &centerHit);
+      depthBuffer[idx] = centerHit.dist;
+
+      // if ${store.reproject} {
+      //   let result = reproject(centerHit.point);
+      //   if result.success {
+      //     color += prevImageBuffer[result.idx];
+      //     let reprojectedCounter = prevCounterBuffer[result.idx];
+      //     counterBuffer[idx] = reprojectedCounter + 1u;
+      //   } else {
+      //     counterBuffer[idx] = 0u;
+      //   }
+      // }
+
+      if ${store.blitView == 'reprojected'} {
+        let result = reproject(centerHit.point);
+        if result.success {
+          color += prevImageBuffer[result.idx];
+          counterBuffer[idx] = prevCounterBuffer[result.idx];
+          let max = 16u
+          if (counterBuffer[idx] > max) {
+              color *= f32(max) / f32(counterBuffer[idx]);
+              counterBuffer[idx] = max;
+          }
+
+        } else {
+          color += vec3f(0);
+        }
+        // color = reproject2(centerHit.point);
+      }
+
+      // if counterBuffer[idx] == 0u {
+        prevImageBuffer[idx] = prevColor;
+        prevDepthBuffer[idx] = prevDepth;
+        prevCounterBuffer[idx] = prevCounter;
+      // }
+      
+      imageBuffer[idx] = color;
+      counterBuffer[idx] += 1u;
+      // counterBuffer[idx] = counter + 1u;
+      // imageBuffer[idx] += color;
     }
   `,
 });
@@ -901,9 +1063,17 @@ const rpd: GPURenderPassDescriptor = {
 };
 
 export function renderFrame(now: number) {
+  // if (store.counter !== 0) {
+  setPrevView(viewMatrix());
+  // }
   writeUint32Buffer(seedUniformBuffer, Math.random() * 0xffffffff);
   writeUint32Buffer(counterUniformBuffer, store.counter);
   incrementCounter();
+  // if (prevView()) {
+  //   // const p = mat4.multiply(mat4.create(), prevViewInv(), prevView());
+  //   // console.log(mat4.exactEquals(p, mat4.create()));
+  //   // console.log(mat4.exactEquals(prevView(), viewMatrix()));
+  // }
 
   const encoder = device.createCommandEncoder();
   rpd.colorAttachments[0].view = context.getCurrentTexture().createView();
@@ -930,11 +1100,8 @@ export function renderFrame(now: number) {
     }
   });
 
-  encoder.copyBufferToBuffer(imageBuffer(), 0, prevImageBuffer(), 0);
-
   submit(encoder, () => {
     device.queue.submit([encoder.finish()]);
   });
-
   setRenderJSTime(performance.now() - now);
 }

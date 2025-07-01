@@ -1,6 +1,7 @@
 import { mat3, mat4, quat, vec2, vec3 } from 'gl-matrix';
 import { createStore } from 'solid-js/store';
 import { front, right, up } from './camera';
+import { createMemo } from 'solid-js';
 
 export enum ShadingType {
   Flat,
@@ -12,6 +13,15 @@ export enum ProjectionType {
   Perspective,
   Orthographic,
 }
+
+type BlitView =
+  | 'image'
+  | 'normals'
+  | 'depth'
+  | 'prevDepth'
+  | 'depthDelta'
+  | 'reprojected'
+  | 'accumulated';
 
 const [store, setStore] = createStore({
   loadingTitle: '' as string | null,
@@ -32,6 +42,7 @@ const [store, setStore] = createStore({
   ambience: 0.1,
   shadingType: ShadingType.Phong,
   projectionType: ProjectionType.Perspective,
+  reproject: true,
 
   // resolutionScale: 0.3,
   resolutionScale: 1,
@@ -45,7 +56,7 @@ const [store, setStore] = createStore({
   },
 
   debugBVH: false,
-  debugNormals: false,
+  blitView: 'image' as BlitView,
 
   timings: {
     time: 0, // ms
@@ -59,7 +70,8 @@ const [store, setStore] = createStore({
   keyboard: [],
 });
 
-export const viewMatrix = () => {
+// memo
+export const viewMatrix = createMemo(() => {
   const pos = vec3.clone(store.position);
   vec3.scale(pos, pos, -1);
   const viewMatrix = mat4.fromRotationTranslation(
@@ -68,9 +80,9 @@ export const viewMatrix = () => {
     pos
   );
   return viewMatrix;
-};
+});
 
-export const viewProjectionMatrix = () => {
+export const viewProjectionMatrix = createMemo(() => {
   const m = mat4.create();
 
   const _viewMatrix = mat4.create();
@@ -82,9 +94,14 @@ export const viewProjectionMatrix = () => {
   mat4.perspectiveZO(projectionMatrix, 2 * Math.atan(d / r), r, 0.1, 1000);
   mat4.multiply(m, projectionMatrix, _viewMatrix);
   return m;
-};
+});
 
 export { store };
+
+export const setReproject = (reproject: boolean) => {
+  setStore('reproject', reproject);
+  resetCounter();
+};
 
 export const setLoadingTitle = (title: string) => {
   setStore('loadingTitle', title);
@@ -127,9 +144,11 @@ export const setDebugBVH = (debugBVH: boolean) => {
   resetCounter();
 };
 
-export const setDebugNormals = (debugNormals: boolean) => {
-  setStore('debugNormals', debugNormals);
-  resetCounter();
+export const setBlitView = (blitView: BlitView) => {
+  setStore('blitView', blitView);
+  if (blitView === 'accumulated') {
+    resetCounter();
+  }
 };
 
 export const setTime = (time: number) => {

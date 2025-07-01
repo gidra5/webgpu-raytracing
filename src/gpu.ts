@@ -23,6 +23,7 @@ export const getDevice = async (context: GPUCanvasContext) => {
     requiredLimits: {
       maxStorageBufferBindingSize: 2147483644,
       maxBufferSize: 2147483644,
+      maxStorageBuffersPerShaderStage: 10,
     },
   });
   presentationFormat =

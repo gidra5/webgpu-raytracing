@@ -1,10 +1,11 @@
-import { Accessor, createEffect, createSignal, type Component } from 'solid-js';
+import { type Component } from 'solid-js';
 import {
   ProjectionType,
+  setBlitView,
   setDebugBVH,
-  setDebugNormals,
   setFov,
   setProjectionType,
+  setReproject,
   setShadingType,
   ShadingType,
   store,
@@ -39,13 +40,28 @@ const App: Component = () => {
         Debug BVH
       </label>
       <label class="flex gap-1 text-white text-sm items-baseline">
+        Reproject
         <input
           class="m-0"
           type="checkbox"
-          checked={store.debugNormals}
-          onChange={(e) => setDebugNormals(e.target.checked)}
+          checked={store.reproject}
+          onChange={(e) => setReproject(e.target.checked)}
         />
-        Debug Normals
+      </label>
+      <label class="flex gap-1 text-white text-sm items-baseline">
+        Blit view
+        <select
+          value={store.blitView}
+          onChange={(e) => setBlitView(e.target.value as any)}
+        >
+          <option value="accumulated">Accumulated</option>
+          <option value="image">Image</option>
+          <option value="normals">Normals</option>
+          <option value="depth">Depth</option>
+          <option value="prevDepth">Prev Depth</option>
+          <option value="depthDelta">Depth Delta</option>
+          <option value="reprojected">Reprojected</option>
+        </select>
       </label>
       <label class="flex gap-2 text-white text-sm items-baseline">
         Shading type

@@ -32,7 +32,10 @@ export default /* wgsl */ `
   var<private> rng_state: u32 = 0;
   @must_use
   fn random_1u() -> u32 {
-    rng_state = rng_state * 277803737u;
+    // rng_state = rng_state * 277803737u;
+    let oldState = rng_state + 747796405u + 2891336453u;
+    let word = ((oldState >> ((oldState >> 28u) + 4u)) ^ oldState) * 277803737u;
+    rng_state = (word >> 22u) ^ word;
     return rng_state;
   }
   
