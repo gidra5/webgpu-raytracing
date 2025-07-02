@@ -16,12 +16,11 @@ export enum ProjectionType {
 
 type BlitView =
   | 'image'
-  | 'normals'
+  | 'prevImage'
   | 'depth'
   | 'prevDepth'
   | 'depthDelta'
-  | 'reprojected'
-  | 'accumulated';
+  | 'normals';
 
 const [store, setStore] = createStore({
   loadingTitle: '' as string | null,
@@ -42,9 +41,8 @@ const [store, setStore] = createStore({
   ambience: 0.1,
   shadingType: ShadingType.Phong,
   projectionType: ProjectionType.Perspective,
-  reproject: true,
+  reproject: false,
 
-  // resolutionScale: 0.3,
   resolutionScale: 1,
   scale: 1,
   sensitivity: 0.03,
@@ -146,9 +144,6 @@ export const setDebugBVH = (debugBVH: boolean) => {
 
 export const setBlitView = (blitView: BlitView) => {
   setStore('blitView', blitView);
-  if (blitView === 'accumulated') {
-    resetCounter();
-  }
 };
 
 export const setTime = (time: number) => {

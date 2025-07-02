@@ -54,13 +54,12 @@ const App: Component = () => {
           value={store.blitView}
           onChange={(e) => setBlitView(e.target.value as any)}
         >
-          <option value="accumulated">Accumulated</option>
           <option value="image">Image</option>
-          <option value="normals">Normals</option>
+          <option value="prevImage">Prev Image</option>
           <option value="depth">Depth</option>
           <option value="prevDepth">Prev Depth</option>
           <option value="depthDelta">Depth Delta</option>
-          <option value="reprojected">Reprojected</option>
+          <option value="normals">Normals</option>
         </select>
       </label>
       <label class="flex gap-2 text-white text-sm items-baseline">
