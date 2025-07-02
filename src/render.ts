@@ -752,7 +752,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     const viewport = vec2u(${store.view[0]}, ${store.view[1]});
     const viewportf = vec2f(viewport);
     const aspect = viewportf.y / viewportf.x;
-    const viewportNormalized = viewportf / viewportf.x;
+    const viewportN = viewportf / viewportf.x; // viewport normalized
 
     ${rng}
     ${intervals}
@@ -771,62 +771,51 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     fn reproject(p: vec3f) -> ReprojectionResult {
       let pp4 = prevViewInvMatrix * vec4(p, 1.);
       let _uv = pp4.xy * cameraRayZ / pp4.z;
+      if any(_uv < -viewportN) || any(_uv > viewportN) {
+        return ReprojectionResult(false, 0);
+      }
       let uv = (_uv * viewportf.x + viewportf)/2;
-      if uv.x < 0 || uv.x > viewportf.x || uv.y < 0 || uv.y > viewportf.y {
+      // let uv2 = vec2u(uv);
+      let uv2 = vec2u(round(uv - vec2f(0.5)));
+      let uv_a = array<vec2u, 9>(
+        vec2u(uv2.x, uv2.y),
+        vec2u(uv2.x + 1, uv2.y),
+        vec2u(uv2.x, uv2.y + 1),
+        vec2u(uv2.x + 1, uv2.y + 1),
+        vec2u(uv2.x - 1, uv2.y),
+        vec2u(uv2.x, uv2.y - 1),
+        vec2u(uv2.x - 1, uv2.y - 1),
+        vec2u(uv2.x + 1, uv2.y - 1),
+        vec2u(uv2.x - 1, uv2.y + 1),
+      );
+      var min_d = f32max;
+      var min_idx = 0u;
+      for (var i = 0u; i < 9u; i = i + 1u) {
+        let idx = uv_a[i].y * viewport.x + uv_a[i].x;
+        // let idx = uv2.y * viewport.x + uv2.x;
+        let prevDepth = prevDepthBuffer[idx];
+
+        // let prevCameraPos = prevViewMatrix[3].xyz;
+        // let d2_len = length(p - prevCameraPos);
+        // if !(abs(d2_len - prevDepth) < 0.001) {
+        //   return ReprojectionResult(false, 0);
+        // }
+
+        let old_ray = cameraRay(_uv, prevViewMatrix);
+        let old_p = old_ray.pos + old_ray.dir * prevDepth;
+        let dp = p - old_p;
+        let d = dot(dp, dp);
+        if d < min_d {
+          min_d = d;
+          min_idx = idx;
+        }
+      }
+      if !(min_d < 0.001) {
         return ReprojectionResult(false, 0);
       }
-      let uv2 = vec2u(uv);
-      let idx = uv2.y * viewport.x + uv2.x;
-      let prevDepth = prevDepthBuffer[idx];
 
-      // let prevCameraPos = prevViewMatrix[3].xyz;
-      // let d2_len = length(p - prevCameraPos);
-      // if !(abs(d2_len - prevDepth) < 0.001) {
-      //   return ReprojectionResult(false, 0);
-      // }
-
-      let old_ray = cameraRay(_uv, prevViewMatrix);
-      let old_p = old_ray.pos + old_ray.dir * prevDepth;
-      let dp = p - old_p;
-      let d = dot(dp, dp);
-      if !(d < 0.001) {
-        return ReprojectionResult(false, 0);
-      }
-
-      return ReprojectionResult(true, idx);
+      return ReprojectionResult(true, min_idx);
     }
-    // fn reproject2(p: vec3f) -> vec3f {
-    //   let pp4 = prevViewInvMatrix * vec4(p, 1.);
-    //   let _uv = pp4.xy * cameraRayZ / pp4.z;
-    //   let uv = (_uv * viewportf.x + viewportf)/2;
-    //   if uv.x < 0 || uv.x > viewportf.x || uv.y < 0 || uv.y > viewportf.y {
-    //     return vec3f(0, 0, 1); // Blue for out-of-bounds
-    //   }
-    //   // let f = round(uv) - uv;
-    //   // let uv2 = vec2u(uv + f*0.99);
-    //   // let uv2 = vec2u((uv));
-    //   let uv2 = vec2u(round(uv));
-    //   let idx = uv2.y * viewport.x + uv2.x;
-    //   let prevDepth = prevDepthBuffer[idx];
-    //   // let prevCameraPos = prevViewMatrix[3].xyz;
-    //   // let d2_len = length(p - prevCameraPos);
-    //   // if !(abs(d2_len - prevDepth) < 0.001) {
-    //   //   return vec3f(abs(d2_len - prevDepth), 0, 0) *0.1;
-    //   // }
-    //   // if !(abs(depthBuffer[idx] - prevDepth) < 0.001) {
-    //   //   return vec3f(abs(depthBuffer[idx] - prevDepth), 0, 0) *0.1;
-    //   // }
-
-    //   let old_ray = cameraRay(_uv, prevViewMatrix);
-    //   let old_p = old_ray.pos + old_ray.dir * prevDepth;
-    //   let d = length(p - old_p);
-
-    //   if !(d < 0.1) {
-    //     return vec3f(d, 0, 0) * 10;
-    //   }
-
-    //   return vec3f(1);
-    // }
 
     fn computeColor(pos: vec2f, _hit: ptr<function, Hit>) -> vec3f {
       let uv = (2. * pos - viewportf) / viewportf.x;
@@ -897,16 +886,17 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       if ${store.blitView == 'reprojected'} {
         let result = reproject(centerHit.point);
         if result.success {
-          color += prevImageBuffer[result.idx];
+          let reprojectedColor = prevImageBuffer[result.idx];
+          color += reprojectedColor;
+          // color = mix(color, reprojectedColor, 0.9);
           counterBuffer[idx] = prevCounterBuffer[result.idx];
-          let max = 16u
+          let max = 16u;
           if (counterBuffer[idx] > max) {
               color *= f32(max) / f32(counterBuffer[idx]);
               counterBuffer[idx] = max;
           }
-
         } else {
-          color += vec3f(0);
+          counterBuffer[idx] = 0u;
         }
         // color = reproject2(centerHit.point);
       }
