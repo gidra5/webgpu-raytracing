@@ -33,29 +33,22 @@ import {
   loadModels,
   loadModelsToBuffers,
 } from './scene';
-import { usePrevious } from './utils';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const context = canvas.getContext('webgpu');
 const device = await getDevice(context as GPUCanvasContext);
 const [imageBuffer, setImageBuffer] = createSignal<GPUBuffer>();
-const [depthBuffer, setDepthBuffer] = createSignal<GPUBuffer>();
 const [prevImageBuffer, setPrevImageBuffer] = createSignal<GPUBuffer>();
+const [positionBuffer, setPositionBuffer] = createSignal<GPUBuffer>();
+const [prevPositionBuffer, setPrevPositionBuffer] = createSignal<GPUBuffer>();
+const [depthBuffer, setDepthBuffer] = createSignal<GPUBuffer>();
 const [blitRenderBundle, setBlitRenderBundle] = createSignal<GPURenderBundle>();
 const [debugBVHRenderBundle, setDebugBVHRenderBundle] =
   createSignal<GPURenderBundle>();
 const [prevView, setPrevView] = createSignal<mat4>(undefined, {
   equals: (a, b) => a && mat4.exactEquals(a, b),
 });
-const prevViewInv = createMemo(() => {
-  const _prevView = prevView();
-  if (_prevView) {
-    return mat4.invert(mat4.create(), _prevView);
-  }
-  return mat4.create();
-});
 const prevViewBuffer = reactiveUniformBuffer(16, prevView);
-const prevViewInvBuffer = reactiveUniformBuffer(16, prevViewInv);
 const viewBuffer = reactiveUniformBuffer(16, viewMatrix);
 const viewProjBuffer = reactiveUniformBuffer(16, viewProjectionMatrix);
 const reprojectionFrustrumBuffer = reactiveUniformBuffer(
@@ -76,6 +69,7 @@ const { facesBuffer, bvhBuffer, bvhCount, modelsBuffer } =
 
 const seedUniformBuffer = createUniformBuffer(4);
 const counterUniformBuffer = createUniformBuffer(4);
+const updatePrevUniformBuffer = createUniformBuffer(4);
 
 const resize = () => {
   const scale = devicePixelRatio * store.resolutionScale;
@@ -94,29 +88,29 @@ createEffect<GPUBuffer[]>((prevBuffers) => {
 
   // color + accumulated samples count
   const imageSize = Float32Array.BYTES_PER_ELEMENT * 4 * width * height;
-  const current = createStorageBuffer(
-    imageSize,
-    'Raytraced Image Buffer',
-    GPUBufferUsage.COPY_SRC
-  );
+  const current = createStorageBuffer(imageSize, 'Raytraced Image Buffer');
   setImageBuffer(current);
-  const prev = createStorageBuffer(
-    imageSize,
-    'Prev Raytraced Image Buffer',
-    GPUBufferUsage.COPY_DST
-  );
+  const prev = createStorageBuffer(imageSize, 'Prev Raytraced Image Buffer');
   setPrevImageBuffer(prev);
 
   // depth + prev depth
   const depthImageSize = Float32Array.BYTES_PER_ELEMENT * 2 * width * height;
-  const depth = createStorageBuffer(
-    depthImageSize,
-    'Depth Buffer',
-    GPUBufferUsage.COPY_SRC
-  );
+  const depth = createStorageBuffer(depthImageSize, 'Depth Buffer');
   setDepthBuffer(depth);
 
-  return [current, prev, depth];
+  const positionImageSize = Float32Array.BYTES_PER_ELEMENT * 3 * width * height;
+  const currentPosition = createStorageBuffer(
+    positionImageSize,
+    'Position Buffer'
+  );
+  setPositionBuffer(currentPosition);
+  const prevPosition = createStorageBuffer(
+    positionImageSize,
+    'Prev Position Buffer'
+  );
+  setPrevPositionBuffer(prevPosition);
+
+  return [current, prev, depth, currentPosition, prevPosition];
 });
 
 createEffect(() => {
@@ -533,7 +527,8 @@ const raygen = () => /* wgsl */ `
     return ray;
   }
 
-  fn cameraRay(uv: vec2f, view: mat4x4f) -> Ray {
+  fn cameraRay(pos: vec2f, view: mat4x4f) -> Ray {
+    let uv = (2. * pos - viewportf) / viewportf.x;
     let rayDirection = cameraRayDirection(uv);
     
     let ray = thinLensRay(rayDirection, sample_incircle(random_2()));
@@ -708,28 +703,72 @@ const reproject = /* wgsl */ `
     color: vec4f, // color + accumulated samples count
   }
 
-  const m = mat4x4f(
-    1, 0, 1, 0,
-    0, 1, 0, 1,
-    -1, 0, 1, 0,
-    0, -1, 0, 1
-  );
-  fn reprojectPoint(p: vec3f, view: mat4x4f, viewInv: mat4x4f) -> vec2f {
-    let pp = p - view[3].xyz;
-    let duv = reprojectionFrustrum * pp;
-    return duv.xy / duv.zw;  
+  fn bilinearInterpolation3(uv: vec2f, p: mat4x3f) -> vec3f {
+    let col_x = mix(p[0], p[2], uv.x);
+    let col_y = mix(p[1], p[3], uv.x);
+    let col = mix(col_x, col_y, uv.y);
+    return col;
   }
-  fn reproject(p: vec3f, view: mat4x4f, viewInv: mat4x4f) -> ReprojectionResult {
-    let _uv = reprojectPoint(p, view, viewInv);
-    if any(_uv < -viewportN) || any(_uv > viewportN) { // outside viewport
+
+  fn bilinearInterpolation(uv: vec2f, p: vec4f) -> f32 {
+    let col_x = mix(p[0], p[2], uv.x);
+    let col_y = mix(p[1], p[3], uv.x);
+    let col = mix(col_x, col_y, uv.y);
+    return col;
+  }
+
+  fn reprojectPoint(p: vec3f) -> vec2f {
+    let duv = reprojectionFrustrum * p;
+    return duv.xy / duv.zw;
+  }
+  fn reproject(p: vec3f, view: mat4x4f) -> ReprojectionResult {
+    let uv = reprojectPoint(p - view[3].xyz);
+    if any(uv < vec2(0)) || any(uv > vec2(viewportf)) { // outside viewport
       return ReprojectionResult(vec4f(0));
     }
 
-    // return ReprojectionResult(vec4f(_uv, 0, 1));
+    let _uv = round(uv - vec2f(0.5));
+    let uv2 = vec2u(_uv);
+    // let uv_u = vec2u(_uv);
+    // let uv_f = fract(_uv);
+    // let idx1 = uv_u.y * viewport.x + uv_u.x;
+    // let idx2 = (uv_u.y + 1) * viewport.x + uv_u.x;
+    // let idx3 = uv_u.y * viewport.x + uv_u.x + 1;
+    // let idx4 = (uv_u.y + 1) * viewport.x + uv_u.x + 1;
 
-    let uv = (_uv * viewportf.x + viewportf)/2;
-    let uv2 = vec2u(round(uv - vec2f(0.5)));
-    // let min_idx = uv2.y * viewport.x + uv2.x;
+    // // let d1 = depthBuffer[idx1][1];
+    // // let d2 = depthBuffer[idx2][1];
+    // // let d3 = depthBuffer[idx3][1];
+    // // let d4 = depthBuffer[idx4][1];
+    // // let prevDepth = bilinearInterpolation(uv_f, vec4f(d1, d2, d3, d4));
+    // // let old_ray = cameraRay(uv, view);
+    // // let old_p = old_ray.pos + old_ray.dir * prevDepth;
+    // let pp1 = prevPositionBuffer[idx1];
+    // let pp2 = prevPositionBuffer[idx2];
+    // let pp3 = prevPositionBuffer[idx3];
+    // let pp4 = prevPositionBuffer[idx4];
+    // let old_p = bilinearInterpolation3(uv_f, mat4x3f(pp1, pp2, pp3, pp4));
+    // let dp = p - old_p;
+    // let d = dot(dp, dp);
+    
+    // if !(d < 0.001) { // depth is not the same
+    //   return ReprojectionResult(vec4f(0));
+    // }
+
+    // let p1 = prevImageBuffer[idx1];
+    // let p2 = prevImageBuffer[idx2];
+    // let p3 = prevImageBuffer[idx3];
+    // let p4 = prevImageBuffer[idx4];
+    // let m = mat4x3f(
+    //   p1.rgb/p1.w,
+    //   p2.rgb/p2.w,
+    //   p3.rgb/p3.w,
+    //   p4.rgb/p4.w
+    // );
+    // let color = bilinearInterpolation3(uv_f, m);
+    // let weight = min(p1.w, min(p2.w, min(p3.w, p4.w)));
+    // return ReprojectionResult(vec4f(color, 1) * weight);
+    
     let uv_a = array<vec2u, 9>(
       vec2u(uv2.x, uv2.y),
       vec2u(uv2.x + 1, uv2.y),
@@ -745,16 +784,11 @@ const reproject = /* wgsl */ `
     var min_idx = 0u;
     for (var i = 0u; i < 9u; i = i + 1u) {
       let idx = uv_a[i].y * viewport.x + uv_a[i].x;
-      let prevDepth = depthBuffer[idx][1];
+      // let prevDepth = depthBuffer[idx][1];
 
-      // let prevCameraPos = view[3].xyz;
-      // let d2_len = length(p - prevCameraPos);
-      // if !(abs(d2_len - prevDepth) < 0.001) {
-      //   return ReprojectionResult(false, 0);
-      // }
-
-      let old_ray = cameraRay(_uv, view);
-      let old_p = old_ray.pos + old_ray.dir * prevDepth;
+      // let old_ray = cameraRay(_uv, view);
+      // let old_p = old_ray.pos + old_ray.dir * prevDepth;
+      let old_p = prevPositionBuffer[idx];
       let dp = p - old_p;
       let d = dot(dp, dp);
       if d < min_d {
@@ -775,10 +809,11 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
   shader: (x) => /* wgsl */ `
     ${x.bindVarBuffer('storage', 'prevImageBuffer: array<vec4f>', prevImageBuffer())}
     ${x.bindVarBuffer('storage', 'imageBuffer: array<vec4f>', imageBuffer())}
+    ${x.bindVarBuffer('storage', 'positionBuffer: array<vec3f>', positionBuffer())}
+    ${x.bindVarBuffer('storage', 'prevPositionBuffer: array<vec3f>', prevPositionBuffer())}
     ${x.bindVarBuffer('storage', 'depthBuffer: array<vec2f>', depthBuffer())}
     ${x.bindVarBuffer('uniform', 'viewMatrix: mat4x4f', viewBuffer)}
     ${x.bindVarBuffer('uniform', 'prevViewMatrix: mat4x4f', prevViewBuffer)}
-    ${x.bindVarBuffer('uniform', 'prevViewInvMatrix: mat4x4f', prevViewInvBuffer)}
     ${x.bindVarBuffer('uniform', 'reprojectionFrustrum: mat3x4f', reprojectionFrustrumBuffer)}
 
     const modelsCount = ${models.length};
@@ -789,7 +824,9 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
 
     ${x.bindVarBuffer('uniform', 'seed: u32', seedUniformBuffer)}
     ${x.bindVarBuffer('uniform', 'counter: u32', counterUniformBuffer)}
+    ${x.bindVarBuffer('uniform', 'updatePrev: u32', updatePrevUniformBuffer)}
 
+    const _reproject = ${store.reprojectionRate > 0};
     const viewport = vec2u(${store.view[0]}, ${store.view[1]});
     const viewportf = vec2f(viewport);
     const aspect = viewportf.y / viewportf.x;
@@ -807,8 +844,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
 
 
     fn computeColor(pos: vec2f, _hit: ptr<function, Hit>) -> vec3f {
-      let uv = (2. * pos - viewportf) / viewportf.x;
-      let ray = cameraRay(uv, viewMatrix);
+      let ray = cameraRay(pos, viewMatrix);
       let hit = scene(ray);
       *_hit = hit;
       if !hit.hit {
@@ -846,14 +882,17 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       let idx = upos.x + upos.y * viewport.x;
       let pos = vec2f(upos);
       rng_state = seed + idx;
-      if counter == 0u && !${store.reproject} {
+      if counter == 0u && !_reproject {
         depthBuffer[idx] = vec2f(0);
         imageBuffer[idx] = vec4f(0);
-        prevImageBuffer[idx] = vec4f(0);
+        // prevImageBuffer[idx] = vec4f(0);
+        positionBuffer[idx] = vec3f(0);
+        // prevPositionBuffer[idx] = vec3f(0);
       }
 
       let prevDepth = depthBuffer[idx][0];
       let prevColor = imageBuffer[idx];
+      let prevPosition = positionBuffer[idx];
 
       var color = vec3f(0);
       var hit: Hit;
@@ -862,6 +901,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       color += computeColor(pos, &hit);
       samples++;
       depthBuffer[idx][0] = hit.dist;
+      positionBuffer[idx] = hit.point;
 
       for (var i = 0u; i < ${store.sampleCount}; i = i + 1u) {
         let jitter = sample_insquare(random_2());
@@ -869,13 +909,16 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
         samples++;
       }
 
-      if ${store.reproject} {
-        let result = reproject(hit.point, prevViewMatrix, prevViewInvMatrix);
+      if _reproject {
+        let result = reproject(hit.point, prevViewMatrix);
         imageBuffer[idx] = result.color;
       }
 
-      prevImageBuffer[idx] = prevColor;
-      depthBuffer[idx][1] = prevDepth;
+      if updatePrev == 1u {
+        prevImageBuffer[idx] = prevColor;
+        depthBuffer[idx][1] = prevDepth;
+        prevPositionBuffer[idx] = prevPosition;
+      }
       if ${store.blitView == 'normals'} {
         imageBuffer[idx] = vec4f(color, 1);
       } else {
@@ -1022,18 +1065,18 @@ const rpd: GPURenderPassDescriptor = {
   }),
 };
 
+let frameCounter = 0;
 export function renderFrame(now: number) {
-  // if (store.counter !== 0) {
-  setPrevView(viewMatrix());
-  // }
+  const rate = store.reprojectionRate;
+  frameCounter = (frameCounter + 1) % rate;
+  const updatePrev = frameCounter % rate === 0 || store.counter !== 0;
+  if (updatePrev) {
+    setPrevView(viewMatrix());
+  }
   writeUint32Buffer(seedUniformBuffer, Math.random() * 0xffffffff);
   writeUint32Buffer(counterUniformBuffer, store.counter);
+  writeUint32Buffer(updatePrevUniformBuffer, updatePrev ? 1 : 0);
   incrementCounter();
-  // if (prevView()) {
-  //   // const p = mat4.multiply(mat4.create(), prevViewInv(), prevView());
-  //   // console.log(mat4.exactEquals(p, mat4.create()));
-  //   // console.log(mat4.exactEquals(prevView(), viewMatrix()));
-  // }
 
   const encoder = device.createCommandEncoder();
   rpd.colorAttachments[0].view = context.getCurrentTexture().createView();

@@ -5,7 +5,7 @@ import {
   setDebugBVH,
   setFov,
   setProjectionType,
-  setReproject,
+  setReprojectionRate,
   setShadingType,
   ShadingType,
   store,
@@ -40,12 +40,12 @@ const App: Component = () => {
         Debug BVH
       </label>
       <label class="flex gap-1 text-white text-sm items-baseline">
-        Reproject
+        Reprojection rate
         <input
           class="m-0"
-          type="checkbox"
-          checked={store.reproject}
-          onChange={(e) => setReproject(e.target.checked)}
+          type="number"
+          value={store.reprojectionRate}
+          onChange={(e) => setReprojectionRate(Number(e.target.value))}
         />
       </label>
       <label class="flex gap-1 text-white text-sm items-baseline">

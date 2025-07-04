@@ -42,7 +42,7 @@ const [store, setStore] = createStore({
   ambience: 0.1,
   shadingType: ShadingType.Phong,
   projectionType: ProjectionType.Perspective,
-  reproject: true,
+  reprojectionRate: 1,
 
   resolutionScale: 1,
   scale: 1,
@@ -129,27 +129,24 @@ export const reprojectionFrustrum = (prevView: Accessor<mat4 | undefined>) =>
       .toArray();
 
     const [left, bottom, right, top] = frustrum;
-    const a = vec3.sub(vec3.create(), left, right);
-    const b = vec3.sub(vec3.create(), top, bottom);
     const c = vec3.add(vec3.create(), left, right);
     const d = vec3.add(vec3.create(), top, bottom);
 
-    vec3.scale(b, b, aspectRatio);
+    vec3.scale(left, left, store.view[0]);
+    vec3.scale(top, top, store.view[1]);
 
     // for reprojection we need to compute d1 / (d1 + d2)
     // where d1 = dot(n1, p-p0), d2 = dot(n2, p-p0), p0 - view origin,
     // n1 - left side plane normal, n2 - right side plane normal
     // taken from https://jacco.ompf2.com/2024/01/18/reprojection-in-a-ray-tracer/
     // we can collect normals into a 4x3 matrix
-    return Iterator.zip(a, b, c, d).flat().toArray();
-    // return Iterator.zip(left, top, right, bottom).flat().toArray();
-    // return Iterator.zip(left, top, c, d).flat().toArray();
+    return Iterator.zip(left, top, c, d).flat().toArray();
   });
 
 export { store };
 
-export const setReproject = (reproject: boolean) => {
-  setStore('reproject', reproject);
+export const setReprojectionRate = (rate: number) => {
+  setStore('reprojectionRate', rate);
   resetCounter();
 };
 
@@ -234,6 +231,7 @@ export const rotateCamera = (d: vec2) => {
   quat.mul(orientation, qY, orientation);
   quat.mul(orientation, qZ, orientation);
 
+  if (quat.exactEquals(orientation, store.orientation)) return;
   setStore('orientation', orientation);
   resetCounter();
 };
@@ -254,6 +252,8 @@ export const move = (d: vec3) => {
   // @ts-ignore
   vec3.transformMat3(d, d, mat3.fromValues(...mvRight, ...mvUp, ...mvFront));
   vec3.add(position, position, d);
+
+  if (vec3.exactEquals(position, store.position)) return;
 
   setStore('position', position);
   resetCounter();
