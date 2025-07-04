@@ -16,6 +16,7 @@ import {
 import {
   incrementCounter,
   ProjectionType,
+  reprojectionFrustrum,
   setRenderGPUTime,
   setRenderJSTime,
   setView,
@@ -43,12 +44,12 @@ const [prevImageBuffer, setPrevImageBuffer] = createSignal<GPUBuffer>();
 const [blitRenderBundle, setBlitRenderBundle] = createSignal<GPURenderBundle>();
 const [debugBVHRenderBundle, setDebugBVHRenderBundle] =
   createSignal<GPURenderBundle>();
-const [prevView, setPrevView] = createSignal<mat4>();
+const [prevView, setPrevView] = createSignal<mat4>(undefined, {
+  equals: (a, b) => a && mat4.exactEquals(a, b),
+});
 const prevViewInv = createMemo(() => {
   const _prevView = prevView();
   if (_prevView) {
-    console.log('inv');
-
     return mat4.invert(mat4.create(), _prevView);
   }
   return mat4.create();
@@ -57,6 +58,10 @@ const prevViewBuffer = reactiveUniformBuffer(16, prevView);
 const prevViewInvBuffer = reactiveUniformBuffer(16, prevViewInv);
 const viewBuffer = reactiveUniformBuffer(16, viewMatrix);
 const viewProjBuffer = reactiveUniformBuffer(16, viewProjectionMatrix);
+const reprojectionFrustrumBuffer = reactiveUniformBuffer(
+  12,
+  reprojectionFrustrum(prevView)
+);
 
 const { models, materials } = await loadModels();
 const { materialsBuffer } = await loadMaterialsToBuffers(materials);
@@ -702,15 +707,29 @@ const reproject = /* wgsl */ `
   struct ReprojectionResult {
     color: vec4f, // color + accumulated samples count
   }
+
+  const m = mat4x4f(
+    1, 0, 1, 0,
+    0, 1, 0, 1,
+    -1, 0, 1, 0,
+    0, -1, 0, 1
+  );
+  fn reprojectPoint(p: vec3f, view: mat4x4f, viewInv: mat4x4f) -> vec2f {
+    let pp = p - view[3].xyz;
+    let duv = reprojectionFrustrum * pp;
+    return duv.xy / duv.zw;  
+  }
   fn reproject(p: vec3f, view: mat4x4f, viewInv: mat4x4f) -> ReprojectionResult {
-    let pp4 = viewInv * vec4(p, 1.);
-    let _uv = pp4.xy * cameraRayZ / pp4.z;
+    let _uv = reprojectPoint(p, view, viewInv);
     if any(_uv < -viewportN) || any(_uv > viewportN) { // outside viewport
       return ReprojectionResult(vec4f(0));
     }
 
+    // return ReprojectionResult(vec4f(_uv, 0, 1));
+
     let uv = (_uv * viewportf.x + viewportf)/2;
     let uv2 = vec2u(round(uv - vec2f(0.5)));
+    // let min_idx = uv2.y * viewport.x + uv2.x;
     let uv_a = array<vec2u, 9>(
       vec2u(uv2.x, uv2.y),
       vec2u(uv2.x + 1, uv2.y),
@@ -760,6 +779,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindVarBuffer('uniform', 'viewMatrix: mat4x4f', viewBuffer)}
     ${x.bindVarBuffer('uniform', 'prevViewMatrix: mat4x4f', prevViewBuffer)}
     ${x.bindVarBuffer('uniform', 'prevViewInvMatrix: mat4x4f', prevViewInvBuffer)}
+    ${x.bindVarBuffer('uniform', 'reprojectionFrustrum: mat3x4f', reprojectionFrustrumBuffer)}
 
     const modelsCount = ${models.length};
     ${x.bindVarBuffer('read-only-storage', 'faces: array<Face>', facesBuffer)}
@@ -826,7 +846,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       let idx = upos.x + upos.y * viewport.x;
       let pos = vec2f(upos);
       rng_state = seed + idx;
-      if counter == 0u {
+      if counter == 0u && !${store.reproject} {
         depthBuffer[idx] = vec2f(0);
         imageBuffer[idx] = vec4f(0);
         prevImageBuffer[idx] = vec4f(0);
@@ -837,9 +857,17 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
 
       var color = vec3f(0);
       var hit: Hit;
+      var samples = 0u;
 
       color += computeColor(pos, &hit);
+      samples++;
       depthBuffer[idx][0] = hit.dist;
+
+      for (var i = 0u; i < ${store.sampleCount}; i = i + 1u) {
+        let jitter = sample_insquare(random_2());
+        color += computeColor(pos + jitter, &hit);
+        samples++;
+      }
 
       if ${store.reproject} {
         let result = reproject(hit.point, prevViewMatrix, prevViewInvMatrix);
@@ -851,7 +879,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       if ${store.blitView == 'normals'} {
         imageBuffer[idx] = vec4f(color, 1);
       } else {
-        imageBuffer[idx] += vec4f(color, 1);
+        imageBuffer[idx] += vec4f(color, f32(samples));
       }
     }
   `,

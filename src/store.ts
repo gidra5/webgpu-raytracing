@@ -1,7 +1,8 @@
-import { mat3, mat4, quat, vec2, vec3 } from 'gl-matrix';
+import { mat3, mat4, quat, vec2, vec3, vec4 } from 'gl-matrix';
 import { createStore } from 'solid-js/store';
 import { front, right, up } from './camera';
-import { createMemo } from 'solid-js';
+import { Accessor, createMemo } from 'solid-js';
+import { Iterator } from 'iterator-js';
 
 export enum ShadingType {
   Flat,
@@ -30,7 +31,7 @@ const [store, setStore] = createStore({
   view: vec2.create(),
 
   counter: 0,
-  sampleCount: 1,
+  sampleCount: 0,
   bouncesCount: 1,
 
   fov: Math.PI / 2,
@@ -41,7 +42,7 @@ const [store, setStore] = createStore({
   ambience: 0.1,
   shadingType: ShadingType.Phong,
   projectionType: ProjectionType.Perspective,
-  reproject: false,
+  reproject: true,
 
   resolutionScale: 1,
   scale: 1,
@@ -93,6 +94,57 @@ export const viewProjectionMatrix = createMemo(() => {
   mat4.multiply(m, projectionMatrix, _viewMatrix);
   return m;
 });
+
+export const reprojectionFrustrum = (prevView: Accessor<mat4 | undefined>) =>
+  createMemo(() => {
+    const aspectRatio = store.view[1] / store.view[0];
+    const rayZ = -1 / Math.tan(store.fov / 2);
+    const view = prevView();
+    if (!view) {
+      return Iterator.repeat(0).take(12).toArray();
+    }
+
+    const cornerRay = (x: number, y: number) => {
+      const w = view[15];
+      const dir = vec3.fromValues(x, y * aspectRatio, w * rayZ);
+      vec3.normalize(dir, dir);
+      const dir4 = vec4.fromValues(dir[0], dir[1], dir[2], 0);
+      vec4.transformMat4(dir4, dir4, view);
+      vec3.set(dir, dir4[0], dir4[1], dir4[2]);
+      return dir;
+    };
+    const cornerRays = [
+      cornerRay(-1, -1),
+      cornerRay(-1, 1),
+      cornerRay(1, 1),
+      cornerRay(1, -1),
+    ];
+    // frustrum side plane normals
+    const frustrum = Iterator.zip(
+      cornerRays,
+      Iterator.iter(cornerRays).cycle().skip(1).take(4) // rotate the array by one item
+    )
+      .map(([a, b]) => vec3.cross(vec3.create(), a, b))
+      .map((a) => vec3.normalize(vec3.create(), a))
+      .toArray();
+
+    const [left, bottom, right, top] = frustrum;
+    const a = vec3.sub(vec3.create(), left, right);
+    const b = vec3.sub(vec3.create(), top, bottom);
+    const c = vec3.add(vec3.create(), left, right);
+    const d = vec3.add(vec3.create(), top, bottom);
+
+    vec3.scale(b, b, aspectRatio);
+
+    // for reprojection we need to compute d1 / (d1 + d2)
+    // where d1 = dot(n1, p-p0), d2 = dot(n2, p-p0), p0 - view origin,
+    // n1 - left side plane normal, n2 - right side plane normal
+    // taken from https://jacco.ompf2.com/2024/01/18/reprojection-in-a-ray-tracer/
+    // we can collect normals into a 4x3 matrix
+    return Iterator.zip(a, b, c, d).flat().toArray();
+    // return Iterator.zip(left, top, right, bottom).flat().toArray();
+    // return Iterator.zip(left, top, c, d).flat().toArray();
+  });
 
 export { store };
 
