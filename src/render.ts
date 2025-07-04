@@ -48,12 +48,13 @@ const [debugBVHRenderBundle, setDebugBVHRenderBundle] =
 const [prevView, setPrevView] = createSignal<mat4>(undefined, {
   equals: (a, b) => a && mat4.exactEquals(a, b),
 });
+const _reprojectionFrustrum = reprojectionFrustrum(prevView);
 const prevViewBuffer = reactiveUniformBuffer(16, prevView);
 const viewBuffer = reactiveUniformBuffer(16, viewMatrix);
 const viewProjBuffer = reactiveUniformBuffer(16, viewProjectionMatrix);
 const reprojectionFrustrumBuffer = reactiveUniformBuffer(
   12,
-  reprojectionFrustrum(prevView)
+  _reprojectionFrustrum
 );
 
 const { models, materials } = await loadModels();
@@ -98,7 +99,7 @@ createEffect<GPUBuffer[]>((prevBuffers) => {
   const depth = createStorageBuffer(depthImageSize, 'Depth Buffer');
   setDepthBuffer(depth);
 
-  const positionImageSize = Float32Array.BYTES_PER_ELEMENT * 3 * width * height;
+  const positionImageSize = Float32Array.BYTES_PER_ELEMENT * 4 * width * height;
   const currentPosition = createStorageBuffer(
     positionImageSize,
     'Position Buffer'
@@ -698,7 +699,7 @@ const scene = () => /* wgsl */ `
   }
 `;
 
-const reproject = /* wgsl */ `
+const reproject = () => /* wgsl */ `
   struct ReprojectionResult {
     color: vec4f, // color + accumulated samples count
   }
@@ -724,8 +725,11 @@ const reproject = /* wgsl */ `
   fn reproject(p: vec3f, view: mat4x4f) -> ReprojectionResult {
     let uv = reprojectPoint(p - view[3].xyz);
     if any(uv < vec2(0)) || any(uv > vec2(viewportf)) { // outside viewport
-      return ReprojectionResult(vec4f(0));
-    }
+      if ${store.debugReprojection} {
+        return ReprojectionResult(vec4f(0, 1, 0, 1));
+      } else {
+        return ReprojectionResult(vec4f(0));
+      }
 
     let _uv = round(uv - vec2f(0.5));
     let uv2 = vec2u(_uv);
@@ -797,12 +801,51 @@ const reproject = /* wgsl */ `
       }
     }
 
-    if !(min_d < 0.001) { // depth is not the same
-      return ReprojectionResult(vec4f(0));
+    if !(min_d < 0.01) { // depth is not the same
+      if ${store.debugReprojection} {
+        return ReprojectionResult(vec4f(min_d/100, 0,0,1));
+      } else {
+        return ReprojectionResult(vec4f(0));
+      }
     }
 
-    return ReprojectionResult(prevImageBuffer[min_idx]);
+    if ${store.debugReprojection} {
+      return ReprojectionResult(vec4f(1));
+    } else {
+      return ReprojectionResult(prevImageBuffer[min_idx]);
+    }
   }
+`;
+
+const computeColor = /* wgsl */ `
+    fn computeColor(pos: vec2f, _hit: ptr<function, Hit>) -> vec3f {
+      let ray = cameraRay(pos, viewMatrix);
+      let hit = scene(ray);
+      *_hit = hit;
+      if !hit.hit {
+        return skyColor(ray.dir);
+      }
+
+      if ${store.blitView === 'normals'} {
+        return (hit.normal + 1) / 2;
+      }
+
+      let material = materials[hit.materialIdx];
+      let p = hit.point;
+      var color = vec3f(0);
+      color += sun(p, hit.normal) * material.color;
+      color += material.emission;
+
+      let s = sampleLights();
+      let sMaterial = materials[s.materialIdx];
+      let ds = s.point - p;
+      let d_sq = dot(ds, ds);
+      let d = ds * inverseSqrt(d_sq);
+      let r = Ray(p, d);
+      color += in_shadow(r, d_sq) * attenuation(d, hit.normal) * sMaterial.emission * material.color / d_sq * s.p;
+
+      return color;
+    }
 `;
 
 const [computePipeline, computeBindGroups] = reactiveComputePipeline({
@@ -840,37 +883,8 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${bvIntersect}
     ${scene()}
     ${raygen()}
-    ${reproject}
-
-
-    fn computeColor(pos: vec2f, _hit: ptr<function, Hit>) -> vec3f {
-      let ray = cameraRay(pos, viewMatrix);
-      let hit = scene(ray);
-      *_hit = hit;
-      if !hit.hit {
-        return skyColor(ray.dir);
-      }
-
-      if ${store.blitView === 'normals'} {
-        return (hit.normal + 1) / 2;
-      }
-
-      let material = materials[hit.materialIdx];
-      let p = hit.point;
-      var color = vec3f(0);
-      color += sun(p, hit.normal) * material.color;
-      color += material.emission;
-
-      let s = sampleLights();
-      let sMaterial = materials[s.materialIdx];
-      let ds = s.point - p;
-      let d_sq = dot(ds, ds);
-      let d = ds * inverseSqrt(d_sq);
-      let r = Ray(p, d);
-      color += in_shadow(r, d_sq) * attenuation(d, hit.normal) * sMaterial.emission * material.color / d_sq * s.p;
-
-      return color;
-    }
+    ${reproject()}
+    ${computeColor}
 
     @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
     fn main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>) {
@@ -885,9 +899,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       if counter == 0u && !_reproject {
         depthBuffer[idx] = vec2f(0);
         imageBuffer[idx] = vec4f(0);
-        // prevImageBuffer[idx] = vec4f(0);
         positionBuffer[idx] = vec3f(0);
-        // prevPositionBuffer[idx] = vec3f(0);
       }
 
       let prevDepth = depthBuffer[idx][0];
@@ -904,7 +916,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       positionBuffer[idx] = hit.point;
 
       for (var i = 0u; i < ${store.sampleCount}; i = i + 1u) {
-        let jitter = sample_insquare(random_2());
+        let jitter = sample_insquare(random_2()) * 0.5;
         color += computeColor(pos + jitter, &hit);
         samples++;
       }
@@ -919,10 +931,12 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
         depthBuffer[idx][1] = prevDepth;
         prevPositionBuffer[idx] = prevPosition;
       }
-      if ${store.blitView == 'normals'} {
-        imageBuffer[idx] = vec4f(color, 1);
-      } else {
-        imageBuffer[idx] += vec4f(color, f32(samples));
+      if !${store.debugReprojection} {
+        if ${store.blitView == 'normals'} {
+          imageBuffer[idx] = vec4f(color, 1);
+        } else {
+          imageBuffer[idx] += vec4f(color, f32(samples));
+        }
       }
     }
   `,
@@ -1066,8 +1080,11 @@ const rpd: GPURenderPassDescriptor = {
 };
 
 let frameCounter = 0;
-export function renderFrame(now: number) {
+export async function renderFrame(now: number) {
   const rate = store.reprojectionRate;
+  const updatePrev = store.debugReprojection
+    ? frameCounter % rate === 0
+    : frameCounter % rate === 0 || store.counter !== 0;
   frameCounter = (frameCounter + 1) % rate;
   const updatePrev = frameCounter % rate === 0 || store.counter !== 0;
   if (updatePrev) {
@@ -1103,8 +1120,10 @@ export function renderFrame(now: number) {
     }
   });
 
-  submit(encoder, () => {
+  await submit(encoder, () => {
     device.queue.submit([encoder.finish()]);
   });
+
+  await device.queue.onSubmittedWorkDone();
   setRenderJSTime(performance.now() - now);
 }

@@ -137,9 +137,14 @@ export const writeFloat32Buffer = (buffer: GPUBuffer, data: number) => {
 
 export const reactiveUniformBuffer = <T extends number | Iterable<number>>(
   size: number,
-  value: Accessor<T>
+  value: Accessor<T>,
+  usage: GPUBufferUsageFlags = 0
 ) => {
-  const buffer = createUniformBuffer(size * Float32Array.BYTES_PER_ELEMENT);
+  const buffer = createUniformBuffer(
+    size * Float32Array.BYTES_PER_ELEMENT,
+    undefined,
+    usage
+  );
 
   createEffect(() => {
     const _value = value();
@@ -218,10 +223,14 @@ export const createStorageBuffer = (
     mappedAtCreation: mapped,
   });
 
-export const createUniformBuffer = (size: number, label?: string) =>
+export const createUniformBuffer = (
+  size: number,
+  label?: string,
+  usage: GPUBufferUsageFlags = 0
+) =>
   device.createBuffer({
     size,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | usage,
     label,
   });
 

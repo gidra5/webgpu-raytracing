@@ -42,7 +42,8 @@ const [store, setStore] = createStore({
   ambience: 0.1,
   shadingType: ShadingType.Phong,
   projectionType: ProjectionType.Perspective,
-  reprojectionRate: 1,
+
+  reprojectionRate: 600,
 
   resolutionScale: 1,
   scale: 1,
@@ -55,6 +56,7 @@ const [store, setStore] = createStore({
   },
 
   debugBVH: false,
+  debugReprojection: true,
   blitView: 'image' as BlitView,
 
   timings: {
@@ -144,6 +146,11 @@ export const reprojectionFrustrum = (prevView: Accessor<mat4 | undefined>) =>
   });
 
 export { store };
+
+export const setDebugReprojection = (debug: boolean) => {
+  setStore('debugReprojection', debug);
+  resetCounter();
+};
 
 export const setReprojectionRate = (rate: number) => {
   setStore('reprojectionRate', rate);

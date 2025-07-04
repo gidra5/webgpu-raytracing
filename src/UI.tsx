@@ -3,6 +3,7 @@ import {
   ProjectionType,
   setBlitView,
   setDebugBVH,
+  setDebugReprojection,
   setFov,
   setProjectionType,
   setReprojectionRate,
@@ -38,6 +39,15 @@ const App: Component = () => {
           onChange={(e) => setDebugBVH(e.target.checked)}
         />
         Debug BVH
+      </label>
+      <label class="flex gap-1 text-white text-sm items-baseline">
+        <input
+          class="m-0"
+          type="checkbox"
+          checked={store.debugReprojection}
+          onChange={(e) => setDebugReprojection(e.target.checked)}
+        />
+        Debug Reprojection
       </label>
       <label class="flex gap-1 text-white text-sm items-baseline">
         Reprojection rate

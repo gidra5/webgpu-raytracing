@@ -16,11 +16,11 @@ if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
 
 render(() => <UI />, root);
 
-function update() {
+async function update() {
   const now = performance.now();
   setTime(now);
 
-  renderFrame(now);
+  await renderFrame(now);
   handleControls();
   requestAnimationFrame(update);
 }

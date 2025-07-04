@@ -46,3 +46,6 @@ export const useSmoothedValue = (
   }, value());
   return _value;
 };
+
+export const wait = (ms: number) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
