@@ -20,8 +20,8 @@ async function update() {
   const now = performance.now();
   setTime(now);
 
-  await renderFrame(now);
   handleControls();
+  await renderFrame(now);
   requestAnimationFrame(update);
 }
 

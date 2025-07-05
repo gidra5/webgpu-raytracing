@@ -363,9 +363,7 @@ const bvIntersect = /* wgsl */ `
   }
 `;
 
-const bvh = (x: PipelineBuilder) => /* wgsl */ `
-  ${x.bindVarBuffer('read-only-storage', 'bvh: array<BoundingVolume>', bvhBuffer)}
-
+const bvh = () => /* wgsl */ `
   struct BVHIntersectionResult {
     hit: bool,
     barycentric: vec3f,
@@ -704,25 +702,11 @@ const reproject = () => /* wgsl */ `
     color: vec4f, // color + accumulated samples count
   }
 
-  fn bilinearInterpolation3(uv: vec2f, p: mat4x3f) -> vec3f {
-    let col_x = mix(p[0], p[2], uv.x);
-    let col_y = mix(p[1], p[3], uv.x);
-    let col = mix(col_x, col_y, uv.y);
-    return col;
-  }
-
-  fn bilinearInterpolation(uv: vec2f, p: vec4f) -> f32 {
-    let col_x = mix(p[0], p[2], uv.x);
-    let col_y = mix(p[1], p[3], uv.x);
-    let col = mix(col_x, col_y, uv.y);
-    return col;
-  }
-
   fn reprojectPoint(p: vec3f) -> vec2f {
     let duv = reprojectionFrustrum * p;
     return duv.xy / duv.zw;
   }
-  fn reproject(p: vec3f, view: mat4x4f) -> ReprojectionResult {
+  fn reproject(p: vec3f, puv: vec2f, view: mat4x4f) -> ReprojectionResult {
     let uv = reprojectPoint(p - view[3].xyz);
     if any(uv < vec2(0)) || any(uv > vec2(viewportf)) { // outside viewport
       if ${store.debugReprojection} {
@@ -848,10 +832,96 @@ const computeColor = /* wgsl */ `
     }
 `;
 
+const imageSampler = /* wgsl */ `
+  fn _idx(uv: vec2u) -> u32 {
+    return uv.x + uv.y * viewport.x;
+  }
+
+  fn bilinearInterpolation(uv: vec2f, p: vec4f) -> f32 {
+    let col_x = mix(p[0], p[2], uv.x);
+    let col_y = mix(p[1], p[3], uv.x);
+    let col = mix(col_x, col_y, uv.y);
+    return col;
+  }
+
+  fn bilinearInterpolation2(uv: vec2f, p: mat4x2f) -> vec2f {
+    let col_x = mix(p[0], p[2], uv.x);
+    let col_y = mix(p[1], p[3], uv.x);
+    let col = mix(col_x, col_y, uv.y);
+    return col;
+  }
+
+  fn bilinearInterpolation3(uv: vec2f, p: mat4x3f) -> vec3f {
+    let col_x = mix(p[0], p[2], uv.x);
+    let col_y = mix(p[1], p[3], uv.x);
+    let col = mix(col_x, col_y, uv.y);
+    return col;
+  }
+
+  fn bilinearInterpolation4(uv: vec2f, p: mat4x4f) -> vec4f {
+    let col_x = mix(p[0], p[2], uv.x);
+    let col_y = mix(p[1], p[3], uv.x);
+    let col = mix(col_x, col_y, uv.y);
+    return col;
+  }
+
+  // fn sampleImage(uv: vec2f, _image: ptr<function, array<vec4f>>) -> f32 {
+  //   let uv_u = floor(uv);
+  //   let uv_f = fract(uv);
+  //   let m = vec4f(
+  //     image[_idx(uv_u)],
+  //     image[_idx(uv_u + vec2u(1, 0))],
+  //     image[_idx(uv_u + vec2u(0, 1))],
+  //     image[_idx(uv_u + vec2u(1, 1))],
+  //   );
+  //   let value = bilinearInterpolation4(uv_f, m);
+  //   return value;
+  // }
+
+  // fn sampleImage2(uv: vec2f, _image: ptr<function, array<vec4f>>) -> vec2f {
+  //   let uv_u = floor(uv);
+  //   let uv_f = fract(uv);
+  //   let m = mat4x2f(
+  //     image[_idx(uv_u)],
+  //     image[_idx(uv_u + vec2u(1, 0))],
+  //     image[_idx(uv_u + vec2u(0, 1))],
+  //     image[_idx(uv_u + vec2u(1, 1))],
+  //   );
+  //   let value = bilinearInterpolation2(uv_f, m);
+  //   return value;
+  // }
+
+  fn sampleImage3(uv: vec2f, _image: ptr<storage, array<vec3f>, read_write>) -> vec3f {
+    let uv_u = vec2u(floor(uv));
+    let uv_f = fract(uv);
+    let m = mat4x3f(
+      (*_image)[_idx(uv_u)],
+      (*_image)[_idx(uv_u + vec2u(1, 0))],
+      (*_image)[_idx(uv_u + vec2u(0, 1))],
+      (*_image)[_idx(uv_u + vec2u(1, 1))],
+    );
+    let value = bilinearInterpolation3(uv_f, m);
+    return value;
+  }
+
+  fn sampleImage4(uv: vec2f, _image: ptr<storage, array<vec4f>, read_write>) -> vec4f {
+    let uv_u = vec2u(floor(uv));
+    let uv_f = fract(uv);
+    let m = mat4x4f(
+      (*_image)[_idx(uv_u)],
+      (*_image)[_idx(uv_u + vec2u(1, 0))],
+      (*_image)[_idx(uv_u + vec2u(0, 1))],
+      (*_image)[_idx(uv_u + vec2u(1, 1))],
+    );
+    let value = bilinearInterpolation4(uv_f, m);
+    return value;
+  }
+`;
+
 const [computePipeline, computeBindGroups] = reactiveComputePipeline({
   shader: (x) => /* wgsl */ `
-    ${x.bindVarBuffer('storage', 'prevImageBuffer: array<vec4f>', prevImageBuffer())}
     ${x.bindVarBuffer('storage', 'imageBuffer: array<vec4f>', imageBuffer())}
+    ${x.bindVarBuffer('storage', 'prevImageBuffer: array<vec4f>', prevImageBuffer())}
     ${x.bindVarBuffer('storage', 'positionBuffer: array<vec3f>', positionBuffer())}
     ${x.bindVarBuffer('storage', 'prevPositionBuffer: array<vec3f>', prevPositionBuffer())}
     ${x.bindVarBuffer('storage', 'depthBuffer: array<vec2f>', depthBuffer())}
@@ -863,6 +933,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindVarBuffer('read-only-storage', 'faces: array<Face>', facesBuffer)}
     ${x.bindVarBuffer('read-only-storage', 'materials: array<Material>', materialsBuffer)}
     ${x.bindVarBuffer('read-only-storage', 'models: array<Model>', modelsBuffer)}
+    ${x.bindVarBuffer('read-only-storage', 'bvh: array<BoundingVolume>', bvhBuffer)}
 
 
     ${x.bindVarBuffer('uniform', 'seed: u32', seedUniformBuffer)}
@@ -877,7 +948,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
 
     ${rng}
     ${intervals}
-    ${bvh(x)}
+    ${bvh()}
     ${structs}
     ${rayIntersect}
     ${bvIntersect}
@@ -885,6 +956,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${raygen()}
     ${reproject()}
     ${computeColor}
+    ${imageSampler}
 
     @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
     fn main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>) {
@@ -893,18 +965,15 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       }
 
       let upos = globalInvocationId.xy;
-      let idx = upos.x + upos.y * viewport.x;
+      let idx = _idx(upos);
       let pos = vec2f(upos);
+
       rng_state = seed + idx;
       if counter == 0u && !_reproject {
-        depthBuffer[idx] = vec2f(0);
         imageBuffer[idx] = vec4f(0);
         positionBuffer[idx] = vec3f(0);
       }
 
-      let prevDepth = depthBuffer[idx][0];
-      let prevColor = imageBuffer[idx];
-      let prevPosition = positionBuffer[idx];
 
       var color = vec3f(0);
       var hit: Hit;
@@ -912,7 +981,6 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
 
       color += computeColor(pos, &hit);
       samples++;
-      depthBuffer[idx][0] = hit.dist;
       positionBuffer[idx] = hit.point;
 
       for (var i = 0u; i < ${store.sampleCount}; i = i + 1u) {
@@ -922,21 +990,21 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       }
 
       if _reproject {
-        let result = reproject(hit.point, prevViewMatrix);
+        let result = reproject(hit.point, pos, prevViewMatrix);
         imageBuffer[idx] = result.color;
       }
 
-      if updatePrev == 1u {
-        prevImageBuffer[idx] = prevColor;
-        depthBuffer[idx][1] = prevDepth;
-        prevPositionBuffer[idx] = prevPosition;
-      }
       if !${store.debugReprojection} {
         if ${store.blitView == 'normals'} {
           imageBuffer[idx] = vec4f(color, 1);
         } else {
           imageBuffer[idx] += vec4f(color, f32(samples));
         }
+      }
+
+      if updatePrev == 1u {
+        prevImageBuffer[idx] = imageBuffer[idx];
+        prevPositionBuffer[idx] = positionBuffer[idx];
       }
     }
   `,
@@ -1086,14 +1154,13 @@ export async function renderFrame(now: number) {
     ? frameCounter % rate === 0
     : frameCounter % rate === 0 || store.counter !== 0;
   frameCounter = (frameCounter + 1) % rate;
-  const updatePrev = frameCounter % rate === 0 || store.counter !== 0;
-  if (updatePrev) {
-    setPrevView(viewMatrix());
-  }
   writeUint32Buffer(seedUniformBuffer, Math.random() * 0xffffffff);
   writeUint32Buffer(counterUniformBuffer, store.counter);
   writeUint32Buffer(updatePrevUniformBuffer, updatePrev ? 1 : 0);
   incrementCounter();
+  if (updatePrev) {
+    setPrevView(viewMatrix());
+  }
 
   const encoder = device.createCommandEncoder();
   rpd.colorAttachments[0].view = context.getCurrentTexture().createView();

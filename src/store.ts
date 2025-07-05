@@ -43,7 +43,7 @@ const [store, setStore] = createStore({
   shadingType: ShadingType.Phong,
   projectionType: ProjectionType.Perspective,
 
-  reprojectionRate: 600,
+  reprojectionRate: 2,
 
   resolutionScale: 1,
   scale: 1,
@@ -56,7 +56,8 @@ const [store, setStore] = createStore({
   },
 
   debugBVH: false,
-  debugReprojection: true,
+  debugReprojection: false,
+  debugReprojectionUnmovedPixels: false,
   blitView: 'image' as BlitView,
 
   timings: {
