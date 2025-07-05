@@ -5,7 +5,6 @@ import {
   createUniformBuffer,
   getDevice,
   getTimestampHandler,
-  PipelineBuilder,
   reactiveComputePipeline,
   reactiveUniformBuffer,
   renderBundlePass,
@@ -25,7 +24,7 @@ import {
   viewMatrix,
   viewProjectionMatrix,
 } from './store';
-import { createEffect, createMemo, createSignal } from 'solid-js';
+import { createEffect, createSignal } from 'solid-js';
 import rng from './shaders/rng';
 import tonemapping from './shaders/tonemapping';
 import {
@@ -42,6 +41,8 @@ const [prevImageBuffer, setPrevImageBuffer] = createSignal<GPUBuffer>();
 const [positionBuffer, setPositionBuffer] = createSignal<GPUBuffer>();
 const [prevPositionBuffer, setPrevPositionBuffer] = createSignal<GPUBuffer>();
 const [depthBuffer, setDepthBuffer] = createSignal<GPUBuffer>();
+const [normalsBuffer, setNormalsBuffer] = createSignal<GPUBuffer>();
+const [prevNormalsBuffer, setPrevNormalsBuffer] = createSignal<GPUBuffer>();
 const [blitRenderBundle, setBlitRenderBundle] = createSignal<GPURenderBundle>();
 const [debugBVHRenderBundle, setDebugBVHRenderBundle] =
   createSignal<GPURenderBundle>();
@@ -50,11 +51,16 @@ const [prevView, setPrevView] = createSignal<mat4>(undefined, {
 });
 const _reprojectionFrustrum = reprojectionFrustrum(prevView);
 const prevViewBuffer = reactiveUniformBuffer(16, prevView);
-const viewBuffer = reactiveUniformBuffer(16, viewMatrix);
+const viewBuffer = reactiveUniformBuffer(
+  16,
+  viewMatrix,
+  GPUBufferUsage.COPY_SRC
+);
 const viewProjBuffer = reactiveUniformBuffer(16, viewProjectionMatrix);
 const reprojectionFrustrumBuffer = reactiveUniformBuffer(
   12,
-  _reprojectionFrustrum
+  _reprojectionFrustrum,
+  GPUBufferUsage.COPY_SRC
 );
 
 const { models, materials } = await loadModels();
@@ -111,7 +117,27 @@ createEffect<GPUBuffer[]>((prevBuffers) => {
   );
   setPrevPositionBuffer(prevPosition);
 
-  return [current, prev, depth, currentPosition, prevPosition];
+  const normalsImageSize = Float32Array.BYTES_PER_ELEMENT * 4 * width * height;
+  const currentNormals = createStorageBuffer(
+    normalsImageSize,
+    'Normals Buffer'
+  );
+  setNormalsBuffer(currentNormals);
+  const prevNormals = createStorageBuffer(
+    normalsImageSize,
+    'Prev Normals Buffer'
+  );
+  setPrevNormalsBuffer(prevNormals);
+
+  return [
+    current,
+    prev,
+    depth,
+    currentPosition,
+    prevPosition,
+    currentNormals,
+    prevNormals,
+  ];
 });
 
 createEffect(() => {
@@ -714,89 +740,59 @@ const reproject = () => /* wgsl */ `
       } else {
         return ReprojectionResult(vec4f(0));
       }
-
-    let _uv = round(uv - vec2f(0.5));
-    let uv2 = vec2u(_uv);
-    // let uv_u = vec2u(_uv);
-    // let uv_f = fract(_uv);
-    // let idx1 = uv_u.y * viewport.x + uv_u.x;
-    // let idx2 = (uv_u.y + 1) * viewport.x + uv_u.x;
-    // let idx3 = uv_u.y * viewport.x + uv_u.x + 1;
-    // let idx4 = (uv_u.y + 1) * viewport.x + uv_u.x + 1;
-
-    // // let d1 = depthBuffer[idx1][1];
-    // // let d2 = depthBuffer[idx2][1];
-    // // let d3 = depthBuffer[idx3][1];
-    // // let d4 = depthBuffer[idx4][1];
-    // // let prevDepth = bilinearInterpolation(uv_f, vec4f(d1, d2, d3, d4));
-    // // let old_ray = cameraRay(uv, view);
-    // // let old_p = old_ray.pos + old_ray.dir * prevDepth;
-    // let pp1 = prevPositionBuffer[idx1];
-    // let pp2 = prevPositionBuffer[idx2];
-    // let pp3 = prevPositionBuffer[idx3];
-    // let pp4 = prevPositionBuffer[idx4];
-    // let old_p = bilinearInterpolation3(uv_f, mat4x3f(pp1, pp2, pp3, pp4));
-    // let dp = p - old_p;
-    // let d = dot(dp, dp);
-    
-    // if !(d < 0.001) { // depth is not the same
-    //   return ReprojectionResult(vec4f(0));
+    }
+    // let duv = puv - round(uv);
+    // if dot(duv, duv) < 1 { // too little movement in screen space
+    //   return ReprojectionResult(vec4f(0, 0,1,1));
     // }
 
-    // let p1 = prevImageBuffer[idx1];
-    // let p2 = prevImageBuffer[idx2];
-    // let p3 = prevImageBuffer[idx3];
-    // let p4 = prevImageBuffer[idx4];
-    // let m = mat4x3f(
-    //   p1.rgb/p1.w,
-    //   p2.rgb/p2.w,
-    //   p3.rgb/p3.w,
-    //   p4.rgb/p4.w
-    // );
-    // let color = bilinearInterpolation3(uv_f, m);
-    // let weight = min(p1.w, min(p2.w, min(p3.w, p4.w)));
-    // return ReprojectionResult(vec4f(color, 1) * weight);
-    
-    let uv_a = array<vec2u, 9>(
-      vec2u(uv2.x, uv2.y),
-      vec2u(uv2.x + 1, uv2.y),
-      vec2u(uv2.x, uv2.y + 1),
-      vec2u(uv2.x + 1, uv2.y + 1),
-      vec2u(uv2.x - 1, uv2.y),
-      vec2u(uv2.x, uv2.y - 1),
-      vec2u(uv2.x - 1, uv2.y - 1),
-      vec2u(uv2.x + 1, uv2.y - 1),
-      vec2u(uv2.x - 1, uv2.y + 1),
-    );
-    var min_d = f32max;
-    var min_idx = 0u;
-    for (var i = 0u; i < 9u; i = i + 1u) {
-      let idx = uv_a[i].y * viewport.x + uv_a[i].x;
-      // let prevDepth = depthBuffer[idx][1];
-
-      // let old_ray = cameraRay(_uv, view);
-      // let old_p = old_ray.pos + old_ray.dir * prevDepth;
-      let old_p = prevPositionBuffer[idx];
-      let dp = p - old_p;
-      let d = dot(dp, dp);
-      if d < min_d {
-        min_d = d;
-        min_idx = idx;
+    if ${store.debugReprojection && store.debugReprojectionUnmovedPixels} {
+      let duv = puv - uv;
+      // too little movement in screen space
+      // reprojects the same pixel
+      if dot(duv, duv) < 1 { 
+        return ReprojectionResult(vec4f(0, 0,1,1));
       }
     }
 
-    if !(min_d < 0.01) { // depth is not the same
-      if ${store.debugReprojection} {
-        return ReprojectionResult(vec4f(min_d/100, 0,0,1));
-      } else {
-        return ReprojectionResult(vec4f(0));
+    let threshold = 0.0001;
+    // try rounding as first guess
+    var min_uv = round(uv);
+    var dp = sampleImage3(min_uv, &prevPositionBuffer) - p;
+    var d = dot(dp, dp);
+    if !(d < threshold) {
+      // then if didn't work, use gradient descent
+      // to find better guess, starting from unrounded uv
+      min_uv = uv;
+      let step = 0.01;
+      let rate = 250.;
+      dp = sampleImage3(min_uv, &prevPositionBuffer) - p;
+      d = dot(dp, dp);
+      for (var i = 0u; i < 8u && d > threshold; i = i + 1u) {
+        let old_p1 = sampleImage3(min_uv, &prevPositionBuffer);
+        let old_p2 = sampleImage3(min_uv + vec2f(1, 0) * step, &prevPositionBuffer);
+        let old_p3 = sampleImage3(min_uv + vec2f(0, 1) * step, &prevPositionBuffer);
+        dp = old_p1 - p;
+        let dpdu = 2 * dot(dp, (old_p2 - old_p1)) / step;
+        let dpdv = 2 * dot(dp, (old_p3 - old_p1)) / step;
+        min_uv -= vec2f(dpdu, dpdv) * rate;
+        d = dot(dp, dp);
+      }
+  
+      if !(d < threshold) { // didn't converge fast enough, rejecting
+        if ${store.debugReprojection} {
+          return ReprojectionResult(vec4f(d*1000, 0, 0,1));
+        } else {
+          return ReprojectionResult(vec4f(0));
+        }
       }
     }
 
     if ${store.debugReprojection} {
-      return ReprojectionResult(vec4f(1));
+      return ReprojectionResult(vec4f(fract(min_uv), 1, 1));
     } else {
-      return ReprojectionResult(prevImageBuffer[min_idx]);
+      let color = sampleImage4(min_uv, &prevImageBuffer);
+      return ReprojectionResult(color);
     }
   }
 `;
@@ -924,7 +920,8 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindVarBuffer('storage', 'prevImageBuffer: array<vec4f>', prevImageBuffer())}
     ${x.bindVarBuffer('storage', 'positionBuffer: array<vec3f>', positionBuffer())}
     ${x.bindVarBuffer('storage', 'prevPositionBuffer: array<vec3f>', prevPositionBuffer())}
-    ${x.bindVarBuffer('storage', 'depthBuffer: array<vec2f>', depthBuffer())}
+    ${x.bindVarBuffer('storage', 'normalsBuffer: array<vec3f>', normalsBuffer())}
+    ${x.bindVarBuffer('storage', 'prevNormalsBuffer: array<vec3f>', prevNormalsBuffer())}
     ${x.bindVarBuffer('uniform', 'viewMatrix: mat4x4f', viewBuffer)}
     ${x.bindVarBuffer('uniform', 'prevViewMatrix: mat4x4f', prevViewBuffer)}
     ${x.bindVarBuffer('uniform', 'reprojectionFrustrum: mat3x4f', reprojectionFrustrumBuffer)}
@@ -972,6 +969,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       if counter == 0u && !_reproject {
         imageBuffer[idx] = vec4f(0);
         positionBuffer[idx] = vec3f(0);
+        normalsBuffer[idx] = vec3f(0);
       }
 
 
@@ -982,6 +980,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       color += computeColor(pos, &hit);
       samples++;
       positionBuffer[idx] = hit.point;
+      normalsBuffer[idx] = hit.normal;
 
       for (var i = 0u; i < ${store.sampleCount}; i = i + 1u) {
         let jitter = sample_insquare(random_2()) * 0.5;
@@ -1005,6 +1004,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       if updatePrev == 1u {
         prevImageBuffer[idx] = imageBuffer[idx];
         prevPositionBuffer[idx] = positionBuffer[idx];
+        prevNormalsBuffer[idx] = normalsBuffer[idx];
       }
     }
   `,
@@ -1149,6 +1149,7 @@ const rpd: GPURenderPassDescriptor = {
 
 let frameCounter = 0;
 export async function renderFrame(now: number) {
+  // await wait(1000);
   const rate = store.reprojectionRate;
   const updatePrev = store.debugReprojection
     ? frameCounter % rate === 0
@@ -1186,6 +1187,14 @@ export async function renderFrame(now: number) {
       renderPass.executeBundles([debugBVHRenderBundle()]);
     }
   });
+
+  // const size = 16 * Float32Array.BYTES_PER_ELEMENT;
+  // const readbackBuffer = device.createBuffer({
+  //   size,
+  //   usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  // });
+
+  // encoder.copyBufferToBuffer(viewBuffer, 0, readbackBuffer, 0, size);
 
   await submit(encoder, () => {
     device.queue.submit([encoder.finish()]);
