@@ -149,6 +149,15 @@ export const reprojectionFrustrum = (prevView: Accessor<mat4 | undefined>) =>
     return Iterator.zip(left, top, c, d).flat().toArray();
   });
 
+export const prevViewInv = (prevView: Accessor<mat4 | undefined>) =>
+  createMemo(() => {
+    const _prevView = prevView();
+    if (_prevView) {
+      return mat4.invert(mat4.create(), _prevView);
+    }
+    return mat4.create();
+  });
+
 export { store };
 
 export const setDebugReprojection = (debug: boolean) => {

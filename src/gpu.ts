@@ -89,13 +89,7 @@ export const getTimestampHandler = (
         return;
       }
 
-      encoder.copyBufferToBuffer(
-        resolveBuffer,
-        0,
-        resultBuffer,
-        0,
-        resultBuffer.size
-      );
+      encoder.copyBufferToBuffer(resolveBuffer, resultBuffer);
 
       submit();
 
