@@ -43,9 +43,9 @@ const [store, setStore] = createStore({
   shadingType: ShadingType.Phong,
   projectionType: ProjectionType.Perspective,
 
-  reprojectionRate: 2,
+  reprojectionRate: 1,
 
-  resolutionScale: 1,
+  resolutionScale: 0.5,
   scale: 1,
   sensitivity: 0.03,
   speed: 2,
