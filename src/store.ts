@@ -31,7 +31,7 @@ const [store, setStore] = createStore({
   view: vec2.create(),
 
   counter: 0,
-  sampleCount: 0,
+  sampleCount: 1,
   bouncesCount: 1,
 
   fov: Math.PI / 2,
@@ -43,9 +43,9 @@ const [store, setStore] = createStore({
   shadingType: ShadingType.Phong,
   projectionType: ProjectionType.Perspective,
 
-  reprojectionRate: 1,
+  reprojectionRate: 0,
 
-  resolutionScale: 0.5,
+  resolutionScale: 1,
   scale: 1,
   sensitivity: 0.03,
   speed: 2,
@@ -57,7 +57,7 @@ const [store, setStore] = createStore({
 
   debugBVH: false,
   debugReprojection: false,
-  debugReprojectionUnmovedPixels: false,
+  pixelJitter: true,
   blitView: 'image' as BlitView,
 
   timings: {

@@ -46,6 +46,8 @@ const [prevPositionBuffer, setPrevPositionBuffer] = createSignal<GPUBuffer>();
 const [depthBuffer, setDepthBuffer] = createSignal<GPUBuffer>();
 const [normalsBuffer, setNormalsBuffer] = createSignal<GPUBuffer>();
 const [prevNormalsBuffer, setPrevNormalsBuffer] = createSignal<GPUBuffer>();
+const [geometryBuffer, setGeometryBuffer] = createSignal<GPUBuffer>();
+const [prevGeometryBuffer, setPrevGeometryBuffer] = createSignal<GPUBuffer>();
 const [blitRenderBundle, setBlitRenderBundle] = createSignal<GPURenderBundle>();
 const [debugBVHRenderBundle, setDebugBVHRenderBundle] =
   createSignal<GPURenderBundle>();
@@ -773,15 +775,46 @@ const reproject = () => /* wgsl */ `
   }
 
   fn reprojectPoint(p: vec3f, view: mat4x4f) -> vec2f {
-    // let duv = reprojectionFrustrum * (p - view[3].xyz);
-    // return duv.xy / duv.zw - prevJitter;
-    // let pp4 = prevViewInvMatrix * vec4(p, 1.);
-    let pp4 = inverse(view) * vec4(p, 1.);
-    let _uv = pp4.xy * cameraRayZ / pp4.z;
-    let uv = (_uv * viewportf.x + viewportf)/2;
-    return uv;
+    let duv = reprojectionFrustrum * (p - view[3].xyz);
+    return duv.xy / duv.zw;
   }
-  fn reproject(p: vec3f, puv: vec2f, view: mat4x4f) -> ReprojectionResult {
+
+  const bilateralFilterRadius = 2;
+  const bilateralFilterSigmaPos = 0.01;
+  const bilateralFilterSigmaColor = 0.01;
+  const bilateralFilterStep = 0.1;
+  fn bilateralFilter(uv: vec2f, p: vec3f, c: vec3f) -> vec4f {
+    var color = vec4f(0);
+    var weight = 0.;
+    for (var i = -bilateralFilterRadius; i <= bilateralFilterRadius; i = i + 1) {
+      for (var j = -bilateralFilterRadius; j <= bilateralFilterRadius; j = j + 1) {
+        let _uv = uv + vec2f(f32(i), f32(j)) * bilateralFilterStep;
+        let _color = sampleImage4(_uv, &prevImageBuffer);
+        if _color.w <= 0 {
+          continue;
+        }
+
+        let _pos = sampleImage3(_uv, &prevPositionBuffer);
+        let dp = p - _pos;
+        let dc = c - _color.xyz/_color.w;
+        let _weight = exp(
+          -dot(dp, dp) / bilateralFilterSigmaPos -
+           dot(dc, dc) / bilateralFilterSigmaColor
+        );
+        color += _color * _weight;
+        weight += _weight;
+      }
+    }
+
+    if weight == 0. {
+      return vec4f(0);
+    }
+
+    return color / weight;
+  }
+
+  fn reproject(p: vec3f, c: vec3f) -> ReprojectionResult {
+    let view = prevViewMatrix2;
     let uv = reprojectPoint(p, view);
     if any(uv < vec2(0)) || any(uv > vec2(viewportf)) { // outside viewport
       if ${store.debugReprojection} {
@@ -790,69 +823,28 @@ const reproject = () => /* wgsl */ `
         return ReprojectionResult(vec4f(0));
       }
     }
-    // let duv = puv - round(uv);
-    // if dot(duv, duv) < 1 { // too little movement in screen space
-    //   return ReprojectionResult(vec4f(0, 0,1,1));
-    // }
 
-    if ${store.debugReprojection && store.debugReprojectionUnmovedPixels} {
-      let duv = puv - uv;
-      // too little movement in screen space
-      // reprojects the same pixel
-      if dot(duv, duv) < 1 { 
-        return ReprojectionResult(vec4f(0, 1,1,1));
-      }
-    }
-
-    let threshold = 0.0001;
-    // search neighborhood for the closest point
+    let threshold = 0.000001;
     var min_uv = uv;
     var dp = sampleImage3(min_uv, &prevPositionBuffer) - p;
     var d = dot(dp, dp);
 
-    // then if didn't work, use gradient descent
-    // to find better guess, starting from unrounded uv
-    // if !(d < threshold) {
-    //   min_uv = uv;
-    //   let step = 0.01;
-    //   let rate = 250.;
-    //   dp = sampleImage3(min_uv, &prevPositionBuffer) - p;
-    //   d = dot(dp, dp);
-    //   for (var i = 0u; i < 8u && d > threshold  && d < 1; i = i + 1u) {
-    //     let old_p1 = sampleImage3(min_uv, &prevPositionBuffer);
-    //     let old_p2 = sampleImage3(min_uv + vec2f(1, 0) * step, &prevPositionBuffer);
-    //     let old_p3 = sampleImage3(min_uv + vec2f(0, 1) * step, &prevPositionBuffer);
-    //     dp = old_p1 - p;
-    //     let dpdu = 2 * dot(dp, (old_p2 - old_p1)) / step;
-    //     let dpdv = 2 * dot(dp, (old_p3 - old_p1)) / step;
-    //     min_uv -= vec2f(dpdu, dpdv) * rate;
-    //     d = dot(dp, dp);
-    //   }
-    // }
-
-    // // adjacent pixel centers
-    // let uv_a = array<vec2f, 9>(
-    //   vec2f(0, 0),
-    //   vec2f(1, 0),
-    //   vec2f(0, 1),
-    //   vec2f(1, 1),
-    //   vec2f(0, -1),
-    //   vec2f(1, -1),
-    //   vec2f(-1, 0),
-    //   vec2f(-1, -1),
-    //   vec2f(-1, 1),
-    // );
-
-    // for (var i = 0u; i < 1u && d > threshold; i = i + 1u) {
-    //   let _uv = round(uv) + uv_a[i];
-    //   let _dp = sampleImage3(_uv, &prevPositionBuffer) - p;
-    //   let _d = dot(_dp, _dp);
-    //   if _d < d {
-    //     dp = _dp;
-    //     d = _d;
-    //     min_uv = _uv;
-    //   }
-    // }
+    if !(d < threshold) {
+      var step = 0.1;
+      for (var i = 0u; i < 128u && d >= threshold; i = i + 1u) {
+        if i % 16 == 0 {
+          step -= 0.005;
+        }
+        let next_uv = min_uv - sample_insquare(random_2()) * step;
+        let next_dp = sampleImage3(next_uv, &prevPositionBuffer) - p;
+        let next_d = dot(next_dp, next_dp);
+        if next_d < d {
+          dp = next_dp;
+          d = next_d;
+          min_uv = next_uv;
+        }
+      }
+    }
 
     if !(d < threshold) { // didn't converge fast enough, rejecting
       if ${store.debugReprojection} {
@@ -863,9 +855,13 @@ const reproject = () => /* wgsl */ `
     }
 
     if ${store.debugReprojection} {
-      return ReprojectionResult(vec4f(fract(min_uv), 1, 1));
+      return ReprojectionResult(vec4f(fract(min_uv/4), 1, 1));
     } else {
-      let color = sampleImage4(min_uv - prevJitter, &prevImageBuffer);
+      let color = bilateralFilter(min_uv, p, c);
+      if color.w == 0. {
+        let color = sampleImage4(min_uv, &prevImageBuffer);
+        return ReprojectionResult(color);
+      }
       return ReprojectionResult(color);
     }
   }
@@ -1104,13 +1100,22 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
 
       for (var i = 0u; i < ${store.sampleCount}; i = i + 1u) {
         let pixelJitter = sample_insquare(random_2()) * 0.5;
+        let pos = pos + pixelJitter;
         var hit: Hit;
-        color += computeColor(pos + pixelJitter, &hit);
+        color += computeColor(pos, &hit);
         samples++;
+
+        if _reproject {
+          let result = reproject(hit.point, color);
+          if result.color.w > 0 {
+            color += result.color.xyz / result.color.w;
+            samples++;
+          }
+        }
       }
 
       if _reproject {
-        let result = reproject(hit.point, pos, prevViewMatrix2);
+        let result = reproject(hit.point, color);
         imageBuffer[idx] = result.color;
       }
 
@@ -1273,14 +1278,15 @@ export async function renderFrame(now: number) {
   writeUint32Buffer(seedUniformBuffer, Math.random() * 0xffffffff);
   writeUint32Buffer(counterUniformBuffer, store.counter);
   writeUint32Buffer(updatePrevUniformBuffer, updatePrev ? 1 : 0);
-  const jitter = vec3.fromValues(
-    Math.random() - 0.5,
-    Math.random() - 0.5,
-    Math.random() - 0.5
-  );
-  // vec3.scale(jitter, jitter, 64 / store.view[0]);
-  // vec3.scale(jitter, jitter, 0.5);
-  // writeVec3fBuffer(jitterBuffer, jitter);
+  if (updatePrev && store.pixelJitter) {
+    const jitter = vec3.fromValues(
+      Math.random() - 0.5,
+      Math.random() - 0.5,
+      Math.random() - 0.5
+    );
+    // vec3.scale(jitter, jitter, 0.01);
+    writeVec3fBuffer(jitterBuffer, jitter);
+  }
   incrementCounter();
   const view = viewMatrix();
 
