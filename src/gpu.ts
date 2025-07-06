@@ -1,5 +1,6 @@
 import { Accessor, createEffect, createSignal } from 'solid-js';
 import { assert } from './utils';
+import { vec3 } from 'gl-matrix';
 
 const features: Partial<Record<GPUFeatureName, boolean>> = {};
 let presentationFormat: GPUTextureFormat;
@@ -133,6 +134,9 @@ export const writeUint32Buffer = (buffer: GPUBuffer, data: number) => {
 
 export const writeFloat32Buffer = (buffer: GPUBuffer, data: number) => {
   device.queue.writeBuffer(buffer, 0, new Float32Array([data]));
+};
+export const writeVec3fBuffer = (buffer: GPUBuffer, data: vec3) => {
+  device.queue.writeBuffer(buffer, 0, new Float32Array(data));
 };
 
 export const reactiveUniformBuffer = <T extends number | Iterable<number>>(

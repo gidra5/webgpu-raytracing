@@ -72,7 +72,6 @@ const [store, setStore] = createStore({
   keyboard: [],
 });
 
-// memo
 export const viewMatrix = createMemo(() => {
   const pos = vec3.clone(store.position);
   vec3.scale(pos, pos, -1);
@@ -100,40 +99,44 @@ export const viewProjectionMatrix = createMemo(() => {
 
 export const reprojectionFrustrum = (prevView: Accessor<mat4 | undefined>) =>
   createMemo(() => {
-    const aspectRatio = store.view[1] / store.view[0];
-    const rayZ = -1 / Math.tan(store.fov / 2);
     const view = prevView();
     if (!view) {
       return Iterator.repeat(0).take(12).toArray();
     }
 
+    const aspectRatio = store.view[1] / store.view[0];
+    const hfov = store.fov / 2; // horizontal field of view
+    const tanHFov = Math.tan(hfov);
+    const vfov = Math.atan(tanHFov / aspectRatio); // vertical field of view
+    const w = view[15];
+    const rayZ = -w / tanHFov;
+    // view[2].xyz is forward direction
+    const forward = vec3.fromValues(
+      view[2 * 4 + 0],
+      view[2 * 4 + 1],
+      view[2 * 4 + 2]
+    );
+
     const cornerRay = (x: number, y: number) => {
-      const w = view[15];
-      const dir = vec3.fromValues(x, y * aspectRatio, w * rayZ);
+      const dir = vec3.fromValues(x, y * aspectRatio, rayZ);
       vec3.normalize(dir, dir);
       const dir4 = vec4.fromValues(dir[0], dir[1], dir[2], 0);
       vec4.transformMat4(dir4, dir4, view);
       vec3.set(dir, dir4[0], dir4[1], dir4[2]);
       return dir;
     };
-    const cornerRays = [
-      cornerRay(-1, -1),
-      cornerRay(-1, 1),
-      cornerRay(1, 1),
-      cornerRay(1, -1),
-    ];
     // frustrum side plane normals
     const frustrum = Iterator.zip(
-      cornerRays,
-      Iterator.iter(cornerRays).cycle().skip(1).take(4) // rotate the array by one item
+      [cornerRay(-1, -1), cornerRay(1, -1)],
+      [cornerRay(-1, 1), cornerRay(-1, -1)]
     )
       .map(([a, b]) => vec3.cross(vec3.create(), a, b))
       .map((a) => vec3.normalize(vec3.create(), a))
       .toArray();
 
-    const [left, bottom, right, top] = frustrum;
-    const c = vec3.add(vec3.create(), left, right);
-    const d = vec3.add(vec3.create(), top, bottom);
+    const [left, top] = frustrum;
+    const c = vec3.scale(vec3.create(), forward, -2 * Math.cos(hfov));
+    const d = vec3.scale(vec3.create(), forward, -2 * Math.cos(vfov));
 
     vec3.scale(left, left, store.view[0]);
     vec3.scale(top, top, store.view[1]);
