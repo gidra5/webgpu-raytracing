@@ -1,10 +1,15 @@
 import { type Component } from 'solid-js';
 import {
+  LensType,
   ProjectionType,
   setBlitView,
+  setCircleOfConfusion,
   setDebugBVH,
   setDebugReprojection,
+  setFocusDistance,
   setFov,
+  setLensType,
+  setPixelJitter,
   setProjectionType,
   setReprojectionRate,
   setShadingType,
@@ -102,6 +107,47 @@ const App: Component = () => {
           value={Math.round((store.fov * 180) / Math.PI)}
           onChange={(e) => setFov((Number(e.target.value) * Math.PI) / 180)}
         />
+      </label>
+
+      <label class="flex gap-2 text-white text-sm items-baseline">
+        Pixel jitter
+        <input
+          class="m-0"
+          type="checkbox"
+          checked={store.pixelJitter}
+          onChange={(e) => setPixelJitter(e.target.checked)}
+        />
+      </label>
+
+      <label class="flex gap-2 text-white text-sm items-baseline">
+        Circle of confusion
+        <input
+          class="m-0"
+          type="number"
+          value={store.circleOfConfusion}
+          onChange={(e) => setCircleOfConfusion(Number(e.target.value))}
+        />
+      </label>
+
+      <label class="flex gap-2 text-white text-sm items-baseline">
+        Focus distance
+        <input
+          class="m-0"
+          type="number"
+          value={store.focusDistance}
+          onChange={(e) => setFocusDistance(Number(e.target.value))}
+        />
+      </label>
+
+      <label class="flex gap-2 text-white text-sm items-baseline">
+        Lens type
+        <select
+          value={store.lensType}
+          onChange={(e) => setLensType(Number(e.target.value))}
+        >
+          <option value={LensType.Circle}>Circle</option>
+          <option value={LensType.Square}>Square</option>
+        </select>
       </label>
 
       <div class="text-white">

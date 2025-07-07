@@ -15,6 +15,7 @@ import {
 } from './gpu';
 import {
   incrementCounter,
+  LensType,
   prevViewInv,
   ProjectionType,
   reprojectionFrustrum,
@@ -41,11 +42,6 @@ const context = canvas.getContext('webgpu');
 const device = await getDevice(context as GPUCanvasContext);
 const [imageBuffer, setImageBuffer] = createSignal<GPUBuffer>();
 const [prevImageBuffer, setPrevImageBuffer] = createSignal<GPUBuffer>();
-const [positionBuffer, setPositionBuffer] = createSignal<GPUBuffer>();
-const [prevPositionBuffer, setPrevPositionBuffer] = createSignal<GPUBuffer>();
-const [depthBuffer, setDepthBuffer] = createSignal<GPUBuffer>();
-const [normalsBuffer, setNormalsBuffer] = createSignal<GPUBuffer>();
-const [prevNormalsBuffer, setPrevNormalsBuffer] = createSignal<GPUBuffer>();
 const [geometryBuffer, setGeometryBuffer] = createSignal<GPUBuffer>();
 const [prevGeometryBuffer, setPrevGeometryBuffer] = createSignal<GPUBuffer>();
 const [blitRenderBundle, setBlitRenderBundle] = createSignal<GPURenderBundle>();
@@ -130,52 +126,23 @@ createEffect<GPUBuffer[]>((prevBuffers) => {
   );
   setPrevImageBuffer(prev);
 
-  // depth + prev depth
-  const depthImageSize = Float32Array.BYTES_PER_ELEMENT * 2 * width * height;
-  const depth = createStorageBuffer(
-    depthImageSize,
-    'Depth Buffer',
+  const geometryBufferItemSize = Float32Array.BYTES_PER_ELEMENT * 4;
+  const geometryBufferSize =
+    store.geometryBufferScale * geometryBufferItemSize * width * height;
+  const currentGeometry = createStorageBuffer(
+    geometryBufferSize,
+    'Geometry Buffer',
     GPUBufferUsage.COPY_SRC
   );
-  setDepthBuffer(depth);
-
-  const positionImageSize = Float32Array.BYTES_PER_ELEMENT * 4 * width * height;
-  const currentPosition = createStorageBuffer(
-    positionImageSize,
-    'Position Buffer',
-    GPUBufferUsage.COPY_SRC
-  );
-  setPositionBuffer(currentPosition);
-  const prevPosition = createStorageBuffer(
-    positionImageSize,
-    'Prev Position Buffer',
+  setGeometryBuffer(currentGeometry);
+  const prevGeometry = createStorageBuffer(
+    geometryBufferSize,
+    'Prev Geometry Buffer',
     GPUBufferUsage.COPY_DST
   );
-  setPrevPositionBuffer(prevPosition);
+  setPrevGeometryBuffer(prevGeometry);
 
-  const normalsImageSize = Float32Array.BYTES_PER_ELEMENT * 4 * width * height;
-  const currentNormals = createStorageBuffer(
-    normalsImageSize,
-    'Normals Buffer',
-    GPUBufferUsage.COPY_SRC
-  );
-  setNormalsBuffer(currentNormals);
-  const prevNormals = createStorageBuffer(
-    normalsImageSize,
-    'Prev Normals Buffer',
-    GPUBufferUsage.COPY_DST
-  );
-  setPrevNormalsBuffer(prevNormals);
-
-  return [
-    current,
-    prev,
-    depth,
-    currentPosition,
-    prevPosition,
-    currentNormals,
-    prevNormals,
-  ];
+  return [current, prev, currentGeometry, prevGeometry];
 });
 
 createEffect(() => {
@@ -208,7 +175,6 @@ createEffect(() => {
       ${tonemapping}
 
       ${x.bindVarBuffer('read-only-storage', 'imageBuffer: array<vec4f>', imageBuffer())}
-      ${x.bindVarBuffer('read-only-storage', 'depthBuffer: array<vec2f>', depthBuffer())}
       ${x.bindVarBuffer('read-only-storage', 'prevImageBuffer: array<vec4f>', prevImageBuffer())}
 
       const viewport = vec2u(${store.view[0]}, ${store.view[1]});
@@ -225,11 +191,17 @@ createEffect(() => {
           let value = imageBuffer[idx];
           return value.rgb; 
         } else if ${store.blitView == 'depth'} {
-          return vec3f(depthBuffer[idx][0]) / 10;
+          // return vec3f(depthBuffer[idx][0]) / 10;
+          let value = imageBuffer[idx];
+          return value.rgb / value.w; 
         } else if ${store.blitView == 'prevDepth'} {
-          return vec3f(depthBuffer[idx][1]) / 10;
+          // return vec3f(depthBuffer[idx][1]) / 10;
+          let value = imageBuffer[idx];
+          return value.rgb / value.w; 
         } else if ${store.blitView == 'depthDelta'} {
-          return vec3f(depthBuffer[idx][0] - depthBuffer[idx][1]);
+          // return vec3f(depthBuffer[idx][0] - depthBuffer[idx][1]);
+          let value = imageBuffer[idx];
+          return value.rgb / value.w; 
         }
         return vec3f(0);
       }
@@ -264,6 +236,10 @@ const COMPUTE_WORKGROUP_SIZE_X = 16;
 const COMPUTE_WORKGROUP_SIZE_Y = 16;
 
 const structs = /* wgsl */ `
+  struct Geometry {
+    position: vec3f,
+  }
+
   struct Ray {
     pos: vec3f, // Origin
     dir: vec3f, // Direction (normalized)
@@ -590,11 +566,20 @@ const raygen = () => /* wgsl */ `
     return ray;
   }
 
+  fn sampleLens() -> vec2f {
+    if ${store.lensType} == ${LensType.Circle} {
+      return sample_incircle(random_2());
+    } else if ${store.lensType} == ${LensType.Square} {
+      return sample_insquare(random_2());
+    }
+    return vec2f(0);
+  }
+
   fn cameraRay(pos: vec2f, view: mat4x4f) -> Ray {
     let uv = (2. * pos - viewportf) / viewportf.x;
     let rayDirection = cameraRayDirection(uv);
     
-    let ray = thinLensRay(rayDirection, sample_incircle(random_2()));
+    let ray = thinLensRay(rayDirection, sampleLens());
     return ray_transform(ray, view);
   }
 `;
@@ -794,7 +779,7 @@ const reproject = () => /* wgsl */ `
           continue;
         }
 
-        let _pos = sampleImage3(_uv, &prevPositionBuffer);
+        let _pos = sampleGeometryAll(_uv, &prevGeometryBuffer).position;
         let dp = p - _pos;
         let dc = c - _color.xyz/_color.w;
         let _weight = exp(
@@ -826,7 +811,7 @@ const reproject = () => /* wgsl */ `
 
     let threshold = 0.000001;
     var min_uv = uv;
-    var dp = sampleImage3(min_uv, &prevPositionBuffer) - p;
+    var dp = sampleGeometryAll(min_uv, &prevGeometryBuffer).position - p;
     var d = dot(dp, dp);
 
     if !(d < threshold) {
@@ -836,7 +821,7 @@ const reproject = () => /* wgsl */ `
           step -= 0.005;
         }
         let next_uv = min_uv - sample_insquare(random_2()) * step;
-        let next_dp = sampleImage3(next_uv, &prevPositionBuffer) - p;
+        let next_dp = sampleGeometryAll(next_uv, &prevGeometryBuffer).position - p; 
         let next_d = dot(next_dp, next_dp);
         if next_d < d {
           dp = next_dp;
@@ -856,12 +841,15 @@ const reproject = () => /* wgsl */ `
 
     if ${store.debugReprojection} {
       return ReprojectionResult(vec4f(fract(min_uv/4), 1, 1));
-    } else {
+    } else if ${store.bilateralFilter} {
       let color = bilateralFilter(min_uv, p, c);
       if color.w == 0. {
         let color = sampleImage4(min_uv, &prevImageBuffer);
         return ReprojectionResult(color);
       }
+      return ReprojectionResult(color);
+    } else {
+      let color = sampleImage4(min_uv, &prevImageBuffer);
       return ReprojectionResult(color);
     }
   }
@@ -898,11 +886,7 @@ const computeColor = /* wgsl */ `
     }
 `;
 
-const imageSampler = /* wgsl */ `
-  fn _idx(uv: vec2u) -> u32 {
-    return uv.x + uv.y * viewport.x;
-  }
-
+const bilinearInterpolation = /* wgsl */ `
   fn bilinearInterpolation(uv: vec2f, p: vec4f) -> f32 {
     let col_x = mix(p[0], p[2], uv.x);
     let col_y = mix(p[1], p[3], uv.x);
@@ -930,15 +914,21 @@ const imageSampler = /* wgsl */ `
     let col = mix(col_x, col_y, uv.y);
     return col;
   }
+`;
+
+const imageSampler = /* wgsl */ `
+  fn imageIdx(uv: vec2u) -> u32 {
+    return uv.x + uv.y * viewport.x;
+  }
 
   // fn sampleImage(uv: vec2f, _image: ptr<function, array<vec4f>>) -> f32 {
   //   let uv_u = floor(uv);
   //   let uv_f = fract(uv);
   //   let m = vec4f(
-  //     image[_idx(uv_u)],
-  //     image[_idx(uv_u + vec2u(1, 0))],
-  //     image[_idx(uv_u + vec2u(0, 1))],
-  //     image[_idx(uv_u + vec2u(1, 1))],
+  //     image[imageIdx(uv_u)],
+  //     image[imageIdx(uv_u + vec2u(1, 0))],
+  //     image[imageIdx(uv_u + vec2u(0, 1))],
+  //     image[imageIdx(uv_u + vec2u(1, 1))],
   //   );
   //   let value = bilinearInterpolation4(uv_f, m);
   //   return value;
@@ -948,10 +938,10 @@ const imageSampler = /* wgsl */ `
   //   let uv_u = floor(uv);
   //   let uv_f = fract(uv);
   //   let m = mat4x2f(
-  //     image[_idx(uv_u)],
-  //     image[_idx(uv_u + vec2u(1, 0))],
-  //     image[_idx(uv_u + vec2u(0, 1))],
-  //     image[_idx(uv_u + vec2u(1, 1))],
+  //     image[imageIdx(uv_u)],
+  //     image[imageIdx(uv_u + vec2u(1, 0))],
+  //     image[imageIdx(uv_u + vec2u(0, 1))],
+  //     image[imageIdx(uv_u + vec2u(1, 1))],
   //   );
   //   let value = bilinearInterpolation2(uv_f, m);
   //   return value;
@@ -961,10 +951,10 @@ const imageSampler = /* wgsl */ `
     let uv_u = vec2u(floor(uv));
     let uv_f = fract(uv);
     let m = mat4x3f(
-      (*_image)[_idx(uv_u)],
-      (*_image)[_idx(uv_u + vec2u(1, 0))],
-      (*_image)[_idx(uv_u + vec2u(0, 1))],
-      (*_image)[_idx(uv_u + vec2u(1, 1))],
+      (*_image)[imageIdx(uv_u)],
+      (*_image)[imageIdx(uv_u + vec2u(1, 0))],
+      (*_image)[imageIdx(uv_u + vec2u(0, 1))],
+      (*_image)[imageIdx(uv_u + vec2u(1, 1))],
     );
     let value = bilinearInterpolation3(uv_f, m);
     return value;
@@ -974,13 +964,34 @@ const imageSampler = /* wgsl */ `
     let uv_u = vec2u(floor(uv));
     let uv_f = fract(uv);
     let m = mat4x4f(
-      (*_image)[_idx(uv_u)],
-      (*_image)[_idx(uv_u + vec2u(1, 0))],
-      (*_image)[_idx(uv_u + vec2u(0, 1))],
-      (*_image)[_idx(uv_u + vec2u(1, 1))],
+      (*_image)[imageIdx(uv_u)],
+      (*_image)[imageIdx(uv_u + vec2u(1, 0))],
+      (*_image)[imageIdx(uv_u + vec2u(0, 1))],
+      (*_image)[imageIdx(uv_u + vec2u(1, 1))],
     );
     let value = bilinearInterpolation4(uv_f, m);
     return value;
+  }
+`;
+
+const geometrySampler = () => /* wgsl */ `
+  fn geometryIdx(uv: vec2u) -> u32 {
+    return uv.x + uv.y * viewport.x;
+  }
+
+  fn sampleGeometryAll(uv: vec2f, buffer: ptr<storage, array<Geometry>, read_write>) -> Geometry {
+    let uv_u = vec2u(floor(uv));
+    let uv_f = fract(uv);
+    
+    var result: Geometry;
+    let positions = mat4x3f(
+      (*buffer)[geometryIdx(uv_u)].position,
+      (*buffer)[geometryIdx(uv_u + vec2u(1, 0))].position,
+      (*buffer)[geometryIdx(uv_u + vec2u(0, 1))].position,
+      (*buffer)[geometryIdx(uv_u + vec2u(1, 1))].position,
+    );
+    result.position = bilinearInterpolation3(uv_f, positions);
+    return result;
   }
 `;
 
@@ -1030,10 +1041,8 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
   shader: (x) => /* wgsl */ `
     ${x.bindVarBuffer('storage', 'imageBuffer: array<vec4f>', imageBuffer())}
     ${x.bindVarBuffer('storage', 'prevImageBuffer: array<vec4f>', prevImageBuffer())}
-    ${x.bindVarBuffer('storage', 'positionBuffer: array<vec3f>', positionBuffer())}
-    ${x.bindVarBuffer('storage', 'prevPositionBuffer: array<vec3f>', prevPositionBuffer())}
-    ${x.bindVarBuffer('storage', 'normalsBuffer: array<vec3f>', normalsBuffer())}
-    ${x.bindVarBuffer('storage', 'prevNormalsBuffer: array<vec3f>', prevNormalsBuffer())}
+    ${x.bindVarBuffer('storage', 'geometryBuffer: array<Geometry>', geometryBuffer())}
+    ${x.bindVarBuffer('storage', 'prevGeometryBuffer: array<Geometry>', prevGeometryBuffer())}
     ${x.bindVarBuffer('uniform', 'viewMatrix: mat4x4f', viewBuffer)}
     ${x.bindVarBuffer('uniform', 'prevViewMatrix: mat4x4f', prevViewBuffer)}
     ${x.bindVarBuffer('uniform', 'prevViewMatrix2: mat4x4f', prevViewBuffer2)}
@@ -1045,7 +1054,6 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindVarBuffer('read-only-storage', 'materials: array<Material>', materialsBuffer)}
     ${x.bindVarBuffer('read-only-storage', 'models: array<Model>', modelsBuffer)}
     ${x.bindVarBuffer('read-only-storage', 'bvh: array<BoundingVolume>', bvhBuffer)}
-
 
     ${x.bindVarBuffer('uniform', 'seed: u32', seedUniformBuffer)}
     ${x.bindVarBuffer('uniform', 'counter: u32', counterUniformBuffer)}
@@ -1069,7 +1077,9 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${raygen()}
     ${reproject()}
     ${computeColor}
+    ${bilinearInterpolation}
     ${imageSampler}
+    ${geometrySampler()}
     ${matInv}
 
     @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
@@ -1079,28 +1089,25 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       }
 
       let upos = globalInvocationId.xy;
-      let idx = _idx(upos);
+      let idx = imageIdx(upos);
       let pos = vec2f(upos) + jitter;
 
       rng_state = seed + idx;
       if counter == 0u && !_reproject {
         imageBuffer[idx] = vec4f(0);
-        positionBuffer[idx] = vec3f(0);
-        normalsBuffer[idx] = vec3f(0);
+        geometryBuffer[idx].position = vec3f(0);
       }
 
       var color = vec3f(0);
-      var hit: Hit;
       var samples = 0u;
+      var hit: Hit;
 
       color += computeColor(pos, &hit);
       samples++;
-      positionBuffer[idx] = hit.point;
-      normalsBuffer[idx] = hit.normal;
+      geometryBuffer[idx].position = hit.point;
 
       for (var i = 0u; i < ${store.sampleCount}; i = i + 1u) {
-        let pixelJitter = sample_insquare(random_2()) * 0.5;
-        let pos = pos + pixelJitter;
+        let pos = pos + sample_insquare(random_2()) * 0.5;
         var hit: Hit;
         color += computeColor(pos, &hit);
         samples++;
@@ -1318,8 +1325,7 @@ export async function renderFrame(now: number) {
   if (updatePrev) {
     encoder.copyBufferToBuffer(jitterBuffer, prevJitterBuffer);
     encoder.copyBufferToBuffer(imageBuffer(), prevImageBuffer());
-    encoder.copyBufferToBuffer(positionBuffer(), prevPositionBuffer());
-    encoder.copyBufferToBuffer(normalsBuffer(), prevNormalsBuffer());
+    encoder.copyBufferToBuffer(geometryBuffer(), prevGeometryBuffer());
     encoder.copyBufferToBuffer(viewBuffer, prevViewBuffer2);
   }
 

@@ -15,6 +15,11 @@ export enum ProjectionType {
   Orthographic,
 }
 
+export enum LensType {
+  Circle,
+  Square,
+}
+
 type BlitView =
   | 'image'
   | 'prevImage'
@@ -35,17 +40,19 @@ const [store, setStore] = createStore({
   bouncesCount: 1,
 
   fov: Math.PI / 2,
-  focusDistance: 10,
-  circleOfConfusion: 0,
+  focusDistance: 4,
+  circleOfConfusion: 0.05,
   paniniDistance: 1,
   exposure: 1,
   ambience: 0.1,
   shadingType: ShadingType.Phong,
   projectionType: ProjectionType.Perspective,
+  lensType: LensType.Circle,
 
   reprojectionRate: 0,
 
   resolutionScale: 1,
+  geometryBufferScale: 1,
   scale: 1,
   sensitivity: 0.03,
   speed: 2,
@@ -58,6 +65,7 @@ const [store, setStore] = createStore({
   debugBVH: false,
   debugReprojection: false,
   pixelJitter: true,
+  bilateralFilter: false,
   blitView: 'image' as BlitView,
 
   timings: {
@@ -162,6 +170,26 @@ export { store };
 
 export const setDebugReprojection = (debug: boolean) => {
   setStore('debugReprojection', debug);
+  resetCounter();
+};
+
+export const setPixelJitter = (jitter: boolean) => {
+  setStore('pixelJitter', jitter);
+  resetCounter();
+};
+
+export const setCircleOfConfusion = (circleOfConfusion: number) => {
+  setStore('circleOfConfusion', circleOfConfusion);
+  resetCounter();
+};
+
+export const setFocusDistance = (focusDistance: number) => {
+  setStore('focusDistance', focusDistance);
+  resetCounter();
+};
+
+export const setLensType = (lensType: LensType) => {
+  setStore('lensType', lensType);
   resetCounter();
 };
 
