@@ -15,7 +15,7 @@ import {
 } from './gpu';
 import {
   incrementCounter,
-  LensType,
+  LensShape,
   prevViewInv,
   ProjectionType,
   reprojectionFrustrum,
@@ -509,6 +509,7 @@ const raygen = () => /* wgsl */ `
   const lensFocusDistance = ${store.focusDistance};
   const circleOfConfusionRadius = ${store.circleOfConfusion};
   const projectionType = ${store.projectionType};
+  const verticalCompression = 1.;
 
   fn pinholeRayDirection(pixel: vec2f) -> vec3f {
     return normalize(vec3(pixel, cameraRayZ));
@@ -522,14 +523,14 @@ const raygen = () => /* wgsl */ `
     let hvPan = pixel * vec2(halfPaniniFOV, halfFOV);
     let x = sin(hvPan.x) * M;
     let z = cos(hvPan.x) * M - paniniDistance;
-    // let y = tan(hvPan.y) * (z + verticalCompression);
-    let y = tan(hvPan.y) * (z + pow(max(0., (3. * cameraFovAngle/PI - 1.) / 8.), 0.92));
+    let y = tan(hvPan.y) * (z + verticalCompression);
+    // let y = tan(hvPan.y) * (z + pow(max(0., (3. * cameraFovAngle/PI - 1.) / 8.), 0.92));
 
     return normalize(vec3(x, y, z));
   }
 
   fn orthographicRayDirection(uv: vec2f) -> vec3f {
-    return vec3(0, 0, 1);
+    return vec3(0, 0, -1);
   }
 
   fn thinLensRay(dir: vec3f, uv: vec2f) -> Ray {
@@ -567,9 +568,9 @@ const raygen = () => /* wgsl */ `
   }
 
   fn sampleLens() -> vec2f {
-    if ${store.lensType} == ${LensType.Circle} {
+    if ${store.lensShape} == ${LensShape.Circle} {
       return sample_incircle(random_2());
-    } else if ${store.lensType} == ${LensType.Square} {
+    } else if ${store.lensShape} == ${LensShape.Square} {
       return sample_insquare(random_2());
     }
     return vec2f(0);
@@ -856,34 +857,52 @@ const reproject = () => /* wgsl */ `
 `;
 
 const computeColor = /* wgsl */ `
-    fn computeColor(pos: vec2f, _hit: ptr<function, Hit>) -> vec3f {
-      let ray = cameraRay(pos, viewMatrix);
-      let hit = scene(ray);
-      *_hit = hit;
-      if !hit.hit {
-        return skyColor(ray.dir);
-      }
+  fn computeColor(pos: vec2f, _hit: ptr<function, Hit>) -> vec3f {
+    let ray = cameraRay(pos, viewMatrix);
+    let hit = scene(ray);
+    *_hit = hit;
+    if !hit.hit {
+      return skyColor(ray.dir);
+    }
 
-      if ${store.blitView === 'normals'} {
-        return (hit.normal + 1) / 2;
-      }
+    if ${store.blitView === 'normals'} {
+      return (hit.normal + 1) / 2;
+    }
 
-      let material = materials[hit.materialIdx];
+    let material = materials[hit.materialIdx];
+    var color = vec3f(0);
+
+    {
       let p = hit.point;
-      var color = vec3f(0);
-      color += sun(p, hit.normal) * material.color;
-      color += material.emission;
-
+      color += sun(p, hit.normal);
+    }
+    
+    {
+      let p = hit.point;
       let s = sampleLights();
       let sMaterial = materials[s.materialIdx];
       let ds = s.point - p;
       let d_sq = dot(ds, ds);
       let d = ds * inverseSqrt(d_sq);
       let r = Ray(p, d);
-      color += in_shadow(r, d_sq) * attenuation(d, hit.normal) * sMaterial.emission * material.color / d_sq * s.p;
-
-      return color;
+      color += in_shadow(r, d_sq) * attenuation(d, hit.normal) * sMaterial.emission / d_sq * s.p;
     }
+
+    // {
+    //   let p = hit.point;
+    //   let s = sampleLights();
+    //   let sMaterial = materials[s.materialIdx];
+    //   let ds = s.point - p;
+    //   let d_sq = dot(ds, ds);
+    //   let d = ds * inverseSqrt(d_sq);
+    //   let r = Ray(p, d);
+    //   color += in_shadow(r, d_sq) * attenuation(d, hit.normal) * sMaterial.emission / d_sq * s.p;
+    // }
+
+    color *= material.color;
+    color += material.emission;
+    return color;
+  }
 `;
 
 const bilinearInterpolation = /* wgsl */ `

@@ -1,6 +1,6 @@
 import { type Component } from 'solid-js';
 import {
-  LensType,
+  LensShape,
   ProjectionType,
   setBlitView,
   setCircleOfConfusion,
@@ -8,10 +8,11 @@ import {
   setDebugReprojection,
   setFocusDistance,
   setFov,
-  setLensType,
+  setLensShape,
   setPixelJitter,
   setProjectionType,
   setReprojectionRate,
+  setScale,
   setShadingType,
   ShadingType,
   store,
@@ -140,14 +141,24 @@ const App: Component = () => {
       </label>
 
       <label class="flex gap-2 text-white text-sm items-baseline">
-        Lens type
+        Lens shape
         <select
-          value={store.lensType}
-          onChange={(e) => setLensType(Number(e.target.value))}
+          value={store.lensShape}
+          onChange={(e) => setLensShape(Number(e.target.value))}
         >
-          <option value={LensType.Circle}>Circle</option>
-          <option value={LensType.Square}>Square</option>
+          <option value={LensShape.Circle}>Circle</option>
+          <option value={LensShape.Square}>Square</option>
         </select>
+      </label>
+
+      <label class="flex gap-2 text-white text-sm items-baseline">
+        Scale
+        <input
+          class="m-0"
+          type="number"
+          value={store.scale}
+          onChange={(e) => setScale(Number(e.target.value))}
+        />
       </label>
 
       <div class="text-white">

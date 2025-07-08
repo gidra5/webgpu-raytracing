@@ -15,7 +15,7 @@ export enum ProjectionType {
   Orthographic,
 }
 
-export enum LensType {
+export enum LensShape {
   Circle,
   Square,
 }
@@ -47,7 +47,7 @@ const [store, setStore] = createStore({
   ambience: 0.1,
   shadingType: ShadingType.Phong,
   projectionType: ProjectionType.Perspective,
-  lensType: LensType.Circle,
+  lensShape: LensShape.Circle,
 
   reprojectionRate: 0,
 
@@ -168,6 +168,11 @@ export const prevViewInv = (prevView: Accessor<mat4 | undefined>) =>
 
 export { store };
 
+export const setScale = (scale: number) => {
+  setStore('scale', scale);
+  resetCounter();
+};
+
 export const setDebugReprojection = (debug: boolean) => {
   setStore('debugReprojection', debug);
   resetCounter();
@@ -188,8 +193,8 @@ export const setFocusDistance = (focusDistance: number) => {
   resetCounter();
 };
 
-export const setLensType = (lensType: LensType) => {
-  setStore('lensType', lensType);
+export const setLensShape = (shape: LensShape) => {
+  setStore('lensShape', shape);
   resetCounter();
 };
 
