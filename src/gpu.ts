@@ -20,6 +20,11 @@ export const getDevice = async (context: GPUCanvasContext) => {
     requiredFeatures.push('timestamp-query');
   }
 
+  if (adapter.features.has('subgroups')) {
+    features['subgroups'] = true;
+    requiredFeatures.push('subgroups');
+  }
+
   device = await adapter.requestDevice({
     requiredFeatures,
     requiredLimits: {

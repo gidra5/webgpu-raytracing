@@ -427,6 +427,7 @@ const bvh = () => /* wgsl */ `
     hit: bool,
     barycentric: vec3f,
     faceIdx: u32,
+    objectIdx: u32,
   }
 
   struct BVHIntersectionStackEntry {
@@ -446,8 +447,8 @@ const bvh = () => /* wgsl */ `
     var stack: array<BVHIntersectionStackEntry, BV_MAX_STACK_DEPTH>;
     var top: i32;
 
-    for (var modelIdx = 0u; modelIdx < modelsCount; modelIdx++) {
-      let model = models[modelIdx];
+    for (var objectIdx = 0u; objectIdx < arrayLength(&models); objectIdx++) {
+      let model = models[objectIdx];
       let bv = bvh[model.bvh.offset];
       let bvResult = rayIntersectBV(ray, bv, Interval(min_dist, result.barycentric.x));
       if (!bvResult.hit) {
@@ -483,6 +484,7 @@ const bvh = () => /* wgsl */ `
             result.barycentric = hit.barycentric;
             result.hit = true;
             result.faceIdx = faceIdx;
+            result.objectIdx = objectIdx;
           }
           continue;
         }
@@ -943,7 +945,7 @@ const reproject = () => /* wgsl */ `
 
     if !(d < threshold) { // didn't converge fast enough, rejecting
       if ${store.debugReprojection} {
-        return ReprojectionResult(vec4f(d, 0, 0,1));
+        return ReprojectionResult(vec4f(d, 0, 0, 1));
       } else {
         return ReprojectionResult(vec4f(0));
       }
@@ -1167,6 +1169,8 @@ const matInv = /* wgsl */ `
 
 const [computePipeline, computeBindGroups] = reactiveComputePipeline({
   shader: (x) => /* wgsl */ `
+    enable subgroups;
+
     ${x.bindVarBuffer('storage', 'imageBuffer: array<vec4f>', imageBuffer())}
     ${x.bindVarBuffer('read-only-storage', 'prevImageBuffer: array<vec4f>', prevImageBuffer())}
     ${x.bindVarBuffer('storage', 'geometryBuffer: array<Geometry>', geometryBuffer())}
@@ -1177,7 +1181,6 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindVarBuffer('uniform', 'prevViewInvMatrix: mat4x4f', prevViewInvBuffer)}
     ${x.bindVarBuffer('uniform', 'reprojectionFrustrum: mat3x4f', reprojectionFrustrumBuffer)}
 
-    const modelsCount = ${models.length};
     ${x.bindVarBuffer('read-only-storage', 'faces: array<Face>', facesBuffer)}
     ${x.bindVarBuffer('read-only-storage', 'materials: array<Material>', materialsBuffer)}
     ${x.bindVarBuffer('read-only-storage', 'models: array<Model>', modelsBuffer)}
@@ -1214,6 +1217,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${imageSampler}
     ${geometrySampler()}
     ${matInv}
+    ${derivatives()}
 
     @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
     fn main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>, @builtin(local_invocation_index) localInvocationIndex: u32) {
