@@ -438,84 +438,192 @@ const bvh = () => /* wgsl */ `
   @must_use
   fn rayIntersectBVH(
     ray: Ray,
+    maxDist: f32
   ) -> BVHIntersectionResult {
     var result: BVHIntersectionResult;
-    result.barycentric = vec3f(f32max, 0, 0);
+    result.barycentric = vec3f(maxDist, 0, 0);
+    result.hit = false;
+    result.faceIdx = 0;
+
+    for (var objectIdx = 0u; objectIdx < arrayLength(&models); objectIdx++) {
+      let hit = rayIntersectObjectBVH(ray, objectIdx, result.barycentric.x);
+      if !hit.hit {
+        continue;
+      }
+      result = hit;
+    }
+
+    return result;
+  }
+
+  @must_use
+  fn rayIntersectBVHAnyHit(
+    ray: Ray,
+    maxDist: f32
+  ) -> bool {
+    for (var objectIdx = 0u; objectIdx < arrayLength(&models); objectIdx++) {
+      let hit = rayIntersectObjectBVHAnyHit(ray, objectIdx, maxDist);
+      if hit {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  @must_use
+  fn rayIntersectObjectBVHAnyHit(
+    ray: Ray,
+    objectIdx: u32,
+    maxDist: f32
+  ) -> bool {
+    var stack: array<u32, BV_MAX_STACK_DEPTH>;
+    var top: i32;
+
+    let model = models[objectIdx];
+    let bv = bvh[model.bvh.offset];
+    let bvResult = rayIntersectBV(ray, bv, Interval(min_dist, maxDist));
+    if (!bvResult.hit) {
+      return false;
+    }
+
+    top = 0;
+    stack[top] = 0;
+
+    while (top > -1) {
+      let idx = stack[top];
+      top--;
+      let bv = bvh[model.bvh.offset + idx];
+
+      let isLeaf = bv.rightIdx == -1; // right will be -1 too
+      if (isLeaf) {
+        for (var i = 0u; i < 2; i = i + 1) {
+          let offset = bv.faces[i];
+          if offset == -1 {
+            continue;
+          }
+          let faceIdx = model.faces.offset + u32(offset);
+          let face = faces[faceIdx];
+          let hit = rayIntersectFace(ray, face, Interval(min_dist, maxDist));
+          if (!hit.hit) {
+            continue;
+          }
+          return true;
+        }
+        continue;
+      }
+
+      let leftIdx = u32(idx + 1);
+      let rightIdx = u32(bv.rightIdx);
+      let left = bvh[model.bvh.offset + leftIdx];
+      let right = bvh[model.bvh.offset + rightIdx];
+      let resultLeft = rayIntersectBV(ray, left, Interval(min_dist, maxDist));
+      let resultRight = rayIntersectBV(ray, right, Interval(min_dist, maxDist));
+      if resultLeft.hit && resultRight.hit {
+        if resultLeft.t < resultRight.t {
+          top++;
+          stack[top] = rightIdx;
+          top++;
+          stack[top] = leftIdx;
+        } else {
+          top++;
+          stack[top] = leftIdx;
+          top++;
+          stack[top] = rightIdx;
+        }
+      } else if resultLeft.hit {
+        top++;
+        stack[top] = leftIdx;
+      } else if resultRight.hit {
+        top++;
+        stack[top] = rightIdx;
+      }
+    }
+
+    return false;
+  }
+
+  @must_use
+  fn rayIntersectObjectBVH(
+    ray: Ray,
+    objectIdx: u32,
+    maxDist: f32
+  ) -> BVHIntersectionResult {
+    var result: BVHIntersectionResult;
+    result.barycentric = vec3f(maxDist, 0, 0);
     result.hit = false;
     result.faceIdx = 0;
     
     var stack: array<BVHIntersectionStackEntry, BV_MAX_STACK_DEPTH>;
     var top: i32;
 
-    for (var objectIdx = 0u; objectIdx < arrayLength(&models); objectIdx++) {
-      let model = models[objectIdx];
-      let bv = bvh[model.bvh.offset];
-      let bvResult = rayIntersectBV(ray, bv, Interval(min_dist, result.barycentric.x));
-      if (!bvResult.hit) {
+    let model = models[objectIdx];
+    let bv = bvh[model.bvh.offset];
+    let bvResult = rayIntersectBV(ray, bv, Interval(min_dist, result.barycentric.x));
+    if (!bvResult.hit) {
+      return result;
+    }
+
+    top = 0;
+    stack[top] = BVHIntersectionStackEntry(0, bvResult.t);
+
+    while (top > -1) {
+      let stackEntry = stack[top];
+      top--;
+      if stackEntry.t > result.barycentric.x {
         continue;
       }
 
-      top = 0;
-      stack[top] = BVHIntersectionStackEntry(0, bvResult.t);
+      let idx = stackEntry.idx;
+      let bv = bvh[model.bvh.offset + idx];
 
-      while (top > -1) {
-        let stackEntry = stack[top];
-        top--;
-        if stackEntry.t > result.barycentric.x {
-          continue;
-        }
-
-        let idx = stackEntry.idx;
-        let bv = bvh[model.bvh.offset + idx];
-
-        let isLeaf = bv.rightIdx == -1; // right will be -1 too
-        if (isLeaf) {
-          for (var i = 0u; i < 2; i = i + 1) {
-            let offset = bv.faces[i];
-            if offset == -1 {
-              continue;
-            }
-            let faceIdx = model.faces.offset + u32(offset);
-            let face = faces[faceIdx];
-            let hit = rayIntersectFace(ray, face, Interval(min_dist, result.barycentric.x));
-            if (!hit.hit) {
-              continue;
-            }
-            result.barycentric = hit.barycentric;
-            result.hit = true;
-            result.faceIdx = faceIdx;
-            result.objectIdx = objectIdx;
+      let isLeaf = bv.rightIdx == -1; // right will be -1 too
+      if (isLeaf) {
+        for (var i = 0u; i < 2; i = i + 1) {
+          let offset = bv.faces[i];
+          if offset == -1 {
+            continue;
           }
-          continue;
-        }
-
-        let leftIdx = u32(idx + 1);
-        let rightIdx = u32(bv.rightIdx);
-        let left = bvh[model.bvh.offset + leftIdx];
-        let right = bvh[model.bvh.offset + rightIdx];
-        let resultLeft = rayIntersectBV(ray, left, Interval(min_dist, result.barycentric.x));
-        let resultRight = rayIntersectBV(ray, right, Interval(min_dist, result.barycentric.x));
-        if resultLeft.hit && resultRight.hit {
-          let leftEntry = BVHIntersectionStackEntry(leftIdx, resultLeft.t);
-          let rightEntry = BVHIntersectionStackEntry(rightIdx, resultRight.t);
-          if resultLeft.t < resultRight.t {
-            top++;
-            stack[top] = rightEntry;
-            top++;
-            stack[top] = leftEntry;
-          } else {
-            top++;
-            stack[top] = leftEntry;
-            top++;
-            stack[top] = rightEntry;
+          let faceIdx = model.faces.offset + u32(offset);
+          let face = faces[faceIdx];
+          let hit = rayIntersectFace(ray, face, Interval(min_dist, result.barycentric.x));
+          if (!hit.hit) {
+            continue;
           }
-        } else if resultLeft.hit {
-          top++;
-          stack[top] = BVHIntersectionStackEntry(leftIdx, resultLeft.t);
-        } else if resultRight.hit {
-          top++;
-          stack[top] = BVHIntersectionStackEntry(rightIdx, resultRight.t);
+          result.barycentric = hit.barycentric;
+          result.hit = true;
+          result.faceIdx = faceIdx;
+          result.objectIdx = objectIdx;
         }
+        continue;
+      }
+
+      let leftIdx = u32(idx + 1);
+      let rightIdx = u32(bv.rightIdx);
+      let left = bvh[model.bvh.offset + leftIdx];
+      let right = bvh[model.bvh.offset + rightIdx];
+      let resultLeft = rayIntersectBV(ray, left, Interval(min_dist, result.barycentric.x));
+      let resultRight = rayIntersectBV(ray, right, Interval(min_dist, result.barycentric.x));
+      if resultLeft.hit && resultRight.hit {
+        let leftEntry = BVHIntersectionStackEntry(leftIdx, resultLeft.t);
+        let rightEntry = BVHIntersectionStackEntry(rightIdx, resultRight.t);
+        if resultLeft.t < resultRight.t {
+          top++;
+          stack[top] = rightEntry;
+          top++;
+          stack[top] = leftEntry;
+        } else {
+          top++;
+          stack[top] = leftEntry;
+          top++;
+          stack[top] = rightEntry;
+        }
+      } else if resultLeft.hit {
+        top++;
+        stack[top] = BVHIntersectionStackEntry(leftIdx, resultLeft.t);
+      } else if resultRight.hit {
+        top++;
+        stack[top] = BVHIntersectionStackEntry(rightIdx, resultRight.t);
       }
     }
 
@@ -623,8 +731,12 @@ const scene = () => /* wgsl */ `
     uv: vec2f
   };
 
+  fn sceneAnyHit(ray: Ray, maxDist: f32) -> bool {
+    return rayIntersectBVHAnyHit(ray, maxDist);
+  }
+
   fn scene(ray: Ray) -> Hit {
-    let hit = rayIntersectBVH(ray);
+    let hit = rayIntersectBVH(ray, f32max);
     if !hit.hit {
       let result = Hit(
         false,
@@ -750,39 +862,10 @@ const scene = () => /* wgsl */ `
     return vec3f(1-uv.x-uv.y, uv.x, uv.y);
   }
 
-  fn in_shadow(ray: Ray, mag_sq: f32) -> f32 {
-    let hitObj = scene(ray);
-    let hit = hitObj.hit;
-    let ds = hitObj.dist;
-
-    return select(1., 0., hit && ds * ds <= mag_sq);
-  }
-
-  fn light_vis(pos: vec3f, dir: vec3f) -> f32 {
-    return in_shadow(Ray(pos, dir), f32max);
-  }
-
-  fn attenuation(dir: vec3f, norm: vec3f) -> f32 { 
-    return max(dot(dir, norm), 0.);
-  }
-
-  fn sun(pos: vec3f, norm: vec3f) -> vec3f {
-    return (light_vis(pos, sun_dir) * attenuation(sun_dir, norm) + ambience) * sun_color;
-  }
-
-  fn skyColor(dir: vec3f) -> vec3f {
-    // vec3 unit_direction = unit_vector(r.direction());
-    // auto a = 0.5*(unit_direction.y() + 1.0);
-    // return (1.0-a)*color(1.0, 1.0, 1.0) + a*color(0.5, 0.7, 1.0);
-
-    // return ambience * sun_color;
-    return sampleSkybox(dir);
-  }
-
   // Function to sample the skybox
-  fn sampleSkybox(N: vec3f) -> vec3f {
-    let u = (atan2(N.z, N.x) * INV_PI + 1) * 0.5; 
-    let v = 1 - acos(N.y) * INV_PI;
+  fn sampleSkybox(dir: vec3f) -> vec3f {
+    let u = (atan2(dir.z, dir.x) * INV_PI + 1) * 0.5; 
+    let v = 1 - acos(dir.y) * INV_PI;
     let uv = vec2<f32>(u, v);
 
     let color = textureSampleLevel(skyboxTexture, skyboxSampler, uv, 0);
@@ -972,12 +1055,9 @@ const computeColor = /* wgsl */ `
     let ray = cameraRay(pos, viewMatrix);
     let hit = scene(ray);
     *_hit = hit;
-    if !hit.hit {
-      return skyColor(ray.dir);
-    }
 
-    if ${store.blitView === 'normals'} {
-      return (hit.normal + 1) / 2;
+    if !hit.hit {
+      return sampleSkybox(ray.dir);
     }
 
     let material = materials[hit.materialIdx];
@@ -1013,6 +1093,22 @@ const computeColor = /* wgsl */ `
     color *= material.color;
     color += material.emission;
     return color;
+  }
+  
+  fn in_shadow(ray: Ray, mag_sq: f32) -> f32 {
+    return select(1., 0., sceneAnyHit(ray, sqrt(mag_sq)));
+  }
+
+  fn light_vis(pos: vec3f, dir: vec3f) -> f32 {
+    return in_shadow(Ray(pos, dir), f32max);
+  }
+
+  fn attenuation(dir: vec3f, norm: vec3f) -> f32 {
+    return max(dot(dir, norm), 0.);
+  }
+
+  fn sun(pos: vec3f, norm: vec3f) -> vec3f {
+    return (light_vis(pos, sun_dir) * attenuation(sun_dir, norm) + ambience) * sun_color;
   }
 `;
 
@@ -1195,8 +1291,6 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindTexture('skyboxTexture', 'unfilterable-float', skybox)}
     ${x.bindSampler('skyboxSampler', 'non-filtering', skyboxSampler)}
 
-    var<private> quadIdx: u32;
-
     const _reproject = ${store.reprojectionRate > 0};
     const viewport = vec2u(${store.view[0]}, ${store.view[1]});
     const viewportf = vec2f(viewport);
@@ -1219,15 +1313,28 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${matInv}
     ${derivatives()}
 
+    var<private> quadIdx: u32;
+    var<private> quadIdx1: u32;
+    var<private> quadIdx2: u32;
+    var<private> quadIdx3: u32;
+    var<private> quadIdx4: u32;
+
     @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
-    fn main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>, @builtin(local_invocation_index) localInvocationIndex: u32) {
+    fn main(
+      @builtin(global_invocation_id) globalInvocationId: vec3<u32>, 
+      @builtin(local_invocation_index) localInvocationIndex: u32
+    ) {
+      let upos = globalInvocationId.xy;
+      let idx = imageIdx(upos);
       quadIdx = localInvocationIndex % 4;
+      quadIdx1 = quadBroadcast(idx, 0);
+      quadIdx2 = quadBroadcast(idx, 1);
+      quadIdx3 = quadBroadcast(idx, 2);
+      quadIdx4 = quadBroadcast(idx, 3);
       if (any(globalInvocationId.xy >= viewport)) {
         return;
       }
 
-      let upos = globalInvocationId.xy;
-      let idx = imageIdx(upos);
       let pos = vec2f(upos) + jitter;
 
       rng_state = seed + idx;
