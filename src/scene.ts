@@ -1,11 +1,13 @@
 import { vec3 } from 'gl-matrix';
 import wavefrontObjParser from 'obj-file-parser';
-import { createStorageBuffer } from './gpu';
+import { createStorageBuffer, createTexture } from './gpu';
 import { Iterator } from 'iterator-js';
 import { BoundingVolumeHierarchy, facesBVH } from './bv';
 import { triangleModel, unitCubeModel } from './testModels';
 import MTLFile from './mtl';
 import { makeShaderDataDefinitions, makeStructuredView } from 'webgpu-utils';
+import parseExr from 'parse-exr';
+import parseHdr from 'parse-hdr';
 
 type Point = {
   position: vec3;
@@ -329,4 +331,38 @@ export const loadModelsToBuffers = async (models: Model[]) => {
   modelsBuffer.unmap();
 
   return { facesBuffer, bvhBuffer, bvhCount, modelsBuffer };
+};
+
+const loadExr = async (url: string) => {
+  const exrData = await (await fetch(url)).arrayBuffer();
+  const FloatType = 1015;
+  // const HalfFloatType = 1016;
+  return parseExr(exrData, FloatType);
+};
+
+const loadHdr = async (url: string) => {
+  const hdrData = await (await fetch(url)).arrayBuffer();
+  return parseHdr(hdrData);
+};
+
+export const loadSkybox = async () => {
+  const url = await import('@assets/qwantani_afternoon_puresky_4k.exr?url');
+  const data = await loadExr(url.default);
+  console.log(data);
+
+  const texture = createTexture(
+    {
+      data: data.data as Float32Array,
+      width: data.width,
+      height: data.height,
+    },
+    {
+      format: 'rgba32float',
+      colorSpace: 'srgb',
+      viewDimension: '2d',
+      dimension: '2d',
+    }
+  );
+
+  return texture;
 };

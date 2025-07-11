@@ -75,12 +75,23 @@ export default /* wgsl */ `
     return sample_circle(t.x) * sqrt(t.y);
   }
 
-  fn sample_cosine_weighted_sphere(t: vec2f) -> vec3f {
+  fn sample_cosine_weighted_sphere(t: vec2f, p: f32) -> vec3f {
     let phi = TWO_PI * t.y;
-    let sin_theta = sqrt(1. - t.x);
+    let cos_theta = pow(t.x, 1 / (1 + p));
+    let sin_theta = sqrt(1. - cos_theta * cos_theta);
     let x = sin_theta * cos(phi);
     let y = sin_theta * sin(phi);
-    let z = sqrt(t.x);
+    let z = cos_theta;
+    return vec3(x, y, z); 
+  }
+
+  fn sample_cosine_weighted_hemisphere(t: vec2f, p: f32) -> vec3f {
+    let phi = TWO_PI * t.y;
+    let cos_theta = pow(t.x, 1 / (1 + p));
+    let sin_theta = sqrt(1. - cos_theta * cos_theta);
+    let x = sin_theta * cos(phi);
+    let y = sin_theta * sin(phi);
+    let z = cos_theta;
     return vec3(x, y, z); 
   }
 
@@ -91,6 +102,16 @@ export default /* wgsl */ `
     let x = sin_theta * cos(phi); 
     let z = sin_theta * sin(phi); 
     return vec3(x, uv.x, z);
+  }
+
+  fn sample_hemisphere(t: vec2f, n: vec3f) -> vec3f {
+    let uv = vec2(t.x * 2. - 1., t.y);
+    let sin_theta = sqrt(1 - uv.x * uv.x); 
+    let phi = TWO_PI * uv.y; 
+    let x = sin_theta * cos(phi); 
+    let z = sin_theta * sin(phi); 
+    let v = vec3(x, uv.x, z);
+    return faceForward(v, v, -n);
   }
   
   fn sample_insphere(t: vec3f) -> vec3f {
@@ -103,5 +124,41 @@ export default /* wgsl */ `
 
   fn sample_intriangle(t: vec2f) -> vec2f {
     return select(t, vec2f(1. - t.y, t.x), t.x < t.y);
+  }
+
+  fn pdf_inv_cosine_weighted_hemisphere(s: vec3f, p: f32) -> f32 {
+    return TWO_PI / ((1 + p) * pow(s.z, p));
+  }
+
+  fn pdf_inv_cosine_weighted_sphere(s: vec3f, p: f32) -> f32 {
+    return 2 * TWO_PI / ((1 + p) * pow(s.z, p));
+  }
+
+  fn pdf_inv_sphere() -> f32 {
+    return 2 * TWO_PI;
+  }
+
+  fn pdf_inv_hemisphere() -> f32 {
+    return TWO_PI;
+  }
+
+  fn pdf_inv_circle() -> f32 {
+    return TWO_PI;
+  }
+
+  fn pdf_inv_incircle() -> f32 {
+    return PI;
+  }
+
+  fn pdf_inv_insphere() -> f32 {
+    return PI * 4/3;
+  }
+
+  fn pdf_inv_intriangle() -> f32 {
+    return 0.5;
+  }
+
+  fn pdf_inv_insquare() -> f32 {
+    return 4;
   }
 `;

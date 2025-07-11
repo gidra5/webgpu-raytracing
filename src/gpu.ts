@@ -1,6 +1,7 @@
 import { Accessor, createEffect, createSignal } from 'solid-js';
 import { assert } from './utils';
 import { vec3 } from 'gl-matrix';
+import { CreateTextureOptions } from 'webgpu-utils';
 
 const features: Partial<Record<GPUFeatureName, boolean>> = {};
 let presentationFormat: GPUTextureFormat;
@@ -232,6 +233,36 @@ export const createUniformBuffer = (
     label,
   });
 
+type CreateTextureSource = {
+  data: Float32Array;
+  width: number;
+  height: number;
+};
+export const createTexture = (
+  source: CreateTextureSource,
+  options?: CreateTextureOptions
+) => {
+  const texture = device.createTexture({
+    size: [source.width, source.height, 1],
+    // For float data from EXR, use 'rgba32float'
+    format: 'rgba32float',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+
+  // Upload the pixel data to the texture
+  device.queue.writeTexture(
+    { texture },
+    source.data,
+    {
+      bytesPerRow: source.width * 4 * Float32Array.BYTES_PER_ELEMENT, // 4 channels * 4 bytes/float
+      rowsPerImage: source.height,
+    },
+    { width: source.width, height: source.height, depthOrArrayLayers: 1 }
+  );
+
+  return texture;
+};
+
 export const createBindGroup = (d: GPUBindGroupDescriptor) =>
   device.createBindGroup(d);
 
@@ -251,15 +282,41 @@ export type PipelineBuilder = {
     type: string,
     buffer: GPUBuffer
   ): string;
+  bindTexture(
+    name: string,
+    type: GPUTextureSampleType,
+    texture: GPUTexture
+  ): string;
+  bindSampler(
+    name: string,
+    type: GPUSamplerBindingType,
+    sampler: GPUSampler
+  ): string;
 };
-export const renderPipeline = (
-  x: RenderPipelineDescriptor
-): RenderPipelineBuilderResult => {
-  const bindings: {
-    visibility: GPUShaderStage;
-    type: GPUBufferBindingType;
-    buffer: GPUBuffer;
-  }[][] = [[]];
+type Binding =
+  | {
+      kind: 'buffer';
+      visibility: GPUShaderStage;
+      type: GPUBufferBindingType;
+      buffer: GPUBuffer;
+    }
+  | {
+      kind: 'texture';
+      visibility: GPUShaderStage;
+      type: GPUTextureSampleType;
+      texture: GPUTexture;
+      multisampled?: boolean;
+      dimension?: GPUTextureViewDimension;
+    }
+  | {
+      kind: 'sampler';
+      visibility: GPUShaderStage;
+      type: GPUSamplerBindingType;
+      sampler: GPUSampler;
+    };
+
+const createBindingBuilder = () => {
+  const bindings: Binding[][] = [[]];
   const createPipelineBuilder = (
     visibility: GPUShaderStage
   ): PipelineBuilder => ({
@@ -274,16 +331,108 @@ export const renderPipeline = (
     ) {
       const group = bindings.length - 1;
       const binding = bindings[group].length;
-      bindings[group].push({ buffer, visibility, type: access });
+      bindings[group].push({
+        kind: 'buffer',
+        buffer,
+        visibility,
+        type: access,
+      });
       const qualifier =
         access === 'read-only-storage'
           ? 'storage, read'
           : access === 'storage'
-            ? 'storage'
+            ? 'storage, read_write'
             : 'uniform';
       return `@group(${group}) @binding(${binding}) var<${qualifier}> ${type};`;
     },
+    bindTexture(name: string, type: GPUTextureSampleType, texture: GPUTexture) {
+      const group = bindings.length - 1;
+      const binding = bindings[group].length;
+      bindings[group].push({ kind: 'texture', texture, visibility, type });
+      const valueType =
+        type === 'float' || type === 'unfilterable-float' ? 'f32' : type;
+      const containerType =
+        texture.dimension === '2d' ? 'texture_2d' : 'texture_3d';
+      return `@group(${group}) @binding(${binding}) var ${name}: ${containerType}<${valueType}>;`;
+    },
+
+    bindSampler(
+      name: string,
+      type: GPUSamplerBindingType,
+      sampler: GPUSampler
+    ) {
+      const group = bindings.length - 1;
+      const binding = bindings[group].length;
+      bindings[group].push({ kind: 'sampler', sampler, visibility, type });
+
+      return `@group(${group}) @binding(${binding}) var ${name}: sampler;`;
+    },
   });
+
+  return {
+    createPipelineBuilder,
+    bindingGroupLayouts: () =>
+      bindings.map((group) =>
+        device.createBindGroupLayout({
+          entries: group.map((binding, i): GPUBindGroupLayoutEntry => {
+            if (binding.kind === 'texture') {
+              const { visibility, type, dimension, multisampled } = binding;
+              return {
+                binding: i,
+                visibility: visibility as unknown as number,
+                texture: {
+                  sampleType: type,
+                  viewDimension: dimension,
+                  multisampled,
+                },
+              };
+            }
+            if (binding.kind === 'sampler') {
+              const { visibility, type } = binding;
+              return {
+                binding: i,
+                visibility: visibility as unknown as number,
+                sampler: { type },
+              };
+            }
+
+            const { visibility, type } = binding;
+            return {
+              binding: i,
+              visibility: visibility as unknown as number,
+              buffer: { type },
+            };
+          }),
+        })
+      ),
+    bindingGroups: (pipeline: GPURenderPipeline | GPUComputePipeline) =>
+      bindings.map((group, i) =>
+        device.createBindGroup({
+          layout: pipeline.getBindGroupLayout(i),
+          entries: group.map((binding, i): GPUBindGroupEntry => {
+            if (binding.kind === 'texture') {
+              const { texture } = binding;
+              return { binding: i, resource: texture.createView() };
+            }
+
+            if (binding.kind === 'sampler') {
+              const { sampler } = binding;
+              return { binding: i, resource: sampler };
+            }
+
+            const { buffer } = binding;
+            return { binding: i, resource: { buffer } };
+          }),
+        })
+      ),
+  };
+};
+
+export const renderPipeline = (
+  x: RenderPipelineDescriptor
+): RenderPipelineBuilderResult => {
+  const { createPipelineBuilder, bindingGroupLayouts, bindingGroups } =
+    createBindingBuilder();
 
   // TODO: TYPESCRIPT BULLSHIT
   const fragmentShaderModule =
@@ -300,19 +449,10 @@ export const renderPipeline = (
       createPipelineBuilder(GPUShaderStage.VERTEX as unknown as GPUShaderStage)
     ),
   });
-  const bindGroupLayouts = bindings.map((group) =>
-    device.createBindGroupLayout({
-      entries: group.map(
-        ({ visibility, type }, i): GPUBindGroupLayoutEntry => ({
-          binding: i,
-          visibility: visibility as unknown as number,
-          buffer: { type },
-        })
-      ),
-    })
-  );
   const d: any = {
-    layout: device.createPipelineLayout({ bindGroupLayouts }),
+    layout: device.createPipelineLayout({
+      bindGroupLayouts: bindingGroupLayouts(),
+    }),
     vertex: { module: vertexShaderModule },
     ...x,
   };
@@ -329,18 +469,7 @@ export const renderPipeline = (
   const pipeline = device.createRenderPipeline(
     d as GPURenderPipelineDescriptor
   );
-  const bindGroups = bindings.map((group, i) =>
-    device.createBindGroup({
-      layout: pipeline.getBindGroupLayout(i),
-      entries: group.map(
-        ({ buffer }, i): GPUBindGroupEntry => ({
-          binding: i,
-          resource: { buffer },
-        })
-      ),
-    })
-  );
-  return { pipeline, bindGroups };
+  return { pipeline, bindGroups: bindingGroups(pipeline) };
 };
 
 type ComputePipelineDescriptor = {
@@ -353,35 +482,8 @@ type ComputePipelineBuilderResult = {
 export const computePipeline = (
   x: ComputePipelineDescriptor
 ): ComputePipelineBuilderResult => {
-  const bindings: {
-    visibility: GPUShaderStage;
-    type: GPUBufferBindingType;
-    buffer: GPUBuffer;
-  }[][] = [[]];
-  const createPipelineBuilder = (
-    visibility: GPUShaderStage
-  ): PipelineBuilder => ({
-    bindGroup(): string {
-      bindings.push([]);
-      return '';
-    },
-    bindVarBuffer(
-      access: GPUBufferBindingType,
-      type: string,
-      buffer: GPUBuffer
-    ) {
-      const group = bindings.length - 1;
-      const binding = bindings[group].length;
-      bindings[group].push({ buffer, visibility, type: access });
-      const qualifier =
-        access === 'read-only-storage'
-          ? 'storage, read'
-          : access === 'storage'
-            ? 'storage, read_write'
-            : 'uniform';
-      return `@group(${group}) @binding(${binding}) var<${qualifier}> ${type};`;
-    },
-  });
+  const { createPipelineBuilder, bindingGroupLayouts, bindingGroups } =
+    createBindingBuilder();
 
   // TODO: TYPESCRIPT BULLSHIT
   const module = device.createShaderModule({
@@ -389,34 +491,14 @@ export const computePipeline = (
       createPipelineBuilder(GPUShaderStage.COMPUTE as unknown as GPUShaderStage)
     ),
   });
-  const bindGroupLayouts = bindings.map((group) =>
-    device.createBindGroupLayout({
-      entries: group.map(
-        ({ visibility, type }, i): GPUBindGroupLayoutEntry => ({
-          binding: i,
-          visibility: visibility as unknown as number,
-          buffer: { type },
-        })
-      ),
-    })
-  );
 
   const pipeline = device.createComputePipeline({
-    layout: device.createPipelineLayout({ bindGroupLayouts }),
+    layout: device.createPipelineLayout({
+      bindGroupLayouts: bindingGroupLayouts(),
+    }),
     compute: { module, ...x },
   });
-  const bindGroups = bindings.map((group, i) =>
-    device.createBindGroup({
-      layout: pipeline.getBindGroupLayout(i),
-      entries: group.map(
-        ({ buffer }, i): GPUBindGroupEntry => ({
-          binding: i,
-          resource: { buffer },
-        })
-      ),
-    })
-  );
-  return { pipeline, bindGroups };
+  return { pipeline, bindGroups: bindingGroups(pipeline) };
 };
 
 export const reactiveComputePipeline = (x: ComputePipelineDescriptor) => {

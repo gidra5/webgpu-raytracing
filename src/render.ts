@@ -24,6 +24,7 @@ import {
   setView,
   ShadingType,
   store,
+  Tonemapping,
   viewMatrix,
   viewProjectionMatrix,
 } from './store';
@@ -34,6 +35,7 @@ import {
   loadMaterialsToBuffers,
   loadModels,
   loadModelsToBuffers,
+  loadSkybox,
 } from './scene';
 import { wait } from './utils';
 
@@ -91,6 +93,8 @@ const { facesBuffer, bvhBuffer, bvhCount, modelsBuffer } =
     models[3],
     models[4],
   ]);
+const skybox = await loadSkybox();
+const skyboxSampler = device.createSampler();
 
 const seedUniformBuffer = createUniformBuffer(4);
 const counterUniformBuffer = createUniformBuffer(4);
@@ -206,6 +210,20 @@ createEffect(() => {
         return vec3f(0);
       }
 
+      fn tonemap(c: vec3f) -> vec3f {
+        if ${store.tonemapping} == ${Tonemapping.Reinhard} {
+          return reinhard(c);
+        } else if ${store.tonemapping} == ${Tonemapping.Filmic} {
+          return filmic(c);
+        } else if ${store.tonemapping} == ${Tonemapping.Aces} {
+          return aces(c);
+        } else if ${store.tonemapping} == ${Tonemapping.Lottes} {
+          return lottes(c);
+        } else {
+          return c;
+        }
+      }
+
       @fragment
       fn main(@location(0) _uv: vec2f) -> @location(0) vec4f {
         let uv = vec2f(_uv.x, 1 - _uv.y); // flip y
@@ -213,7 +231,8 @@ createEffect(() => {
         let upos = vec2u(pos);
         let idx = upos.y * viewport.x + upos.x;
         let color = getColor(idx, pos);
-        let tonemapped = color;
+        let gammaCorrected = gamma(color, 1 / ${store.gamma});
+        let tonemapped = tonemap(gammaCorrected);
         return vec4(tonemapped, 1.0);
       }
     `,
@@ -621,7 +640,7 @@ const scene = () => /* wgsl */ `
     let result = Hit(
       true,
       hit.barycentric.x,
-      facePoint(face, uv),
+      facePointOffset(face, uv),
       faceNormal(face, uv),
       face.materialIdx,
       faceTexCoords(face, uv)
@@ -639,10 +658,10 @@ const scene = () => /* wgsl */ `
   }
 
   fn sampleScene() -> SceneSample {
-    let randomModelIdx = random_1u() % modelsCount; 
+    let randomModelIdx = random_1u() % arrayLength(&models); 
     let model = models[randomModelIdx];
     var sample = sampleModel(model);
-    sample.p *= f32(modelsCount);
+    sample.p *= f32(arrayLength(&models));
     return sample;
   }
 
@@ -661,7 +680,7 @@ const scene = () => /* wgsl */ `
 
   fn sampleFace(face: Face) -> SceneSample {
     let uv = sample_intriangle(random_2());
-    let point = facePoint(face, uv);
+    let point = facePointOffset(face, uv);
     let normal = faceNormal(face, uv);
     let texUV = faceTexCoords(face, uv);
     let p = cross(face.points[1].pos, face.points[2].pos); // TODO: precompute area
@@ -674,6 +693,13 @@ const scene = () => /* wgsl */ `
   // makes sure there are no self-intersections 
   // due to floating point errors
   fn facePoint(face: Face, uv: vec2f) -> vec3f {
+    let p1 = face.points[0].pos;
+    let e1 = face.points[1].pos;
+    let e2 = face.points[2].pos;
+    let p = p1 + mat2x3f(e1, e2) * uv;
+    return p;
+  }
+  fn facePointOffset(face: Face, uv: vec2f) -> vec3f {
     let p1 = face.points[0].pos;
     let e1 = face.points[1].pos;
     let e2 = face.points[2].pos;
@@ -743,7 +769,88 @@ const scene = () => /* wgsl */ `
   }
 
   fn skyColor(dir: vec3f) -> vec3f {
-    return ambience * sun_color;
+    // vec3 unit_direction = unit_vector(r.direction());
+    // auto a = 0.5*(unit_direction.y() + 1.0);
+    // return (1.0-a)*color(1.0, 1.0, 1.0) + a*color(0.5, 0.7, 1.0);
+
+    // return ambience * sun_color;
+    return sampleSkybox(dir);
+  }
+
+  // Function to sample the skybox
+  fn sampleSkybox(N: vec3f) -> vec3f {
+    let u = (atan2(N.z, N.x) * INV_PI + 1) * 0.5; 
+    let v = 1 - acos(N.y) * INV_PI;
+    let uv = vec2<f32>(u, v);
+
+    let color = textureSampleLevel(skyboxTexture, skyboxSampler, uv, 0);
+    return color.xyz;
+  }
+`;
+
+const derivatives = () => /* wgsl */ `
+  fn dFdx1(p: f32) -> f32 {
+    var dx = p - quadSwapX(p);
+    if quadIdx == 0 || quadIdx == 2 {
+      dx = -dx;
+    }
+    return dx;
+  }
+
+  fn dFdy1(p: f32) -> f32 {
+    var dy = p - quadSwapY(p);
+    if quadIdx == 0 || quadIdx == 1 {
+      dy = -dy;
+    }
+    return dy;
+  }
+
+  fn dFdx2(p: vec2f) -> vec2f {
+    var dx = p - quadSwapX(p);
+    if quadIdx == 0 || quadIdx == 2 {
+      dx = -dx;
+    }
+    return dx;
+  }
+
+  fn dFdy2(p: vec2f) -> vec2f {
+    var dy = p - quadSwapY(p);
+    if quadIdx == 0 || quadIdx == 1 {
+      dy = -dy;
+    }
+    return dy;
+  }
+
+  fn dFdx3(p: vec3f) -> vec3f {
+    var dx = p - quadSwapX(p);
+    if quadIdx == 0 || quadIdx == 2 {
+      dx = -dx;
+    }
+    return dx;
+  }
+
+  fn dFdy3(p: vec3f) -> vec3f {
+    var dy = p - quadSwapY(p);
+    if quadIdx == 0 || quadIdx == 1 {
+      dy = -dy;
+    }
+    return dy;
+  }
+
+  fn dFdx4(p: vec4f) -> vec4f {
+    var dx = p - quadSwapX(p);
+    if quadIdx == 0 || quadIdx == 2 {
+      dx = -dx;
+    }
+    return dx;
+  }
+
+  fn dFdy4(p: vec4f) -> vec4f {
+    var dy = p - quadSwapY(p);
+    if quadIdx == 0 || quadIdx == 1 {
+      dy = -dy;
+    }
+    return dy;
   }
 `;
 
@@ -799,6 +906,9 @@ const reproject = () => /* wgsl */ `
     return color / weight;
   }
 
+
+  const threshold = 0.00000001;
+
   fn reproject(p: vec3f, c: vec3f) -> ReprojectionResult {
     let view = prevViewMatrix2;
     let uv = reprojectPoint(p, view);
@@ -810,7 +920,6 @@ const reproject = () => /* wgsl */ `
       }
     }
 
-    let threshold = 0.000001;
     var min_uv = uv;
     var dp = sampleGeometryAll(min_uv, &prevGeometryBuffer).position - p;
     var d = dot(dp, dp);
@@ -979,7 +1088,7 @@ const imageSampler = /* wgsl */ `
     return value;
   }
 
-  fn sampleImage4(uv: vec2f, _image: ptr<storage, array<vec4f>, read_write>) -> vec4f {
+  fn sampleImage4(uv: vec2f, _image: ptr<storage, array<vec4f>, read>) -> vec4f {
     let uv_u = vec2u(floor(uv));
     let uv_f = fract(uv);
     let m = mat4x4f(
@@ -998,7 +1107,7 @@ const geometrySampler = () => /* wgsl */ `
     return uv.x + uv.y * viewport.x;
   }
 
-  fn sampleGeometryAll(uv: vec2f, buffer: ptr<storage, array<Geometry>, read_write>) -> Geometry {
+  fn sampleGeometryAll(uv: vec2f, buffer: ptr<storage, array<Geometry>, read>) -> Geometry {
     let uv_u = vec2u(floor(uv));
     let uv_f = fract(uv);
     
@@ -1059,9 +1168,9 @@ const matInv = /* wgsl */ `
 const [computePipeline, computeBindGroups] = reactiveComputePipeline({
   shader: (x) => /* wgsl */ `
     ${x.bindVarBuffer('storage', 'imageBuffer: array<vec4f>', imageBuffer())}
-    ${x.bindVarBuffer('storage', 'prevImageBuffer: array<vec4f>', prevImageBuffer())}
+    ${x.bindVarBuffer('read-only-storage', 'prevImageBuffer: array<vec4f>', prevImageBuffer())}
     ${x.bindVarBuffer('storage', 'geometryBuffer: array<Geometry>', geometryBuffer())}
-    ${x.bindVarBuffer('storage', 'prevGeometryBuffer: array<Geometry>', prevGeometryBuffer())}
+    ${x.bindVarBuffer('read-only-storage', 'prevGeometryBuffer: array<Geometry>', prevGeometryBuffer())}
     ${x.bindVarBuffer('uniform', 'viewMatrix: mat4x4f', viewBuffer)}
     ${x.bindVarBuffer('uniform', 'prevViewMatrix: mat4x4f', prevViewBuffer)}
     ${x.bindVarBuffer('uniform', 'prevViewMatrix2: mat4x4f', prevViewBuffer2)}
@@ -1079,6 +1188,11 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindVarBuffer('uniform', 'updatePrev: u32', updatePrevUniformBuffer)}
     ${x.bindVarBuffer('uniform', 'jitter: vec2f', jitterBuffer)}
     ${x.bindVarBuffer('uniform', 'prevJitter: vec2f', prevJitterBuffer)}
+
+    ${x.bindTexture('skyboxTexture', 'unfilterable-float', skybox)}
+    ${x.bindSampler('skyboxSampler', 'non-filtering', skyboxSampler)}
+
+    var<private> quadIdx: u32;
 
     const _reproject = ${store.reprojectionRate > 0};
     const viewport = vec2u(${store.view[0]}, ${store.view[1]});
@@ -1102,7 +1216,8 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${matInv}
 
     @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
-    fn main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>) {
+    fn main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>, @builtin(local_invocation_index) localInvocationIndex: u32) {
+      quadIdx = localInvocationIndex % 4;
       if (any(globalInvocationId.xy >= viewport)) {
         return;
       }

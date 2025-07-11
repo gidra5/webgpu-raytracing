@@ -29,6 +29,8 @@
     "iterator-js": "github:gidra5/iterator-js#main",
     "lucide-solid": "^0.522.0",
     "obj-file-parser": "^0.6.2",
+    "parse-exr": "^1.0.1",
+    "parse-hdr": "^1.0.0",
     "solid-js": "^1.9.5",
     "webgpu-utils": "^1.10.3"
   }

@@ -20,6 +20,14 @@ export enum LensShape {
   Square,
 }
 
+export enum Tonemapping {
+  Reinhard,
+  Filmic,
+  Aces,
+  Lottes,
+  None,
+}
+
 type BlitView =
   | 'image'
   | 'prevImage'
@@ -38,16 +46,19 @@ const [store, setStore] = createStore({
   counter: 0,
   sampleCount: 1,
   bouncesCount: 1,
+  samplesPerBounce: 1,
 
   fov: Math.PI / 2,
   focusDistance: 4,
-  circleOfConfusion: 0.05,
+  circleOfConfusion: 0,
   paniniDistance: 1,
   exposure: 1,
+  gamma: 1,
   ambience: 0.1,
   shadingType: ShadingType.Phong,
   projectionType: ProjectionType.Perspective,
   lensShape: LensShape.Circle,
+  tonemapping: Tonemapping.None,
 
   reprojectionRate: 0,
 
