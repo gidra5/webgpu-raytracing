@@ -724,51 +724,12 @@ const scene = () => /* wgsl */ `
   const sun_dir = normalize(vec3f(1, 1, 1));
   const sphere_center = vec3f(0, 0, 4);
 
-  struct SceneHit {
-    hit: bool,
-    dist: f32,
-    point: vec3f,
-    normal: vec3f,
-    materialIdx: u32, 
-    uv: vec2f,
-    faceIdx: u32,
-    objectIdx: u32,
-  };
-
   fn sceneAnyHit(ray: Ray, maxDist: f32) -> bool {
     return rayIntersectBVHAnyHit(ray, maxDist);
   }
 
-  fn scene(ray: Ray, maxDist: f32) -> SceneHit {
-    let hit = rayIntersectBVH(ray, maxDist);
-    if !hit.hit {
-      let result = SceneHit(
-        false,
-        maxDist,
-        ray.pos,
-        vec3f(0),
-        0,
-        vec2f(0),
-        0,
-        0
-      );
-      return result;
-    }
-    
-    let face = faces[hit.faceIdx];
-    let uv = hit.barycentric.yz;
-    let result = SceneHit(
-      true,
-      hit.barycentric.x,
-      facePointOffset(face, uv),
-      faceNormal(face, uv),
-      face.materialIdx,
-      faceTexCoords(face, uv),
-      hit.faceIdx,
-      hit.objectIdx
-    );
-
-    return result;
+  fn scene(ray: Ray, maxDist: f32) -> BVHIntersectionResult {
+    return rayIntersectBVH(ray, maxDist);
   }
 
   struct SceneSample {
@@ -1059,15 +1020,8 @@ const reproject = () => /* wgsl */ `
 `;
 
 const computeColor = /* wgsl */ `
-  struct ObjectFaceHitResult {
-    hit: bool,
-    barycentric: vec3f,
-    faceIdx: u32,
-    objectIdx: u32,
-  }
-
-  fn objectFaceHit(faceIdx: u32, objectIdx: u32, ray: Ray, maxDist: f32) -> ObjectFaceHitResult {
-    var hit: ObjectFaceHitResult;
+  fn objectFaceHit(faceIdx: u32, objectIdx: u32, ray: Ray, maxDist: f32) -> BVHIntersectionResult {
+    var hit: BVHIntersectionResult;
     hit.hit = false;
     hit.barycentric = vec3f(maxDist, 0, 0);
     hit.faceIdx = faceIdx;
@@ -1087,17 +1041,36 @@ const computeColor = /* wgsl */ `
       let model = models[objectIdx];
       let _hit = rayIntersectObjectBVH(ray, objectIdx, hit.barycentric.x + EPSILON);
       if _hit.hit {
-        hit.hit = true;
-        hit.barycentric = _hit.barycentric;
-        hit.faceIdx = _hit.faceIdx;
+        hit = _hit;
       }
     }
 
     return hit;
   }
 
-  fn pixelHit(idx: u32, ray: Ray) -> SceneHit {
-    var hit: ObjectFaceHitResult;
+  fn objectFaceAnyHit(faceIdx: u32, objectIdx: u32, ray: Ray, maxDist: f32) -> bool {
+    {
+      let model = models[objectIdx];
+      let face = faces[model.faces.offset + faceIdx];
+      let _hit = rayIntersectFace(ray, face, Interval(min_dist, maxDist));
+      if _hit.hit {
+        return true;
+      }
+    }
+
+    {
+      let model = models[objectIdx];
+      let _hit = rayIntersectObjectBVH(ray, objectIdx, maxDist);
+      if _hit.hit {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  fn pixelHit(idx: u32, ray: Ray) -> BVHIntersectionResult {
+    var hit: BVHIntersectionResult;
     hit.hit = false;
     hit.barycentric = vec3f(f32max, 0, 0);
 
@@ -1113,40 +1086,31 @@ const computeColor = /* wgsl */ `
     return scene(ray, hit.barycentric.x + EPSILON);
   }
 
-  fn pixelColor(hit: SceneHit, ray: Ray) -> vec3f {
+  fn pixelColor(hit: BVHIntersectionResult, ray: Ray) -> vec3f {
     if !hit.hit {
       return sampleSkybox(ray.dir);
     }
 
-    let material = materials[hit.materialIdx];
+    let face = faces[hit.faceIdx];
+    let uv = hit.barycentric.yz;
+    let point = facePointOffset(face, uv);
+    let normal = faceNormal(face, uv);
+    let material = materials[face.materialIdx];
     var color = vec3f(0);
 
     {
-      let p = hit.point;
-      color += sun(p, hit.normal);
+      color += sun(point, normal);
     }
     
     {
-      let p = hit.point;
       let s = sampleLights();
       let sMaterial = materials[s.materialIdx];
-      let ds = s.point - p;
+      let ds = s.point - point;
       let d_sq = dot(ds, ds);
       let d = ds * inverseSqrt(d_sq);
-      let r = Ray(p, d);
-      color += in_shadow(r, d_sq) * attenuation(d, hit.normal) * sMaterial.emission / d_sq * s.p;
+      let r = Ray(point, d);
+      color += in_shadow(r, d_sq) * attenuation(d, normal) * sMaterial.emission / d_sq * s.p;
     }
-
-    // {
-    //   let p = hit.point;
-    //   let s = sampleLights();
-    //   let sMaterial = materials[s.materialIdx];
-    //   let ds = s.point - p;
-    //   let d_sq = dot(ds, ds);
-    //   let d = ds * inverseSqrt(d_sq);
-    //   let r = Ray(p, d);
-    //   color += in_shadow(r, d_sq) * attenuation(d, hit.normal) * sMaterial.emission / d_sq * s.p;
-    // }
 
     color *= material.color;
     color += material.emission;
@@ -1412,13 +1376,15 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
 
       let ray = cameraRay(pos, viewMatrix);
       let hit = pixelHit(idx, ray);
-
-      geometryBuffer[idx].position = hit.point;
-      geometryBuffer[idx].faceIdx = hit.faceIdx;
-      geometryBuffer[idx].objectIdx = hit.objectIdx;
-
+      let face = faces[hit.faceIdx];
+      let uv = hit.barycentric.yz;
+      let point = facePointOffset(face, uv);
       color += pixelColor(hit, ray);
       samples++;
+
+      geometryBuffer[idx].position = point;
+      geometryBuffer[idx].faceIdx = hit.faceIdx;
+      geometryBuffer[idx].objectIdx = hit.objectIdx;
 
       for (var i = 0u; i < ${store.sampleCount}; i = i + 1u) {
         let pos = pos + sample_insquare(random_2()) * 0.5;
@@ -1428,7 +1394,10 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
         samples++;
 
         if _reproject {
-          let result = reproject(hit.point, color);
+          let face = faces[hit.faceIdx];
+          let uv = hit.barycentric.yz;
+          let point = facePointOffset(face, uv);
+          let result = reproject(point, color);
           if result.color.w > 0 {
             color += result.color.xyz / result.color.w;
             samples++;
@@ -1437,7 +1406,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       }
 
       if _reproject {
-        let result = reproject(hit.point, color);
+        let result = reproject(point, color);
         imageBuffer[idx] = result.color;
       }
 
