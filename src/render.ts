@@ -555,7 +555,6 @@ const bvh = () => /* wgsl */ `
     result.barycentric = vec3f(maxDist, 0, 0);
     result.hit = false;
     result.faceIdx = 0;
-    result.objectIdx = objectIdx;
     
     var stack: array<BVHIntersectionStackEntry, BV_MAX_STACK_DEPTH>;
     var top: i32;
@@ -596,6 +595,7 @@ const bvh = () => /* wgsl */ `
           result.barycentric = hit.barycentric;
           result.hit = true;
           result.faceIdx = faceIdx;
+          result.objectIdx = objectIdx;
         }
         continue;
       }
@@ -724,7 +724,7 @@ const scene = () => /* wgsl */ `
   const sun_dir = normalize(vec3f(1, 1, 1));
   const sphere_center = vec3f(0, 0, 4);
 
-  struct Hit {
+  struct SceneHit {
     hit: bool,
     dist: f32,
     point: vec3f,
@@ -739,10 +739,10 @@ const scene = () => /* wgsl */ `
     return rayIntersectBVHAnyHit(ray, maxDist);
   }
 
-  fn scene(ray: Ray, maxDist: f32) -> Hit {
+  fn scene(ray: Ray, maxDist: f32) -> SceneHit {
     let hit = rayIntersectBVH(ray, maxDist);
     if !hit.hit {
-      let result = Hit(
+      let result = SceneHit(
         false,
         maxDist,
         ray.pos,
@@ -757,7 +757,7 @@ const scene = () => /* wgsl */ `
     
     let face = faces[hit.faceIdx];
     let uv = hit.barycentric.yz;
-    let result = Hit(
+    let result = SceneHit(
       true,
       hit.barycentric.x,
       facePointOffset(face, uv),
@@ -1059,11 +1059,61 @@ const reproject = () => /* wgsl */ `
 `;
 
 const computeColor = /* wgsl */ `
-  fn computeColor(pos: vec2f, _hit: ptr<function, Hit>) -> vec3f {
-    let ray = cameraRay(pos, viewMatrix);
-    let hit = scene(ray, f32max);
-    *_hit = hit;
+  struct ObjectFaceHitResult {
+    hit: bool,
+    barycentric: vec3f,
+    faceIdx: u32,
+    objectIdx: u32,
+  }
 
+  fn objectFaceHit(faceIdx: u32, objectIdx: u32, ray: Ray, maxDist: f32) -> ObjectFaceHitResult {
+    var hit: ObjectFaceHitResult;
+    hit.hit = false;
+    hit.barycentric = vec3f(maxDist, 0, 0);
+    hit.faceIdx = faceIdx;
+    hit.objectIdx = objectIdx;
+    
+    {
+      let model = models[objectIdx];
+      let face = faces[model.faces.offset + faceIdx];
+      let _hit = rayIntersectFace(ray, face, Interval(min_dist, maxDist));
+      if _hit.hit {
+        hit.hit = true;
+        hit.barycentric = _hit.barycentric;
+      }
+    }
+
+    {
+      let model = models[objectIdx];
+      let _hit = rayIntersectObjectBVH(ray, objectIdx, hit.barycentric.x + EPSILON);
+      if _hit.hit {
+        hit.hit = true;
+        hit.barycentric = _hit.barycentric;
+        hit.faceIdx = _hit.faceIdx;
+      }
+    }
+
+    return hit;
+  }
+
+  fn pixelHit(idx: u32, ray: Ray) -> SceneHit {
+    var hit: ObjectFaceHitResult;
+    hit.hit = false;
+    hit.barycentric = vec3f(f32max, 0, 0);
+
+    {
+      let prevObjectIdx = prevGeometryBuffer[idx].objectIdx;
+      let prevFaceIdx = prevGeometryBuffer[idx].faceIdx;
+      let _hit = objectFaceHit(prevFaceIdx, prevObjectIdx, ray, f32max);
+      if _hit.hit {
+        hit = _hit;
+      }
+    }
+    
+    return scene(ray, hit.barycentric.x + EPSILON);
+  }
+
+  fn pixelColor(hit: SceneHit, ray: Ray) -> vec3f {
     if !hit.hit {
       return sampleSkybox(ray.dir);
     }
@@ -1359,19 +1409,22 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
 
       var color = vec3f(0);
       var samples = 0u;
-      var hit: Hit;
 
-      color += computeColor(pos, &hit);
-      samples++;
+      let ray = cameraRay(pos, viewMatrix);
+      let hit = pixelHit(idx, ray);
 
       geometryBuffer[idx].position = hit.point;
       geometryBuffer[idx].faceIdx = hit.faceIdx;
       geometryBuffer[idx].objectIdx = hit.objectIdx;
 
+      color += pixelColor(hit, ray);
+      samples++;
+
       for (var i = 0u; i < ${store.sampleCount}; i = i + 1u) {
         let pos = pos + sample_insquare(random_2()) * 0.5;
-        var hit: Hit;
-        color += computeColor(pos, &hit);
+        let ray = cameraRay(pos, viewMatrix);
+        let hit = pixelHit(idx, ray);
+        color += pixelColor(hit, ray);
         samples++;
 
         if _reproject {
