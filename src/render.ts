@@ -130,7 +130,7 @@ createEffect<GPUBuffer[]>((prevBuffers) => {
   );
   setPrevImageBuffer(prev);
 
-  const geometryBufferItemSize = Float32Array.BYTES_PER_ELEMENT * 4;
+  const geometryBufferItemSize = Float32Array.BYTES_PER_ELEMENT * 32;
   const geometryBufferSize =
     store.geometryBufferScale * geometryBufferItemSize * width * height;
   const currentGeometry = createStorageBuffer(
