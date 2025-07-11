@@ -257,6 +257,8 @@ const COMPUTE_WORKGROUP_SIZE_Y = 16;
 const structs = /* wgsl */ `
   struct Geometry {
     position: vec3f,
+    faceIdx: u32,
+    objectIdx: u32,
   }
 
   struct Ray {
@@ -728,7 +730,9 @@ const scene = () => /* wgsl */ `
     point: vec3f,
     normal: vec3f,
     materialIdx: u32, 
-    uv: vec2f
+    uv: vec2f,
+    faceIdx: u32,
+    objectIdx: u32,
   };
 
   fn sceneAnyHit(ray: Ray, maxDist: f32) -> bool {
@@ -744,7 +748,9 @@ const scene = () => /* wgsl */ `
         ray.pos,
         vec3f(0),
         0,
-        vec2f(0)
+        vec2f(0),
+        0,
+        0
       );
       return result;
     }
@@ -757,7 +763,9 @@ const scene = () => /* wgsl */ `
       facePointOffset(face, uv),
       faceNormal(face, uv),
       face.materialIdx,
-      faceTexCoords(face, uv)
+      faceTexCoords(face, uv),
+      hit.faceIdx,
+      hit.objectIdx
     );
 
     return result;
@@ -1341,6 +1349,8 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       if counter == 0u && !_reproject {
         imageBuffer[idx] = vec4f(0);
         geometryBuffer[idx].position = vec3f(0);
+        geometryBuffer[idx].faceIdx = 0;
+        geometryBuffer[idx].objectIdx = 0;
       }
 
       var color = vec3f(0);
@@ -1349,7 +1359,10 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
 
       color += computeColor(pos, &hit);
       samples++;
+
       geometryBuffer[idx].position = hit.point;
+      geometryBuffer[idx].faceIdx = hit.faceIdx;
+      geometryBuffer[idx].objectIdx = hit.objectIdx;
 
       for (var i = 0u; i < ${store.sampleCount}; i = i + 1u) {
         let pos = pos + sample_insquare(random_2()) * 0.5;
