@@ -1086,6 +1086,24 @@ const computeColor = /* wgsl */ `
     return scene(ray, hit.barycentric.x + EPSILON);
   }
 
+  fn pointColor(point: vec3f, normal: vec3f) -> vec3f {
+    var color = vec3f(0);
+
+    for (var i = 0u; i < ${store.samplesPerPoint}; i = i + 1u) {
+      color += sun(point, normal);
+      
+      let s = sampleLights();
+      let sMaterial = materials[s.materialIdx];
+      let ds = s.point - point;
+      let d_sq = dot(ds, ds);
+      let d = ds * inverseSqrt(d_sq);
+      let r = Ray(point, d);
+      color += in_shadow(r, d_sq) * attenuation(d, normal) * sMaterial.emission / d_sq * s.p;
+    }
+
+    return color / ${store.samplesPerPoint};
+  }
+
   fn pixelColor(hit: BVHIntersectionResult, ray: Ray) -> vec3f {
     if !hit.hit {
       return sampleSkybox(ray.dir);
@@ -1098,19 +1116,7 @@ const computeColor = /* wgsl */ `
     let material = materials[face.materialIdx];
     var color = vec3f(0);
 
-    {
-      color += sun(point, normal);
-    }
-    
-    {
-      let s = sampleLights();
-      let sMaterial = materials[s.materialIdx];
-      let ds = s.point - point;
-      let d_sq = dot(ds, ds);
-      let d = ds * inverseSqrt(d_sq);
-      let r = Ray(point, d);
-      color += in_shadow(r, d_sq) * attenuation(d, normal) * sMaterial.emission / d_sq * s.p;
-    }
+    color += pointColor(point, normal);
 
     color *= material.color;
     color += material.emission;
