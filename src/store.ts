@@ -45,7 +45,8 @@ const [store, setStore] = createStore({
 
   counter: 0,
   sampleCount: 1,
-  bouncesCount: 1,
+  bouncesDepth: 2,
+  samplesPerPoint: 1,
   samplesPerBounce: 1,
 
   fov: Math.PI / 2,

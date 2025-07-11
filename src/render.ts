@@ -86,13 +86,16 @@ const prevViewBuffer2 = createUniformBuffer(
 const { models, materials } = await loadModels();
 const { materialsBuffer } = await loadMaterialsToBuffers(materials);
 const { facesBuffer, bvhBuffer, bvhCount, modelsBuffer } =
-  await loadModelsToBuffers([
-    models[2],
-    models[10],
-    models[6],
-    models[3],
-    models[4],
-  ]);
+  await loadModelsToBuffers(models);
+// await loadModelsToBuffers([
+//   models[2],
+//   models[10],
+//   models[6],
+//   // models[8],
+//   models[5],
+//   models[3],
+//   models[4],
+// ]);
 const skybox = await loadSkybox();
 const skyboxSampler = device.createSampler();
 
@@ -1090,8 +1093,6 @@ const computeColor = /* wgsl */ `
     var color = vec3f(0);
 
     for (var i = 0u; i < ${store.samplesPerPoint}; i = i + 1u) {
-      color += sun(point, normal);
-      
       let s = sampleLights();
       let sMaterial = materials[s.materialIdx];
       let ds = s.point - point;
@@ -1104,23 +1105,108 @@ const computeColor = /* wgsl */ `
     return color / ${store.samplesPerPoint};
   }
 
+  struct BounceStackEntry {
+    hit: BVHIntersectionResult,
+    color: vec4f,
+    pdfInv: f32,
+    dir: vec3f,
+  }
+  const maxBounces = ${store.bouncesDepth};
   fn pixelColor(hit: BVHIntersectionResult, ray: Ray) -> vec3f {
     if !hit.hit {
       return sampleSkybox(ray.dir);
     }
 
     let face = faces[hit.faceIdx];
-    let uv = hit.barycentric.yz;
-    let point = facePointOffset(face, uv);
-    let normal = faceNormal(face, uv);
+    let normal = faceNormal(face, hit.barycentric.yz);
+    var rayPos = facePointOffset(face, hit.barycentric.yz);
+    var rayDir = normalize(normal + sample_sphere(random_2()));
+
     let material = materials[face.materialIdx];
-    var color = vec3f(0);
 
-    color += pointColor(point, normal);
+    var ret = material.emission;
+    var throughput = material.color;
 
-    color *= material.color;
-    color += material.emission;
-    return color;
+    for (var bounceIndex = 0u; bounceIndex < maxBounces; bounceIndex++) {
+      // shoot a ray out into the world
+      let hit = scene(Ray(rayPos, rayDir), f32max);
+      if !hit.hit {
+        ret += sampleSkybox(rayDir) * throughput;
+        break;
+      }
+
+      let face = faces[hit.faceIdx];
+      let normal = faceNormal(face, hit.barycentric.yz);
+      rayPos = facePointOffset(face, hit.barycentric.yz);
+      rayDir = normalize(normal + sample_sphere(random_2()));
+
+      let material = materials[face.materialIdx];
+      ret += material.emission * throughput;
+      throughput *= material.color;
+    }
+
+    return ret;
+
+    // var stack: array<BounceStackEntry, maxBounces>;
+    // var top: u32;
+
+    // top = 0;
+    // stack[top] = BounceStackEntry(hit, vec4f(0), 1, ray.dir);
+
+    // while (true) {
+    //   if stack[top].color.w >= ${store.samplesPerBounce} {
+    //     let entry = stack[top];
+    //     var color = entry.color.rgb / entry.color.w;
+    //     if top == 0 {
+    //       return color * entry.pdfInv;
+    //     }
+    //     let face = faces[entry.hit.faceIdx];
+    //     let uv = entry.hit.barycentric.yz;
+    //     let normal = faceNormal(face, uv);
+    //     let material = materials[face.materialIdx];
+    //     let dist = entry.hit.barycentric.x;
+    //     let distSq = dist * dist;
+    //     color *= dot(entry.dir, normal) / distSq;
+    //     color *= material.color;
+    //     color += material.emission;
+
+    //     top--;
+    //     stack[top].color += vec4f(color * entry.pdfInv, 1);
+    //     continue;
+    //   }
+    //   let hit = stack[top].hit;
+    //   let face = faces[hit.faceIdx];
+    //   let uv = hit.barycentric.yz;
+    //   let point = facePointOffset(face, uv);
+    //   let normal = faceNormal(face, uv);
+
+    //   if top < maxBounces-1 {
+    //     var dir = sample_hemisphere(random_2(), normal);
+    //     let pdfInv = pdf_inv_hemisphere();
+    //     let ray = Ray(point, dir);
+    //     let hit = scene(ray, f32max);
+    //     if !hit.hit {
+    //       // stack[top].color += vec4f(sampleSkybox(dir) * pdfInv, 1);
+    //       stack[top].color += vec4f(vec3f(0) * pdfInv, 1);
+    //     } else {
+    //       top++;
+    //       stack[top] = BounceStackEntry(hit, vec4f(0), pdfInv, dir);
+    //     }
+    //     continue;
+    //   }
+
+    //   var color = vec3f(0);
+    //   let material = materials[face.materialIdx];
+
+    //   color += pointColor(point, normal);
+
+    //   color *= material.color;
+    //   color += material.emission;
+
+    //   stack[top].color += vec4f(color, 1);
+    // }
+
+    // return vec3f(0);
   }
   
   fn in_shadow(ray: Ray, mag_sq: f32) -> f32 {
@@ -1133,10 +1219,6 @@ const computeColor = /* wgsl */ `
 
   fn attenuation(dir: vec3f, norm: vec3f) -> f32 {
     return max(dot(dir, norm), 0.);
-  }
-
-  fn sun(pos: vec3f, norm: vec3f) -> vec3f {
-    return (light_vis(pos, sun_dir) * attenuation(sun_dir, norm) + ambience) * sun_color;
   }
 `;
 
