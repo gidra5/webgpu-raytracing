@@ -739,12 +739,12 @@ const scene = () => /* wgsl */ `
     return rayIntersectBVHAnyHit(ray, maxDist);
   }
 
-  fn scene(ray: Ray) -> Hit {
-    let hit = rayIntersectBVH(ray, f32max);
+  fn scene(ray: Ray, maxDist: f32) -> Hit {
+    let hit = rayIntersectBVH(ray, maxDist);
     if !hit.hit {
       let result = Hit(
         false,
-        max_dist,
+        maxDist,
         ray.pos,
         vec3f(0),
         0,
@@ -1061,7 +1061,7 @@ const reproject = () => /* wgsl */ `
 const computeColor = /* wgsl */ `
   fn computeColor(pos: vec2f, _hit: ptr<function, Hit>) -> vec3f {
     let ray = cameraRay(pos, viewMatrix);
-    let hit = scene(ray);
+    let hit = scene(ray, f32max);
     *_hit = hit;
 
     if !hit.hit {
