@@ -555,6 +555,7 @@ const bvh = () => /* wgsl */ `
     result.barycentric = vec3f(maxDist, 0, 0);
     result.hit = false;
     result.faceIdx = 0;
+    result.objectIdx = objectIdx;
     
     var stack: array<BVHIntersectionStackEntry, BV_MAX_STACK_DEPTH>;
     var top: i32;
@@ -595,7 +596,6 @@ const bvh = () => /* wgsl */ `
           result.barycentric = hit.barycentric;
           result.hit = true;
           result.faceIdx = faceIdx;
-          result.objectIdx = objectIdx;
         }
         continue;
       }
@@ -1326,6 +1326,8 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     var<private> quadIdx2: u32;
     var<private> quadIdx3: u32;
     var<private> quadIdx4: u32;
+    var<private> quadNeighborXIdx: u32;
+    var<private> quadNeighborYIdx: u32;
 
     @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
     fn main(
@@ -1339,6 +1341,8 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       quadIdx2 = quadBroadcast(idx, 1);
       quadIdx3 = quadBroadcast(idx, 2);
       quadIdx4 = quadBroadcast(idx, 3);
+      quadNeighborXIdx = quadSwapX(idx);
+      quadNeighborYIdx = quadSwapY(idx);
       if (any(globalInvocationId.xy >= viewport)) {
         return;
       }
