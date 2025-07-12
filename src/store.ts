@@ -45,7 +45,7 @@ const [store, setStore] = createStore({
 
   counter: 0,
   sampleCount: 1,
-  bouncesDepth: 2,
+  bouncesDepth: 4,
   samplesPerPoint: 1,
   samplesPerBounce: 1,
 

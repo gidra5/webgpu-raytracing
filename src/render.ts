@@ -86,16 +86,17 @@ const prevViewBuffer2 = createUniformBuffer(
 const { models, materials } = await loadModels();
 const { materialsBuffer } = await loadMaterialsToBuffers(materials);
 const { facesBuffer, bvhBuffer, bvhCount, modelsBuffer } =
-  await loadModelsToBuffers(models);
-// await loadModelsToBuffers([
-//   models[2],
-//   models[10],
-//   models[6],
-//   // models[8],
-//   models[5],
-//   models[3],
-//   models[4],
-// ]);
+  // await loadModelsToBuffers(models);
+  await loadModelsToBuffers([
+    models[2],
+    models[10],
+    models[6],
+    models[11],
+    models[8],
+    models[5],
+    models[3],
+    models[4],
+  ]);
 const skybox = await loadSkybox();
 const skyboxSampler = device.createSampler();
 
@@ -735,6 +736,55 @@ const scene = () => /* wgsl */ `
     return rayIntersectBVH(ray, maxDist);
   }
 
+  fn objectFaceHit(faceIdx: u32, objectIdx: u32, ray: Ray, maxDist: f32) -> BVHIntersectionResult {
+    var hit: BVHIntersectionResult;
+    hit.hit = false;
+    hit.barycentric = vec3f(maxDist, 0, 0);
+    hit.faceIdx = faceIdx;
+    hit.objectIdx = objectIdx;
+    
+    {
+      let model = models[objectIdx];
+      let face = faces[model.faces.offset + faceIdx];
+      let _hit = rayIntersectFace(ray, face, Interval(min_dist, maxDist));
+      if _hit.hit {
+        hit.hit = true;
+        hit.barycentric = _hit.barycentric;
+      }
+    }
+
+    {
+      let model = models[objectIdx];
+      let _hit = rayIntersectObjectBVH(ray, objectIdx, hit.barycentric.x + EPSILON);
+      if _hit.hit {
+        hit = _hit;
+      }
+    }
+
+    return hit;
+  }
+
+  fn objectFaceAnyHit(faceIdx: u32, objectIdx: u32, ray: Ray, maxDist: f32) -> bool {
+    {
+      let model = models[objectIdx];
+      let face = faces[model.faces.offset + faceIdx];
+      let _hit = rayIntersectFace(ray, face, Interval(min_dist, maxDist));
+      if _hit.hit {
+        return true;
+      }
+    }
+
+    {
+      let model = models[objectIdx];
+      let _hit = rayIntersectObjectBVH(ray, objectIdx, maxDist);
+      if _hit.hit {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   struct SceneSample {
     p: f32, // 1/pdf
     point: vec3f,
@@ -1023,70 +1073,26 @@ const reproject = () => /* wgsl */ `
 `;
 
 const computeColor = /* wgsl */ `
-  fn objectFaceHit(faceIdx: u32, objectIdx: u32, ray: Ray, maxDist: f32) -> BVHIntersectionResult {
-    var hit: BVHIntersectionResult;
-    hit.hit = false;
-    hit.barycentric = vec3f(maxDist, 0, 0);
-    hit.faceIdx = faceIdx;
-    hit.objectIdx = objectIdx;
-    
-    {
-      let model = models[objectIdx];
-      let face = faces[model.faces.offset + faceIdx];
-      let _hit = rayIntersectFace(ray, face, Interval(min_dist, maxDist));
-      if _hit.hit {
-        hit.hit = true;
-        hit.barycentric = _hit.barycentric;
-      }
-    }
-
-    {
-      let model = models[objectIdx];
-      let _hit = rayIntersectObjectBVH(ray, objectIdx, hit.barycentric.x + EPSILON);
-      if _hit.hit {
-        hit = _hit;
-      }
-    }
-
-    return hit;
-  }
-
-  fn objectFaceAnyHit(faceIdx: u32, objectIdx: u32, ray: Ray, maxDist: f32) -> bool {
-    {
-      let model = models[objectIdx];
-      let face = faces[model.faces.offset + faceIdx];
-      let _hit = rayIntersectFace(ray, face, Interval(min_dist, maxDist));
-      if _hit.hit {
-        return true;
-      }
-    }
-
-    {
-      let model = models[objectIdx];
-      let _hit = rayIntersectObjectBVH(ray, objectIdx, maxDist);
-      if _hit.hit {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  fn pixelHit(idx: u32, ray: Ray) -> BVHIntersectionResult {
+  fn pixelHitDist(idx: u32, ray: Ray) -> f32 {
     var hit: BVHIntersectionResult;
     hit.hit = false;
     hit.barycentric = vec3f(f32max, 0, 0);
 
-    {
-      let prevObjectIdx = prevGeometryBuffer[idx].objectIdx;
-      let prevFaceIdx = prevGeometryBuffer[idx].faceIdx;
-      let _hit = objectFaceHit(prevFaceIdx, prevObjectIdx, ray, f32max);
+    for (var i = 0u; i < 4; i = i + 1u) {
+      let quadIdx = quad[i];
+      let prevObjectIdx = prevGeometryBuffer[quadIdx].objectIdx;
+      let prevFaceIdx = prevGeometryBuffer[quadIdx].faceIdx;
+      if prevFaceIdx == hit.faceIdx {
+        continue;
+      }
+      
+      let _hit = objectFaceHit(prevFaceIdx, prevObjectIdx, ray, hit.barycentric.x + EPSILON);
       if _hit.hit {
         hit = _hit;
       }
     }
     
-    return scene(ray, hit.barycentric.x + EPSILON);
+    return hit.barycentric.x + EPSILON;
   }
 
   fn pointColor(point: vec3f, normal: vec3f) -> vec3f {
@@ -1107,20 +1113,31 @@ const computeColor = /* wgsl */ `
 
   struct BounceStackEntry {
     hit: BVHIntersectionResult,
+    ray: Ray,
+
     color: vec4f,
-    pdfInv: f32,
-    dir: vec3f,
+    throughput: vec3f,
   }
   const maxBounces = ${store.bouncesDepth};
-  fn pixelColor(hit: BVHIntersectionResult, ray: Ray) -> vec3f {
+  fn pixelColor(_hit: ptr<function, BVHIntersectionResult>, _ray: Ray, maxDist: f32) -> vec3f {
+    let hit = scene(_ray, maxDist);
+    *_hit = hit;
     if !hit.hit {
-      return sampleSkybox(ray.dir);
+      return sampleSkybox(_ray.dir);
     }
+
+    var stack: array<BounceStackEntry, maxBounces>;
+    var top: u32;
+
+    top = 0;
+    stack[top] = BounceStackEntry(hit, _ray, vec4f(0), vec3f(1));
 
     let face = faces[hit.faceIdx];
     let normal = faceNormal(face, hit.barycentric.yz);
-    var rayPos = facePointOffset(face, hit.barycentric.yz);
-    var rayDir = normalize(normal + sample_sphere(random_2()));
+    var ray = Ray(
+      facePointOffset(face, hit.barycentric.yz),
+      normalize(normal + sample_sphere(random_2()))
+    );
 
     let material = materials[face.materialIdx];
 
@@ -1129,84 +1146,35 @@ const computeColor = /* wgsl */ `
 
     for (var bounceIndex = 0u; bounceIndex < maxBounces; bounceIndex++) {
       // shoot a ray out into the world
-      let hit = scene(Ray(rayPos, rayDir), f32max);
+      let hit = scene(ray, f32max);
       if !hit.hit {
-        ret += sampleSkybox(rayDir) * throughput;
+        ret += sampleSkybox(ray.dir) * throughput;
         break;
       }
 
       let face = faces[hit.faceIdx];
       let normal = faceNormal(face, hit.barycentric.yz);
-      rayPos = facePointOffset(face, hit.barycentric.yz);
-      rayDir = normalize(normal + sample_sphere(random_2()));
+      ray = Ray(
+        facePointOffset(face, hit.barycentric.yz),
+        normalize(normal + sample_sphere(random_2()))
+      );
 
       let material = materials[face.materialIdx];
       ret += material.emission * throughput;
       throughput *= material.color;
+
+      // russian roulette
+      {
+        let p = max(throughput.x, max(throughput.y, throughput.z));
+        if random_1() > p {
+          break;
+        }
+        throughput /= p;
+      }
     }
 
-    return ret;
-
-    // var stack: array<BounceStackEntry, maxBounces>;
-    // var top: u32;
-
-    // top = 0;
-    // stack[top] = BounceStackEntry(hit, vec4f(0), 1, ray.dir);
-
-    // while (true) {
-    //   if stack[top].color.w >= ${store.samplesPerBounce} {
-    //     let entry = stack[top];
-    //     var color = entry.color.rgb / entry.color.w;
-    //     if top == 0 {
-    //       return color * entry.pdfInv;
-    //     }
-    //     let face = faces[entry.hit.faceIdx];
-    //     let uv = entry.hit.barycentric.yz;
-    //     let normal = faceNormal(face, uv);
-    //     let material = materials[face.materialIdx];
-    //     let dist = entry.hit.barycentric.x;
-    //     let distSq = dist * dist;
-    //     color *= dot(entry.dir, normal) / distSq;
-    //     color *= material.color;
-    //     color += material.emission;
-
-    //     top--;
-    //     stack[top].color += vec4f(color * entry.pdfInv, 1);
-    //     continue;
-    //   }
-    //   let hit = stack[top].hit;
-    //   let face = faces[hit.faceIdx];
-    //   let uv = hit.barycentric.yz;
-    //   let point = facePointOffset(face, uv);
-    //   let normal = faceNormal(face, uv);
-
-    //   if top < maxBounces-1 {
-    //     var dir = sample_hemisphere(random_2(), normal);
-    //     let pdfInv = pdf_inv_hemisphere();
-    //     let ray = Ray(point, dir);
-    //     let hit = scene(ray, f32max);
-    //     if !hit.hit {
-    //       // stack[top].color += vec4f(sampleSkybox(dir) * pdfInv, 1);
-    //       stack[top].color += vec4f(vec3f(0) * pdfInv, 1);
-    //     } else {
-    //       top++;
-    //       stack[top] = BounceStackEntry(hit, vec4f(0), pdfInv, dir);
-    //     }
-    //     continue;
-    //   }
-
-    //   var color = vec3f(0);
-    //   let material = materials[face.materialIdx];
-
-    //   color += pointColor(point, normal);
-
-    //   color *= material.color;
-    //   color += material.emission;
-
-    //   stack[top].color += vec4f(color, 1);
-    // }
-
-    // return vec3f(0);
+    // return stack[top].color.rgb * 2;
+    return ret * 2;
   }
   
   fn in_shadow(ray: Ray, mag_sq: f32) -> f32 {
@@ -1424,10 +1392,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${derivatives()}
 
     var<private> quadIdx: u32;
-    var<private> quadIdx1: u32;
-    var<private> quadIdx2: u32;
-    var<private> quadIdx3: u32;
-    var<private> quadIdx4: u32;
+    var<private> quad: array<u32, 4>;
     var<private> quadNeighborXIdx: u32;
     var<private> quadNeighborYIdx: u32;
 
@@ -1439,10 +1404,10 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       let upos = globalInvocationId.xy;
       let idx = imageIdx(upos);
       quadIdx = localInvocationIndex % 4;
-      quadIdx1 = quadBroadcast(idx, 0);
-      quadIdx2 = quadBroadcast(idx, 1);
-      quadIdx3 = quadBroadcast(idx, 2);
-      quadIdx4 = quadBroadcast(idx, 3);
+      quad[0] = quadBroadcast(idx, 0);
+      quad[1] = quadBroadcast(idx, 1);
+      quad[2] = quadBroadcast(idx, 2);
+      quad[3] = quadBroadcast(idx, 3);
       quadNeighborXIdx = quadSwapX(idx);
       quadNeighborYIdx = quadSwapY(idx);
       if (any(globalInvocationId.xy >= viewport)) {
@@ -1463,13 +1428,14 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       var samples = 0u;
 
       let ray = cameraRay(pos, viewMatrix);
-      let hit = pixelHit(idx, ray);
+      let hitDist = pixelHitDist(idx, ray);
+      var hit: BVHIntersectionResult;
+      color += pixelColor(&hit, ray, hitDist);
+      samples++;
+
       let face = faces[hit.faceIdx];
       let uv = hit.barycentric.yz;
       let point = facePointOffset(face, uv);
-      color += pixelColor(hit, ray);
-      samples++;
-
       geometryBuffer[idx].position = point;
       geometryBuffer[idx].faceIdx = hit.faceIdx;
       geometryBuffer[idx].objectIdx = hit.objectIdx;
@@ -1477,8 +1443,9 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       for (var i = 0u; i < ${store.sampleCount}; i = i + 1u) {
         let pos = pos + sample_insquare(random_2()) * 0.5;
         let ray = cameraRay(pos, viewMatrix);
-        let hit = pixelHit(idx, ray);
-        color += pixelColor(hit, ray);
+        let hitDist = pixelHitDist(idx, ray);
+        var hit: BVHIntersectionResult;
+        color += pixelColor(&hit, ray, hitDist);
         samples++;
 
         if _reproject {
