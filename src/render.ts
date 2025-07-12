@@ -1112,56 +1112,46 @@ const computeColor = /* wgsl */ `
   }
 
   struct BounceStackEntry {
-    hit: BVHIntersectionResult,
     ray: Ray,
+    maxDist: f32,
 
     color: vec4f,
     throughput: vec3f,
   }
   const maxBounces = ${store.bouncesDepth};
   fn pixelColor(_hit: ptr<function, BVHIntersectionResult>, _ray: Ray, maxDist: f32) -> vec3f {
-    let hit = scene(_ray, maxDist);
-    *_hit = hit;
-    if !hit.hit {
-      return sampleSkybox(_ray.dir);
-    }
-
     var stack: array<BounceStackEntry, maxBounces>;
     var top: u32;
 
     top = 0;
-    stack[top] = BounceStackEntry(hit, _ray, vec4f(0), vec3f(1));
+    stack[top] = BounceStackEntry(_ray, maxDist, vec4f(0), vec3f(1));
 
-    let face = faces[hit.faceIdx];
-    let normal = faceNormal(face, hit.barycentric.yz);
-    var ray = Ray(
-      facePointOffset(face, hit.barycentric.yz),
-      normalize(normal + sample_sphere(random_2()))
-    );
-
-    let material = materials[face.materialIdx];
-
-    var ret = material.emission;
-    var throughput = material.color;
-
-    for (var bounceIndex = 0u; bounceIndex < maxBounces; bounceIndex++) {
+    while (top < maxBounces - 1) {
       // shoot a ray out into the world
-      let hit = scene(ray, f32max);
+      let entry = stack[top];
+      let hit = scene(entry.ray, entry.maxDist);
+      var color = entry.color.rgb;
+      var throughput = entry.throughput;
+      if top == 0 {
+        *_hit = hit;
+      }
       if !hit.hit {
-        ret += sampleSkybox(ray.dir) * throughput;
+        stack[top].color += vec4f(sampleSkybox(entry.ray.dir) * throughput, 1);
         break;
       }
 
       let face = faces[hit.faceIdx];
-      let normal = faceNormal(face, hit.barycentric.yz);
-      ray = Ray(
-        facePointOffset(face, hit.barycentric.yz),
-        normalize(normal + sample_sphere(random_2()))
-      );
-
       let material = materials[face.materialIdx];
-      ret += material.emission * throughput;
+      color += material.emission * throughput;
       throughput *= material.color;
+
+      let normal = faceNormal(face, hit.barycentric.yz);
+      let ray = Ray(
+        facePointOffset(face, hit.barycentric.yz),
+        sample_cosine_weighted_hemisphere(random_2(), 1, normal)
+      );
+      top++;
+      stack[top] = BounceStackEntry(ray, f32max, vec4f(color, 1), throughput);
 
       // russian roulette
       {
@@ -1173,8 +1163,7 @@ const computeColor = /* wgsl */ `
       }
     }
 
-    // return stack[top].color.rgb * 2;
-    return ret * 2;
+    return stack[top].color.rgb * 2;
   }
   
   fn in_shadow(ray: Ray, mag_sq: f32) -> f32 {

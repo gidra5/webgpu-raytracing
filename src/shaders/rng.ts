@@ -85,14 +85,18 @@ export default /* wgsl */ `
     return vec3(x, y, z); 
   }
 
-  fn sample_cosine_weighted_hemisphere(t: vec2f, p: f32) -> vec3f {
-    let phi = TWO_PI * t.y;
-    let cos_theta = pow(t.x, 1 / (1 + p));
-    let sin_theta = sqrt(1. - cos_theta * cos_theta);
-    let x = sin_theta * cos(phi);
-    let y = sin_theta * sin(phi);
-    let z = cos_theta;
-    return vec3(x, y, z); 
+  fn sample_cosine_weighted_hemisphere(t: vec2f, p: f32, n: vec3f) -> vec3f {
+    // let phi = TWO_PI * t.y;
+    // let cos_theta = pow(t.x, 1 / (1 + p));
+    // let sin_theta = sqrt(1. - cos_theta * cos_theta);
+    // let x = sin_theta * cos(phi);
+    // let y = sin_theta * sin(phi);
+    // let z = cos_theta;
+    // return vec3(x, y, z);
+    return normalize(n + sample_sphere(t));
+    // let s = sample_sphere(t);
+    // let q = 2 * (1 + dot(s, n));
+    // return (n + s) * inverseSqrt(q);
   }
 
   fn sample_sphere(t: vec2f) -> vec3f {
