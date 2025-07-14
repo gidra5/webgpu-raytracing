@@ -1159,7 +1159,7 @@ const computeColor = /* wgsl */ `
         if random_1() > p {
           break;
         }
-        throughput /= p;
+        stack[top].throughput /= p;
       }
     }
 
