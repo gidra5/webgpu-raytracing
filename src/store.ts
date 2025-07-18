@@ -10,9 +10,16 @@ export enum ShadingType {
 }
 
 export enum ProjectionType {
+  Fisheye,
   Panini,
   Perspective,
   Orthographic,
+}
+
+export enum FovOrientation {
+  Horizontal,
+  Vertical,
+  Diagonal,
 }
 
 export enum LensShape {
@@ -50,10 +57,12 @@ const [store, setStore] = createStore({
   samplesPerBounce: 1,
 
   fov: Math.PI / 2,
+  fovOrientation: FovOrientation.Horizontal,
   focusDistance: 4,
   circleOfConfusion: 0,
-  paniniDistance: 1,
-  exposure: 1,
+  paniniDistance: 0,
+  verticalCompression: 0,
+  exposure: 2,
   gamma: 1,
   ambience: 0.1,
   shadingType: ShadingType.Phong,
@@ -63,6 +72,7 @@ const [store, setStore] = createStore({
 
   reprojectionRate: 0,
 
+  jitterStrength: 0,
   resolutionScale: 1,
   geometryBufferScale: 1,
   scale: 1,
@@ -76,7 +86,6 @@ const [store, setStore] = createStore({
 
   debugBVH: false,
   debugReprojection: false,
-  pixelJitter: true,
   bilateralFilter: false,
   blitView: 'image' as BlitView,
 
@@ -190,8 +199,8 @@ export const setDebugReprojection = (debug: boolean) => {
   resetCounter();
 };
 
-export const setPixelJitter = (jitter: boolean) => {
-  setStore('pixelJitter', jitter);
+export const setJitterStrength = (jitter: number) => {
+  setStore('jitterStrength', jitter);
   resetCounter();
 };
 
@@ -238,6 +247,11 @@ export const setFov = (fov: number) => {
 
 export const setProjectionType = (projectionType: ProjectionType) => {
   setStore('projectionType', projectionType);
+  resetCounter();
+};
+
+export const setFovOrientation = (fovOrientation: FovOrientation) => {
+  setStore('fovOrientation', fovOrientation);
   resetCounter();
 };
 

@@ -1,6 +1,6 @@
 import { Accessor, createEffect, createSignal } from 'solid-js';
 import { assert } from './utils';
-import { vec3 } from 'gl-matrix';
+import { vec2, vec3 } from 'gl-matrix';
 import { CreateTextureOptions } from 'webgpu-utils';
 
 const features: Partial<Record<GPUFeatureName, boolean>> = {};
@@ -136,6 +136,9 @@ export const writeFloat32Buffer = (buffer: GPUBuffer, data: number) => {
   device.queue.writeBuffer(buffer, 0, new Float32Array([data]));
 };
 export const writeVec3fBuffer = (buffer: GPUBuffer, data: vec3) => {
+  device.queue.writeBuffer(buffer, 0, new Float32Array(data));
+};
+export const writeVec2fBuffer = (buffer: GPUBuffer, data: vec2) => {
   device.queue.writeBuffer(buffer, 0, new Float32Array(data));
 };
 

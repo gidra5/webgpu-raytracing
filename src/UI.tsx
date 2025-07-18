@@ -1,5 +1,6 @@
 import { type Component } from 'solid-js';
 import {
+  FovOrientation,
   LensShape,
   ProjectionType,
   setBlitView,
@@ -8,8 +9,9 @@ import {
   setDebugReprojection,
   setFocusDistance,
   setFov,
+  setFovOrientation,
   setLensShape,
-  setPixelJitter,
+  setJitterStrength,
   setProjectionType,
   setReprojectionRate,
   setScale,
@@ -94,9 +96,21 @@ const App: Component = () => {
           value={store.projectionType}
           onChange={(e) => setProjectionType(Number(e.target.value))}
         >
+          <option value={ProjectionType.Fisheye}>Fisheye</option>
           <option value={ProjectionType.Panini}>Panini</option>
           <option value={ProjectionType.Perspective}>Perspective</option>
           <option value={ProjectionType.Orthographic}>Orthographic</option>
+        </select>
+      </label>
+      <label class="flex gap-2 text-white text-sm items-baseline">
+        FoV orientation
+        <select
+          value={store.fovOrientation}
+          onChange={(e) => setFovOrientation(Number(e.target.value))}
+        >
+          <option value={FovOrientation.Horizontal}>Horizontal</option>
+          <option value={FovOrientation.Vertical}>Vertical</option>
+          <option value={FovOrientation.Diagonal}>Diagonal</option>
         </select>
       </label>
 
@@ -111,12 +125,12 @@ const App: Component = () => {
       </label>
 
       <label class="flex gap-2 text-white text-sm items-baseline">
-        Pixel jitter
+        Jitter strength
         <input
           class="m-0"
-          type="checkbox"
-          checked={store.pixelJitter}
-          onChange={(e) => setPixelJitter(e.target.checked)}
+          type="number"
+          value={store.jitterStrength}
+          onChange={(e) => setJitterStrength(Number(e.target.value))}
         />
       </label>
 

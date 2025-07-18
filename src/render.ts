@@ -11,9 +11,10 @@ import {
   renderPass,
   renderPipeline,
   writeUint32Buffer,
-  writeVec3fBuffer,
+  writeVec2fBuffer,
 } from './gpu';
 import {
+  FovOrientation,
   incrementCounter,
   LensShape,
   prevViewInv,
@@ -187,11 +188,12 @@ createEffect(() => {
 
       const viewport = vec2u(${store.view[0]}, ${store.view[1]});
       const viewportf = vec2f(viewport);
+      const exposure = ${store.exposure};
 
       fn getColor(idx: u32, pos: vec2f) -> vec3f {
         if ${store.blitView == 'image'} {
           let value = imageBuffer[idx];
-          return value.rgb / value.w; 
+          return value.rgb / value.w * exposure; 
         } else if ${store.blitView == 'prevImage'} {
           let value = prevImageBuffer[idx];
           return value.rgb / value.w; 
@@ -639,29 +641,51 @@ const bvh = () => /* wgsl */ `
 
 const raygen = () => /* wgsl */ `
   const cameraFovAngle = ${store.fov};
-  const cameraRayZ = -1/tan(cameraFovAngle / 2.f);
+  const cameraRayZ = -1/tan(cameraFovAngle / 2);
   const paniniDistance = ${store.paniniDistance};
   const lensFocusDistance = ${store.focusDistance};
   const circleOfConfusionRadius = ${store.circleOfConfusion};
   const projectionType = ${store.projectionType};
-  const verticalCompression = 1.;
+  const verticalCompression = ${store.verticalCompression};
+  const fovOrientation = ${store.fovOrientation};
 
   fn pinholeRayDirection(pixel: vec2f) -> vec3f {
     return normalize(vec3(pixel, cameraRayZ));
   }
 
-  fn paniniRayDirection(pixel: vec2f) -> vec3f {
-    let halfFOV = cameraFovAngle / 2.f;
-    let p = vec2(sin(halfFOV), cos(halfFOV) + paniniDistance);
-    let M = sqrt(dot(p, p));
-    let halfPaniniFOV = atan2(p.x, p.y);
-    let hvPan = pixel * vec2(halfPaniniFOV, halfFOV);
-    let x = sin(hvPan.x) * M;
-    let z = cos(hvPan.x) * M - paniniDistance;
-    let y = tan(hvPan.y) * (z + verticalCompression);
-    // let y = tan(hvPan.y) * (z + pow(max(0., (3. * cameraFovAngle/PI - 1.) / 8.), 0.92));
+  fn paniniRayDirection(pixel: vec2f) -> vec3f {    
+    let _pixel = (pixel * viewportf.x + vec2f(1)) / viewportf.y;
+    let half_fov = cameraFovAngle / 2.0;
+    let hv = _pixel * half_fov;
+    let half_panini_fov = atan2(sin(half_fov), cos(half_fov) + paniniDistance);
+    let hv_pan = hv * half_panini_fov; 
 
-    return normalize(vec3(x, y, z));
+    let M = sqrt(1.0 - square(sin(hv_pan.x) * paniniDistance)) + paniniDistance * cos(hv_pan.x);
+    let x = sin(hv_pan.x) * M;
+    let z = (cos(hv_pan.x) * M) - paniniDistance;
+    
+    let y = tan(hv_pan.y) * (z + paniniDistance * (1.0 - verticalCompression));
+
+    return normalize(vec3<f32>(x, y, -z));
+  }
+
+  fn square(x: f32) -> f32 {
+    return x * x;
+  }
+
+  fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
+    return a * (1.0 - t) + b * t;
+  }
+
+  fn fisheyeRayDirection(pixel: vec2f) -> vec3f {
+    let clampedHalfFOV = cameraFovAngle / 2;
+    let angle = pixel * clampedHalfFOV;
+
+    return normalize(vec3(
+      -sin(angle.x), 
+      -sin(angle.y) * cos(angle.x), 
+      cos(angle.y) * cos(angle.x)
+    ));
   }
 
   fn orthographicRayDirection(uv: vec2f) -> vec3f {
@@ -670,9 +694,10 @@ const raygen = () => /* wgsl */ `
 
   fn thinLensRay(dir: vec3f, uv: vec2f) -> Ray {
     let pos = vec3(uv * circleOfConfusionRadius, 0.f);
+    let focusPoint = -dir * lensFocusDistance / dir.z;
     return Ray(
       pos,
-      normalize(dir * lensFocusDistance - pos)
+      normalize(focusPoint - pos)
     );
   }
 
@@ -686,6 +711,9 @@ const raygen = () => /* wgsl */ `
       }
       case ${ProjectionType.Orthographic}: {
         return orthographicRayDirection(uv);
+      }
+      case ${ProjectionType.Fisheye}: {
+        return fisheyeRayDirection(uv);
       }
       default: {
         return vec3(0);
@@ -712,7 +740,16 @@ const raygen = () => /* wgsl */ `
   }
 
   fn cameraRay(pos: vec2f, view: mat4x4f) -> Ray {
-    let uv = (2. * pos - viewportf) / viewportf.x;
+    var uv = (2. * pos - viewportf);
+
+    if ${store.fovOrientation} == ${FovOrientation.Vertical} {
+      uv /= viewportf.y;
+    } else if ${store.fovOrientation} == ${FovOrientation.Horizontal} {
+      uv /= viewportf.x;
+    } else if ${store.fovOrientation} == ${FovOrientation.Diagonal} {
+      uv /= length(viewportf);
+    }
+
     let rayDirection = cameraRayDirection(uv);
     
     let ray = thinLensRay(rayDirection, sampleLens());
@@ -1163,7 +1200,7 @@ const computeColor = /* wgsl */ `
       }
     }
 
-    return stack[top].color.rgb * 2;
+    return stack[top].color.rgb;
   }
   
   fn in_shadow(ray: Ray, mag_sq: f32) -> f32 {
@@ -1606,21 +1643,17 @@ let frameCounter = 0;
 export async function renderFrame(now: number) {
   const rate = store.reprojectionRate;
   const updatePrev =
-    store.debugReprojection || true
-      ? frameCounter % rate === 0
-      : frameCounter % rate === 0 || store.counter !== 0;
+    rate === 0 ||
+    frameCounter % rate === 0 ||
+    (store.debugReprojection || true ? false : store.counter !== 0);
   frameCounter = (frameCounter + 1) % rate;
   writeUint32Buffer(seedUniformBuffer, Math.random() * 0xffffffff);
   writeUint32Buffer(counterUniformBuffer, store.counter);
   writeUint32Buffer(updatePrevUniformBuffer, updatePrev ? 1 : 0);
-  if (updatePrev && store.pixelJitter) {
-    const jitter = vec3.fromValues(
-      Math.random() - 0.5,
-      Math.random() - 0.5,
-      Math.random() - 0.5
-    );
-    // vec3.scale(jitter, jitter, 0.01);
-    writeVec3fBuffer(jitterBuffer, jitter);
+  if (updatePrev) {
+    const jitter = vec2.fromValues(Math.random() - 0.5, Math.random() - 0.5);
+    vec2.scale(jitter, jitter, store.jitterStrength);
+    writeVec2fBuffer(jitterBuffer, jitter);
   }
   incrementCounter();
   const view = viewMatrix();
