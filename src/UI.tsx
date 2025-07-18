@@ -18,6 +18,7 @@ import {
   setShadingType,
   ShadingType,
   store,
+  setResolutionScale,
 } from './store';
 import { useSmoothedValue } from './utils';
 
@@ -172,6 +173,16 @@ const App: Component = () => {
           type="number"
           value={store.scale}
           onChange={(e) => setScale(Number(e.target.value))}
+        />
+      </label>
+
+      <label class="flex gap-2 text-white text-sm items-baseline">
+        Resolution scale
+        <input
+          class="m-0"
+          type="number"
+          value={store.resolutionScale}
+          onChange={(e) => setResolutionScale(Number(e.target.value))}
         />
       </label>
 

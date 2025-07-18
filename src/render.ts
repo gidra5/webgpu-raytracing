@@ -112,8 +112,12 @@ const resize = () => {
   setView(vec2.fromValues(canvas.width, canvas.height));
 };
 
-resize();
-window.addEventListener('resize', resize);
+createEffect<() => void>((destroy) => {
+  destroy?.();
+  resize();
+  window.addEventListener('resize', resize);
+  return () => window.removeEventListener('resize', resize);
+});
 
 createEffect<GPUBuffer[]>((prevBuffers) => {
   if (prevBuffers) prevBuffers.forEach((b) => b.destroy());
@@ -637,6 +641,7 @@ const bvh = () => /* wgsl */ `
 
 const raygen = () => /* wgsl */ `
   const cameraFovAngle = ${store.fov};
+  const cameraFovDistance = ${(store.fov / Math.PI) * 4};
   const cameraRayZ = -1/tan(cameraFovAngle / 2);
   const paniniDistance = ${store.paniniDistance};
   const lensFocusDistance = ${store.focusDistance};
@@ -649,10 +654,9 @@ const raygen = () => /* wgsl */ `
     return normalize(vec3(pixel, cameraRayZ));
   }
 
-  fn paniniRayDirection(pixel: vec2f) -> vec3f {    
-    let _pixel = (pixel * viewportf.x + vec2f(1)) / viewportf.y;
+  fn paniniRayDirection(pixel: vec2f) -> vec3f {
     let half_fov = cameraFovAngle / 2.0;
-    let hv = _pixel * half_fov;
+    let hv = pixel * half_fov;
     let half_panini_fov = atan2(sin(half_fov), cos(half_fov) + paniniDistance);
     let hv_pan = hv * half_panini_fov; 
 
@@ -717,6 +721,13 @@ const raygen = () => /* wgsl */ `
     }
   }
 
+  fn cameraRayPosition(uv: vec2f) -> vec3f {
+    if projectionType == ${ProjectionType.Orthographic} {
+      return vec3(uv * cameraFovDistance, 0);
+    }
+    return vec3(0);
+  }
+
   fn ray_transform(_ray: Ray, view: mat4x4f) -> Ray {
     var ray = _ray;
     let ray_pos = view * vec4(ray.pos, 1.);
@@ -748,7 +759,8 @@ const raygen = () => /* wgsl */ `
 
     let rayDirection = cameraRayDirection(uv);
     
-    let ray = thinLensRay(rayDirection, sampleLens());
+    var ray = thinLensRay(rayDirection, sampleLens());
+    ray.pos += cameraRayPosition(uv);
     return ray_transform(ray, view);
   }
 `;
@@ -1105,7 +1117,7 @@ const reproject = () => /* wgsl */ `
   }
 `;
 
-const computeColor = /* wgsl */ `
+const computeColor = () => /* wgsl */ `
   fn pixelHitDist(idx: u32, ray: Ray) -> f32 {
     var hit: BVHIntersectionResult;
     hit.hit = false;
@@ -1406,7 +1418,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${scene()}
     ${raygen()}
     ${reproject()}
-    ${computeColor}
+    ${computeColor()}
     ${bilinearInterpolation}
     ${imageSampler}
     ${geometrySampler()}

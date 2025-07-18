@@ -56,17 +56,17 @@ const [store, setStore] = createStore({
   samplesPerPoint: 1,
   samplesPerBounce: 1,
 
-  fov: Math.PI / 2,
+  fov: (Math.PI * 2) / 3,
   fovOrientation: FovOrientation.Horizontal,
   focusDistance: 4,
   circleOfConfusion: 0,
-  paniniDistance: 0,
+  paniniDistance: 1,
   verticalCompression: 0,
   exposure: 2,
   gamma: 1,
   ambience: 0.1,
   shadingType: ShadingType.Phong,
-  projectionType: ProjectionType.Perspective,
+  projectionType: ProjectionType.Panini,
   lensShape: LensShape.Circle,
   tonemapping: Tonemapping.None,
 
@@ -191,6 +191,11 @@ export { store };
 
 export const setScale = (scale: number) => {
   setStore('scale', scale);
+  resetCounter();
+};
+
+export const setResolutionScale = (scale: number) => {
+  setStore('resolutionScale', scale);
   resetCounter();
 };
 
