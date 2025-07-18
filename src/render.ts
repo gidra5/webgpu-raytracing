@@ -158,13 +158,10 @@ createEffect(() => {
   const { pipeline, bindGroups } = renderPipeline({
     vertexShader: () => /* wgsl */ `
       // xy pos + uv
-      const FULLSCREEN_QUAD = array<vec4<f32>, 6>(
-        vec4(-1, 1, 0, 0),
-        vec4(-1, -1, 0, 1),
-        vec4(1, -1, 1, 1),
-        vec4(-1, 1, 0, 0),
-        vec4(1, -1, 1, 1),
-        vec4(1, 1, 1, 0)
+      const FULLSCREEN_QUAD = array<vec4<f32>, 3>(
+        vec4(-1, 3, 0, 2),
+        vec4(-1, -1, 0, 0),
+        vec4(3, -1, 2, 0),
       );
 
       struct VertexOutput {
@@ -231,8 +228,7 @@ createEffect(() => {
       }
 
       @fragment
-      fn main(@location(0) _uv: vec2f) -> @location(0) vec4f {
-        let uv = vec2f(_uv.x, 1 - _uv.y); // flip y
+      fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
         let pos = uv * viewportf;
         let upos = vec2u(pos);
         let idx = upos.y * viewport.x + upos.x;
@@ -251,7 +247,7 @@ createEffect(() => {
   const bundle = renderBundlePass({}, (renderPass) => {
     renderPass.setPipeline(pipeline);
     bindGroups.forEach((bindGroup, i) => renderPass.setBindGroup(i, bindGroup));
-    renderPass.draw(6);
+    renderPass.draw(3);
   });
 
   setBlitRenderBundle(bundle);
