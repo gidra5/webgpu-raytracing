@@ -8,6 +8,7 @@ import MTLFile from './mtl';
 import { makeShaderDataDefinitions, makeStructuredView } from 'webgpu-utils';
 import parseExr from 'parse-exr';
 import parseHdr from 'parse-hdr';
+import { preprocess as preprocessSkybox } from './skybox';
 
 type Point = {
   position: vec3;
@@ -93,12 +94,15 @@ export const loadModels = async () => {
     const { Kd, Ke } = mtl;
     console.log(mtl);
 
-    if (mtl.name === 'Light')
+    if (mtl.name === 'Light') {
+      const emission = vec3.fromValues(1, 1, 1);
+      vec3.scale(emission, emission, 0.25e9);
       return {
         color: vec3.fromValues(0, 0, 0),
-        emission: vec3.fromValues(1, 1, 1),
+        emission: emission,
         name: mtl.name,
       };
+    }
 
     return {
       color: vec3.fromValues(Kd.red, Kd.green, Kd.blue),
@@ -257,15 +261,6 @@ const loadMaterialToBuffer = async (
     color: material.color,
     emission: material.emission,
   });
-
-  // console.log(
-  //   material.name,
-  //   new Float32Array(
-  //     mapped,
-  //     offset * Float32Array.BYTES_PER_ELEMENT,
-  //     materialSize
-  //   )
-  // );
 };
 
 export const loadMaterialsToBuffers = async (materials: Material[]) => {
@@ -348,7 +343,10 @@ const loadHdr = async (url: string) => {
 export const loadSkybox = async () => {
   const url = await import('@assets/qwantani_afternoon_puresky_4k.exr?url');
   const data = await loadExr(url.default);
-  console.log(data);
+
+  console.log('preprocessing skybox');
+
+  const importanceSampleBuffer = await preprocessSkybox(data);
 
   const texture = createTexture(
     {
@@ -364,5 +362,19 @@ export const loadSkybox = async () => {
     }
   );
 
-  return texture;
+  const importanceSampleTexture = createTexture(
+    {
+      data: importanceSampleBuffer,
+      width: data.width,
+      height: data.height,
+    },
+    {
+      format: 'rgba32float',
+      colorSpace: 'srgb',
+      viewDimension: '2d',
+      dimension: '2d',
+    }
+  );
+
+  return { texture, importanceSampleTexture };
 };

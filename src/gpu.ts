@@ -252,7 +252,6 @@ export const createTexture = (
 ) => {
   const texture = device.createTexture({
     size: [source.width, source.height, 1],
-    // For float data from EXR, use 'rgba32float'
     format: 'rgba32float',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   });
@@ -480,7 +479,7 @@ export const renderPipeline = (
   return { pipeline, bindGroups: bindingGroups(pipeline) };
 };
 
-type ComputePipelineDescriptor = {
+export type ComputePipelineDescriptor = {
   shader: (builder: PipelineBuilder) => string;
 } & Omit<GPUProgrammableStage, 'module'>;
 type ComputePipelineBuilderResult = {

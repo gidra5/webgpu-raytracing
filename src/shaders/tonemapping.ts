@@ -1,6 +1,7 @@
 export default /* wgsl */ `
   fn linear_to_srgb(x: vec3f) -> vec3f {
-    let rgb = clamp(x, vec3(0.), vec3(1.));
+    // let rgb = clamp(x, vec3(0.), vec3(1.));
+    let rgb = x;
       
     return mix(
       pow(rgb, vec3(1.0 / 2.4)) * 1.055 - 0.055,
@@ -10,7 +11,8 @@ export default /* wgsl */ `
   }
 
   fn srgb_to_linear(x: vec3f) -> vec3f {
-    let rgb = clamp(x, vec3(0.), vec3(1.));
+    // let rgb = clamp(x, vec3(0.), vec3(1.));
+    let rgb = x;
       
     return mix(
       pow(((rgb + 0.055) / 1.055), vec3(2.4)),
@@ -27,7 +29,8 @@ export default /* wgsl */ `
     let c = 2.43;
     let d = 0.59;
     let e = 0.14;
-    return saturate(x * (a * x + b)) / (x * (c * x + d) + e);
+    // return saturate(x * (a * x + b)) / (x * (c * x + d) + e);
+    return clamp(x * (a * x + b) / (x * (c * x + d) + e), vec3(0.), vec3(1.));
   }
 
   // Filmic Tonemapping Operators http://filmicworlds.com/blog/filmic-tonemapping-operators/

@@ -38,7 +38,6 @@ import {
   loadModelsToBuffers,
   loadSkybox,
 } from './scene';
-import { wait } from './utils';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const context = canvas.getContext('webgpu');
@@ -84,8 +83,13 @@ const prevViewBuffer2 = createUniformBuffer(
   GPUBufferUsage.COPY_DST
 );
 
+console.log('loading models');
 const { models, materials } = await loadModels();
+
+console.log('loading materials');
 const { materialsBuffer } = await loadMaterialsToBuffers(materials);
+
+console.log('loading scene');
 const { facesBuffer, bvhBuffer, bvhCount, modelsBuffer } =
   // await loadModelsToBuffers(models);
   await loadModelsToBuffers([
@@ -98,7 +102,12 @@ const { facesBuffer, bvhBuffer, bvhCount, modelsBuffer } =
     models[3],
     models[4],
   ]);
-const skybox = await loadSkybox();
+
+console.log('loading skybox');
+const {
+  texture: skyboxTexture,
+  importanceSampleTexture: skyboxImportanceSampleTexture,
+} = await loadSkybox();
 const skyboxSampler = device.createSampler();
 
 const seedUniformBuffer = createUniformBuffer(4);
@@ -237,9 +246,8 @@ createEffect(() => {
         let upos = vec2u(pos);
         let idx = upos.y * viewport.x + upos.x;
         let color = getColor(idx, pos);
-        let gammaCorrected = gamma(color, 1 / ${store.gamma});
-        let tonemapped = tonemap(gammaCorrected);
-        return vec4(tonemapped, 1.0);
+        let tonemapped = tonemap(color);
+        return vec4(linear_to_srgb(tonemapped), 1.0);
       }
     `,
     primitive: {
@@ -256,9 +264,6 @@ createEffect(() => {
 
   setBlitRenderBundle(bundle);
 });
-
-const COMPUTE_WORKGROUP_SIZE_X = 16;
-const COMPUTE_WORKGROUP_SIZE_Y = 16;
 
 const structs = /* wgsl */ `
   struct Geometry {
@@ -1156,6 +1161,24 @@ const computeColor = () => /* wgsl */ `
     return color / ${store.samplesPerPoint};
   }
 
+  // Function to convert UV coordinates to a 3D direction vector
+  fn uv_to_direction(uv: vec2<f32>) -> vec3<f32> {
+    // Inverse of the equirectangular projection
+    let phi = (uv.x * 2 - 1) * PI; 
+    let theta = (1 - uv.y) * PI;
+
+    let sinTheta = sin(theta);
+    let cosTheta = sqrt(1 - sinTheta * sinTheta);
+    let sinPhi = sin(phi);
+    let cosPhi = sqrt(1 - sinPhi * sinPhi);
+
+    // Standard spherical coordinates to Cartesian (assuming Y-up)
+    let x = sinTheta * cosPhi;
+    let y = cosTheta;
+    let z = sinTheta * sinPhi;
+    return normalize(vec3<f32>(x, y, z));
+  }
+
   struct BounceStackEntry {
     ray: Ray,
     maxDist: f32,
@@ -1171,44 +1194,60 @@ const computeColor = () => /* wgsl */ `
     top = 0;
     stack[top] = BounceStackEntry(_ray, maxDist, vec4f(0), vec3f(1));
 
-    while (top < maxBounces - 1) {
-      // shoot a ray out into the world
-      let entry = stack[top];
-      let hit = scene(entry.ray, entry.maxDist);
-      var color = entry.color.rgb;
-      var throughput = entry.throughput;
-      if top == 0 {
-        *_hit = hit;
-      }
-      if !hit.hit {
-        stack[top].color += vec4f(sampleSkybox(entry.ray.dir) * throughput, 1);
-        break;
-      }
-
-      let face = faces[hit.faceIdx];
-      let material = materials[face.materialIdx];
-      color += material.emission * throughput;
-      throughput *= material.color;
-
-      let normal = faceNormal(face, hit.barycentric.yz);
-      let ray = Ray(
-        facePointOffset(face, hit.barycentric.yz),
-        sample_cosine_weighted_hemisphere(random_2(), 1, normal)
-      );
-      top++;
-      stack[top] = BounceStackEntry(ray, f32max, vec4f(color, 1), throughput);
-
-      // russian roulette
-      {
-        let p = max(throughput.x, max(throughput.y, throughput.z));
-        if random_1() > p {
-          break;
+    while (stack[top].color.w < ${store.samplesPerBounce}) {
+      while (top < maxBounces - 1) {
+        // shoot a ray out into the world
+        let entry = stack[top];
+        let hit = scene(entry.ray, entry.maxDist);
+        var color = select(entry.color.rgb / entry.color.w, entry.color.rgb, entry.color.w == 0);
+        var throughput = entry.throughput;
+        if top == 0 {
+          *_hit = hit;
         }
-        stack[top].throughput /= p;
+        if !hit.hit {
+          stack[top].color += vec4f(sampleSkybox(entry.ray.dir) * throughput, 1);
+          break;
+        } else {
+          let face = faces[hit.faceIdx];
+          let material = materials[face.materialIdx];
+          color += material.emission * throughput;
+          throughput *= material.color;
+    
+          let normal = faceNormal(face, hit.barycentric.yz);
+          let ray = Ray(
+            facePointOffset(face, hit.barycentric.yz),
+            sample_cosine_weighted_hemisphere(random_2(), 1, normal)
+          );
+  
+          top++;
+          stack[top] = BounceStackEntry(ray, f32max, vec4f(color, 1), throughput);
+  
+          {
+            let sample = textureSampleLevel(skyboxImportanceSampleTexture, skyboxSampler, random_2(), 0);
+            let uv = sample.xy;
+            let pdf = sample.z;
+            let dir = uv_to_direction(uv);
+            let ray = Ray(ray.pos, dir);
+            if !sceneAnyHit(ray, f32max) {
+              let color = textureSampleLevel(skyboxTexture, skyboxSampler, uv, 0);
+              stack[top].color += vec4f(srgb_to_linear(color.xyz) * throughput / pdf, 1);
+            }
+          }
+    
+          // russian roulette
+          {
+            let p = max(throughput.x, max(throughput.y, throughput.z));
+            if random_1() > p {
+              break;
+            }
+            stack[top].throughput /= p;
+          }
+        }
       }
     }
 
-    return stack[top].color.rgb;
+    let color = stack[top].color;
+    return color.rgb / color.w;
   }
   
   fn in_shadow(ray: Ray, mag_sq: f32) -> f32 {
@@ -1375,6 +1414,8 @@ const matInv = /* wgsl */ `
   }
 `;
 
+const COMPUTE_WORKGROUP_SIZE_X = 16;
+const COMPUTE_WORKGROUP_SIZE_Y = 16;
 const [computePipeline, computeBindGroups] = reactiveComputePipeline({
   shader: (x) => /* wgsl */ `
     enable subgroups;
@@ -1400,7 +1441,8 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindVarBuffer('uniform', 'jitter: vec2f', jitterBuffer)}
     ${x.bindVarBuffer('uniform', 'prevJitter: vec2f', prevJitterBuffer)}
 
-    ${x.bindTexture('skyboxTexture', 'unfilterable-float', skybox)}
+    ${x.bindTexture('skyboxTexture', 'unfilterable-float', skyboxTexture)}
+    ${x.bindTexture('skyboxImportanceSampleTexture', 'unfilterable-float', skyboxImportanceSampleTexture)}
     ${x.bindSampler('skyboxSampler', 'non-filtering', skyboxSampler)}
 
     const _reproject = ${store.reprojectionRate > 0};
@@ -1409,6 +1451,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     const aspect = viewportf.y / viewportf.x;
     const viewportN = viewportf / viewportf.x; // viewport normalized
 
+    ${tonemapping}
     ${rng}
     ${intervals}
     ${bvh()}
@@ -1450,8 +1493,15 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
 
       let pos = vec2f(upos) + jitter;
 
+      // let uv = vec2f(upos) / viewportf;
+      // imageBuffer[idx] = vec4f(vec3f(textureSampleLevel(skyboxImportanceSampleTexture, skyboxSampler, uv, 0).z) * 4e+14, 1);
+      // imageBuffer[idx] = vec4f(vec2f(textureSampleLevel(skyboxImportanceSampleTexture, skyboxSampler, uv, 0).xy), 0, 1); 
+      // imageBuffer[idx] = vec4f(textureSampleLevel(skyboxImportanceSampleTexture, skyboxSampler, uv, 0).xyz, 1);
+      // imageBuffer[idx] = vec4f(textureSampleLevel(skyboxTexture, skyboxSampler, uv, 0).xyz, 1);
+
       rng_state = seed + idx;
       if counter == 0u && !_reproject {
+        // setupImportanceSampleSkybox();
         imageBuffer[idx] = vec4f(0);
         geometryBuffer[idx].position = vec3f(0);
         geometryBuffer[idx].faceIdx = 0;
