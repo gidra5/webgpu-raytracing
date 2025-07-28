@@ -41,7 +41,8 @@ type BlitView =
   | 'depth'
   | 'prevDepth'
   | 'depthDelta'
-  | 'normals';
+  | 'normals'
+  | 'reproject';
 
 const [store, setStore] = createStore({
   loadingTitle: '' as string | null,

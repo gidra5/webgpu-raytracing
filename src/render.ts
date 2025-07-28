@@ -200,14 +200,24 @@ createEffect(() => {
       const viewportf = vec2f(viewport);
       const exposure = ${store.exposure};
 
+      fn imageColor(color: vec3f) -> vec3f {
+        let tonemapped = tonemap(color);
+        return linear_to_srgb(tonemapped);
+      }
+
       fn getColor(idx: u32, pos: vec2f) -> vec3f {
         if ${store.blitView == 'image'} {
           let value = imageBuffer[idx];
-          return value.rgb / value.w * exposure; 
+          let color = value.rgb / value.w * exposure;
+          return imageColor(color); 
         } else if ${store.blitView == 'prevImage'} {
           let value = prevImageBuffer[idx];
-          return value.rgb / value.w; 
+          let color = value.rgb / value.w * exposure;
+          return imageColor(color); 
         } else if ${store.blitView == 'normals'} {
+          let value = imageBuffer[idx];
+          return value.rgb; 
+        } else if ${store.blitView == 'reproject'} {
           let value = imageBuffer[idx];
           return value.rgb; 
         } else if ${store.blitView == 'depth'} {
@@ -245,9 +255,7 @@ createEffect(() => {
         let pos = uv * viewportf;
         let upos = vec2u(pos);
         let idx = upos.y * viewport.x + upos.x;
-        let color = getColor(idx, pos);
-        let tonemapped = tonemap(color);
-        return vec4(linear_to_srgb(tonemapped), 1.0);
+        return vec4f(getColor(idx, pos),1);
       }
     `,
     primitive: {
@@ -1025,7 +1033,8 @@ const reproject = () => /* wgsl */ `
   }
 
   fn reprojectPoint(p: vec3f, view: mat4x4f) -> vec2f {
-    let duv = reprojectionFrustrum * (p - view[3].xyz);
+    let pp = prevViewInvMatrix * vec4(p, 1.);
+    let duv = reprojectionFrustrum * pp.xyz; 
     return duv.xy / duv.zw;
   }
 
@@ -1064,9 +1073,10 @@ const reproject = () => /* wgsl */ `
   }
 
 
-  const threshold = 0.00000001;
+  const threshold = 2e-5;
 
-  fn reproject(p: vec3f, c: vec3f) -> ReprojectionResult {
+  // current uv, projected point, latest color for that point
+  fn reproject(cuv: vec2f, p: vec3f, c: vec3f) -> ReprojectionResult {
     let view = prevViewMatrix2;
     let uv = reprojectPoint(p, view);
     if any(uv < vec2(0)) || any(uv > vec2(viewportf)) { // outside viewport
@@ -1078,25 +1088,53 @@ const reproject = () => /* wgsl */ `
     }
 
     var min_uv = uv;
-    var dp = sampleGeometryAll(min_uv, &prevGeometryBuffer).position - p;
+    var uv_p = sampleGeometryAll(min_uv, &prevGeometryBuffer).position;
+    var dp = uv_p - p;
     var d = dot(dp, dp);
 
-    if !(d < threshold) {
-      var step = 0.1;
-      for (var i = 0u; i < 128u && d >= threshold; i = i + 1u) {
-        if i % 16 == 0 {
-          step -= 0.005;
-        }
-        let next_uv = min_uv - sample_insquare(random_2()) * step;
-        let next_dp = sampleGeometryAll(next_uv, &prevGeometryBuffer).position - p; 
+    min_uv = reprojectPoint(uv_p, view);
+    uv_p = sampleGeometryAll(min_uv, &prevGeometryBuffer).position;
+    dp = uv_p - p;
+    d = dot(dp, dp);
+
+    let step = 1.;
+    let rate = 5e-3;
+    for (var i = 0u; i < 64u && d >= threshold; i = i + 1u) {
+      {
+        let old_p2 = sampleGeometryAll(min_uv + vec2f(1, 0) * step, &prevGeometryBuffer).position;
+        let old_p3 = sampleGeometryAll(min_uv + vec2f(0, 1) * step, &prevGeometryBuffer).position;
+        let dpdu = 2 * dot(dp, (old_p2 - uv_p)) / step;
+        let dpdv = 2 * dot(dp, (old_p3 - uv_p)) / step;
+        let next_uv = min_uv - (vec2f(dpdu, dpdv) + sample_insquare(random_2())) * rate;
+        let next_uv_p = sampleGeometryAll(next_uv, &prevGeometryBuffer).position; 
+        let next_dp = next_uv_p - p; 
         let next_d = dot(next_dp, next_dp);
         if next_d < d {
+          uv_p = next_uv_p;
+          dp = next_dp;
+          d = next_d;
+          min_uv = next_uv;
+        }
+      }
+      { 
+        let next_uv = min_uv - sample_insquare(random_2()) * rate;
+        let next_uv_p = sampleGeometryAll(next_uv, &prevGeometryBuffer).position; 
+        let next_dp = next_uv_p - p; 
+        let next_d = dot(next_dp, next_dp);
+        if next_d < d {
+          uv_p = next_uv_p;
           dp = next_dp;
           d = next_d;
           min_uv = next_uv;
         }
       }
     }
+    
+    // return ReprojectionResult(vec4f(0, 0, d, 1) * 1e9);
+    // return ReprojectionResult(vec4f((cuv - min_uv), d, 1) * 2e3);
+    // return ReprojectionResult(vec4f((
+    //   sampleGeometryAll(cuv, &prevGeometryBuffer).position - 
+    //   p) * 1e32, 1)); 
 
     if !(d < threshold) { // didn't converge fast enough, rejecting
       if ${store.debugReprojection} {
@@ -1491,7 +1529,25 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
         return;
       }
 
-      let pos = vec2f(upos) + jitter;
+      let fpos = vec2f(upos);
+      let pos = fpos + jitter;
+
+      if ${store.debugReprojection} {
+        let ray = cameraRay(pos, viewMatrix);
+        let hitDist = pixelHitDist(idx, ray);
+        var hit: BVHIntersectionResult;
+        hit = scene(ray, hitDist);
+
+        let point = ray.pos + ray.dir * hit.barycentric.x;
+        geometryBuffer[idx].position = point;
+        geometryBuffer[idx].faceIdx = hit.faceIdx;
+        geometryBuffer[idx].objectIdx = hit.objectIdx;
+
+        let result = reproject(fpos, point, vec3f(0));
+        imageBuffer[idx] = result.color;
+
+        return;
+      }
 
       // let uv = vec2f(upos) / viewportf;
       // imageBuffer[idx] = vec4f(vec3f(textureSampleLevel(skyboxImportanceSampleTexture, skyboxSampler, uv, 0).z) * 4e+14, 1);
@@ -1536,7 +1592,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
           let face = faces[hit.faceIdx];
           let uv = hit.barycentric.yz;
           let point = facePointOffset(face, uv);
-          let result = reproject(point, color);
+          let result = reproject(fpos, point, color);
           if result.color.w > 0 {
             color += result.color.xyz / result.color.w;
             samples++;
@@ -1545,16 +1601,14 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       }
 
       if _reproject {
-        let result = reproject(point, color);
+        let result = reproject(fpos, point, color);
         imageBuffer[idx] = result.color;
       }
 
-      if !${store.debugReprojection} {
-        if ${store.blitView == 'normals'} {
-          imageBuffer[idx] = vec4f(color, 1);
-        } else {
-          imageBuffer[idx] += vec4f(color, f32(samples));
-        }
+      if ${store.blitView == 'normals'} {
+        imageBuffer[idx] = vec4f(color, 1);
+      } else {
+        imageBuffer[idx] += vec4f(color, f32(samples));
       }
     }
   `,

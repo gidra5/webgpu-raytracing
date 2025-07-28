@@ -79,6 +79,7 @@ const App: Component = () => {
           <option value="prevDepth">Prev Depth</option>
           <option value="depthDelta">Depth Delta</option>
           <option value="normals">Normals</option>
+          <option value="reproject">Reproject</option>
         </select>
       </label>
       <label class="flex gap-2 text-white text-sm items-baseline">
