@@ -941,15 +941,47 @@ const scene = () => /* wgsl */ `
   fn uv2toUV3(uv: vec2f) -> vec3f {
     return vec3f(1-uv.x-uv.y, uv.x, uv.y);
   }
+`;
+
+const skybox = /* wgsl */ `
+  // Function to sample the skybox
+  fn sampleSkyboxTexture(uv: vec2f) -> vec3f {
+    let color = textureSampleLevel(skyboxTexture, skyboxSampler, uv, 0);
+    // let color = vec4f(0);
+    return srgb_to_linear(color.xyz);
+  }
 
   // Function to sample the skybox
   fn sampleSkybox(dir: vec3f) -> vec3f {
-    let u = (atan2(dir.z, dir.x) * INV_PI + 1) * 0.5; 
+    let u = (atan2(dir.z, dir.x) * INV_PI + 1) * 0.5;
     let v = 1 - acos(dir.y) * INV_PI;
     let uv = vec2<f32>(u, v);
 
-    let color = textureSampleLevel(skyboxTexture, skyboxSampler, uv, 0);
-    return color.xyz;
+    return sampleSkyboxTexture(uv);
+  }
+  
+  fn importanceSampleSkybox(uv: vec2f) -> vec3f {
+    let sample = textureSampleLevel(skyboxImportanceSampleTexture, skyboxSampler, uv, 0);
+    // let sample = vec4f(0);
+    return sample.xyz;
+  }
+
+  // Function to convert UV coordinates to a 3D direction vector
+  fn uv_to_direction(uv: vec2<f32>) -> vec3<f32> {
+    // Inverse of the equirectangular projection
+    let phi = (uv.x * 2 - 1) * PI; 
+    let theta = (1 - uv.y) * PI;
+
+    let sinTheta = sin(theta);
+    let cosTheta = sqrt(1 - sinTheta * sinTheta);
+    let sinPhi = sin(phi);
+    let cosPhi = sqrt(1 - sinPhi * sinPhi);
+
+    // Standard spherical coordinates to Cartesian (assuming Y-up)
+    let x = sinTheta * cosPhi;
+    let y = cosTheta;
+    let z = sinTheta * sinPhi;
+    return normalize(vec3<f32>(x, y, z));
   }
 `;
 
@@ -1073,7 +1105,7 @@ const reproject = () => /* wgsl */ `
   }
 
 
-  const threshold = 2e-5;
+  const threshold = 1e-2;
 
   // current uv, projected point, latest color for that point
   fn reproject(cuv: vec2f, p: vec3f, c: vec3f) -> ReprojectionResult {
@@ -1199,24 +1231,6 @@ const computeColor = () => /* wgsl */ `
     return color / ${store.samplesPerPoint};
   }
 
-  // Function to convert UV coordinates to a 3D direction vector
-  fn uv_to_direction(uv: vec2<f32>) -> vec3<f32> {
-    // Inverse of the equirectangular projection
-    let phi = (uv.x * 2 - 1) * PI; 
-    let theta = (1 - uv.y) * PI;
-
-    let sinTheta = sin(theta);
-    let cosTheta = sqrt(1 - sinTheta * sinTheta);
-    let sinPhi = sin(phi);
-    let cosPhi = sqrt(1 - sinPhi * sinPhi);
-
-    // Standard spherical coordinates to Cartesian (assuming Y-up)
-    let x = sinTheta * cosPhi;
-    let y = cosTheta;
-    let z = sinTheta * sinPhi;
-    return normalize(vec3<f32>(x, y, z));
-  }
-
   struct BounceStackEntry {
     ray: Ray,
     maxDist: f32,
@@ -1261,14 +1275,14 @@ const computeColor = () => /* wgsl */ `
           stack[top] = BounceStackEntry(ray, f32max, vec4f(color, 1), throughput);
   
           {
-            let sample = textureSampleLevel(skyboxImportanceSampleTexture, skyboxSampler, random_2(), 0);
+            let sample = importanceSampleSkybox(random_2());
             let uv = sample.xy;
-            let pdf = sample.z;
             let dir = uv_to_direction(uv);
             let ray = Ray(ray.pos, dir);
             if !sceneAnyHit(ray, f32max) {
-              let color = textureSampleLevel(skyboxTexture, skyboxSampler, uv, 0);
-              stack[top].color += vec4f(srgb_to_linear(color.xyz) * throughput / pdf, 1);
+              let pdf = sample.z;
+              let color = sampleSkyboxTexture(uv);
+              stack[top].color += vec4f(dot(normal, dir) * color.xyz * throughput / pdf, 1); 
             }
           }
     
@@ -1450,6 +1464,47 @@ const matInv = /* wgsl */ `
         a31 * b01 - a30 * b03 - a32 * b00,
         a20 * b03 - a21 * b01 + a22 * b00) * (1 / det);
   }
+
+  // not working
+  fn inverse3(m: mat3x3f) -> mat3x3f {
+    let a00 = m[0][0]; let a01 = m[0][1]; let a02 = m[0][2]; let a03 = 0.;
+    let a10 = m[1][0]; let a11 = m[1][1]; let a12 = m[1][2]; let a13 = 0.;
+    let a20 = m[2][0]; let a21 = m[2][1]; let a22 = m[2][2]; let a23 = 0.;
+    let a30 = 0.; let a31 = 0.; let a32 = 0.; let a33 = 1.;
+
+    let b00 = a00 * a11 - a01 * a10;
+    let b01 = a00 * a12 - a02 * a10;
+    let b02 = a00 * a13 - a03 * a10;
+    let b03 = a01 * a12 - a02 * a11;
+    let b04 = a01 * a13 - a03 * a11;
+    let b05 = a02 * a13 - a03 * a12;
+    let b06 = a20 * a31 - a21 * a30;
+    let b07 = a20 * a32 - a22 * a30;
+    let b08 = a20 * a33 - a23 * a30;
+    let b09 = a21 * a32 - a22 * a31;
+    let b10 = a21 * a33 - a23 * a31;
+    let b11 = a22 * a33 - a23 * a32;
+
+    let det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+
+    return mat3x3f(
+        a11 * b11 - a12 * b10 + a13 * b09,
+        a02 * b10 - a01 * b11 - a03 * b09,
+        a31 * b05 - a32 * b04 + a33 * b03,
+        // a22 * b04 - a21 * b05 - a23 * b03,
+        a12 * b08 - a10 * b11 - a13 * b07,
+        a00 * b11 - a02 * b08 + a03 * b07,
+        a32 * b02 - a30 * b05 - a33 * b01,
+        // a20 * b05 - a22 * b02 + a23 * b01,
+        a10 * b10 - a11 * b08 + a13 * b06,
+        a01 * b08 - a00 * b10 - a03 * b06,
+        a30 * b04 - a31 * b02 + a33 * b00,
+        // a21 * b02 - a20 * b04 - a23 * b00,
+        // a11 * b07 - a10 * b09 - a12 * b06,
+        // a00 * b09 - a01 * b07 + a02 * b06,
+        // a31 * b01 - a30 * b03 - a32 * b00,
+        /* a20 * b03 - a21 * b01 + a22 * b00 */) * (1 / det);
+  }
 `;
 
 const COMPUTE_WORKGROUP_SIZE_X = 16;
@@ -1489,6 +1544,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     const aspect = viewportf.y / viewportf.x;
     const viewportN = viewportf / viewportf.x; // viewport normalized
 
+    ${skybox}
     ${tonemapping}
     ${rng}
     ${intervals}
@@ -1557,7 +1613,6 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
 
       rng_state = seed + idx;
       if counter == 0u && !_reproject {
-        // setupImportanceSampleSkybox();
         imageBuffer[idx] = vec4f(0);
         geometryBuffer[idx].position = vec3f(0);
         geometryBuffer[idx].faceIdx = 0;
@@ -1573,9 +1628,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       color += pixelColor(&hit, ray, hitDist);
       samples++;
 
-      let face = faces[hit.faceIdx];
-      let uv = hit.barycentric.yz;
-      let point = facePointOffset(face, uv);
+      let point = ray.pos + ray.dir * hit.barycentric.x;
       geometryBuffer[idx].position = point;
       geometryBuffer[idx].faceIdx = hit.faceIdx;
       geometryBuffer[idx].objectIdx = hit.objectIdx;
@@ -1591,7 +1644,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
         if _reproject {
           let face = faces[hit.faceIdx];
           let uv = hit.barycentric.yz;
-          let point = facePointOffset(face, uv);
+          let point = ray.pos + ray.dir * hit.barycentric.x;
           let result = reproject(fpos, point, color);
           if result.color.w > 0 {
             color += result.color.xyz / result.color.w;
@@ -1754,10 +1807,9 @@ const rpd: GPURenderPassDescriptor = {
 let frameCounter = 0;
 export async function renderFrame(now: number) {
   const rate = store.reprojectionRate;
-  const updatePrev =
-    rate === 0 ||
-    frameCounter % rate === 0 ||
-    (store.debugReprojection || true ? false : store.counter !== 0);
+  const updatePrev = store.debugReprojection
+    ? rate === 0 || frameCounter % rate === 0
+    : rate === 0 || frameCounter % rate === 0 || store.counter !== 0;
   frameCounter = (frameCounter + 1) % rate;
   writeUint32Buffer(seedUniformBuffer, Math.random() * 0xffffffff);
   writeUint32Buffer(counterUniformBuffer, store.counter);

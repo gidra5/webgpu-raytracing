@@ -9,6 +9,7 @@ import { makeShaderDataDefinitions, makeStructuredView } from 'webgpu-utils';
 import parseExr from 'parse-exr';
 import parseHdr from 'parse-hdr';
 import { preprocess as preprocessSkybox } from './skybox';
+import { store } from './store';
 
 type Point = {
   position: vec3;
@@ -96,7 +97,7 @@ export const loadModels = async () => {
 
     if (mtl.name === 'Light') {
       const emission = vec3.fromValues(1, 1, 1);
-      vec3.scale(emission, emission, 0.25e9);
+      vec3.scale(emission, emission, 1 / store.exposure);
       return {
         color: vec3.fromValues(0, 0, 0),
         emission: emission,

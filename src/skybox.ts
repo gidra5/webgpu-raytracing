@@ -123,7 +123,5 @@ export const preprocess = async (skybox: EXRData) => {
     }
   };
 
-  const skyboxImportanceSampleBuffer = new Float32Array(x());
-
-  return skyboxImportanceSampleBuffer;
+  return new Float32Array(x());
 };

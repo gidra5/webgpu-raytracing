@@ -63,15 +63,16 @@ const [store, setStore] = createStore({
   circleOfConfusion: 0,
   paniniDistance: 1,
   verticalCompression: 0,
-  exposure: 4e-29,
+  exposure: 5e-28,
+  // exposure: 1,
   gamma: 1,
   ambience: 0.1,
   shadingType: ShadingType.Phong,
   projectionType: ProjectionType.Perspective,
   lensShape: LensShape.Circle,
-  tonemapping: Tonemapping.None,
+  tonemapping: Tonemapping.Aces,
 
-  reprojectionRate: 0,
+  reprojectionRate: 1,
 
   jitterStrength: 0,
   resolutionScale: 1,
@@ -140,18 +141,12 @@ export const reprojectionFrustrum = (prevView: Accessor<mat4 | undefined>) =>
     const vfov = Math.atan(tanHFov / aspectRatio); // vertical field of view
     const w = view[15];
     const rayZ = -w / tanHFov;
-    // view[2].xyz is forward direction
-    const forward = vec3.fromValues(
-      view[2 * 4 + 0],
-      view[2 * 4 + 1],
-      view[2 * 4 + 2]
-    );
+    const forward = vec3.fromValues(0, 0, 1);
 
     const cornerRay = (x: number, y: number) => {
       const dir = vec3.fromValues(x, y * aspectRatio, rayZ);
       vec3.normalize(dir, dir);
       const dir4 = vec4.fromValues(dir[0], dir[1], dir[2], 0);
-      vec4.transformMat4(dir4, dir4, view);
       vec3.set(dir, dir4[0], dir4[1], dir4[2]);
       return dir;
     };
