@@ -1115,7 +1115,7 @@ const reproject = () => /* wgsl */ `
   const threshold = 1e-2;
 
   // current uv, projected point, latest color for that point
-  fn reproject(cuv: vec2f, p: vec3f, c: vec3f) -> ReprojectionResult {
+  fn reproject(hit_dist: f32, cuv: vec2f, p: vec3f, c: vec3f) -> ReprojectionResult {
     let uv_error = unprojectPoint(p) - cuv;
     let uv = reprojectPoint(p) - uv_error;
     if any(uv < vec2(0)) || any(uv > vec2(viewportf)) { // outside viewport
@@ -1126,50 +1126,62 @@ const reproject = () => /* wgsl */ `
       }
     }
 
+    let currentGeometry = geometryBuffer[geometryIdx(vec2u(cuv))];
+    let faceIdx = currentGeometry.faceIdx;
+    let objectIdx = currentGeometry.objectIdx;
+
     var min_uv = uv;
     var uv_p = sampleGeometryAll(min_uv, &prevGeometryBuffer).position;
     var dp = uv_p - p;
     var d = dot(dp, dp);
 
-    min_uv = reprojectPoint(uv_p) - uv_error;
-    uv_p = sampleGeometryAll(min_uv, &prevGeometryBuffer).position;
-    dp = uv_p - p;
-    d = dot(dp, dp);
+    // for (var x = -1; x <= 1; x = x + 1) {
+    //   for (var y = -1; y <= 1; y = y + 1) {
+    //     let uv = min_uv + vec2f(f32(x), f32(y));
+    //     let geometry = sampleGeometryAllWithId(uv, &prevGeometryBuffer);
+    //     if 
+    //     let _dp = uv_p - geometry.position;
+    //     let _d = dot(dp, dp);
+    //     if _d < d { 
+    //       min_uv = uv;
+    //       uv_p = geometry.position;
+    //       dp = _dp;
+    //       d = _d;
+    //     }
+    //   }
+    // }
 
-    let step = 1.;
-    let rate = 5e-3;
-    for (var i = 0u; i < 64u && d >= threshold; i = i + 1u) {
-      {
-        let old_p2 = sampleGeometryAll(min_uv + vec2f(1, 0) * step, &prevGeometryBuffer).position;
-        let old_p3 = sampleGeometryAll(min_uv + vec2f(0, 1) * step, &prevGeometryBuffer).position;
-        let dpdu = 2 * dot(dp, (old_p2 - uv_p)) / step;
-        let dpdv = 2 * dot(dp, (old_p3 - uv_p)) / step;
-        let next_uv = min_uv - (vec2f(dpdu, dpdv) + sample_insquare(random_2())) * rate;
-        let next_uv_p = sampleGeometryAll(next_uv, &prevGeometryBuffer).position; 
-        let next_dp = next_uv_p - p; 
-        let next_d = dot(next_dp, next_dp);
-        if next_d < d {
-          uv_p = next_uv_p;
-          dp = next_dp;
-          d = next_d;
-          min_uv = next_uv;
-        }
-      }
-      { 
-        let next_uv = min_uv - sample_insquare(random_2()) * rate;
-        let next_uv_p = sampleGeometryAll(next_uv, &prevGeometryBuffer).position; 
-        let next_dp = next_uv_p - p; 
-        let next_d = dot(next_dp, next_dp);
-        if next_d < d {
-          uv_p = next_uv_p;
-          dp = next_dp;
-          d = next_d;
-          min_uv = next_uv;
-        }
+    {
+      let uv = reprojectPoint(uv_p) - uv_error;
+      let geometry = sampleGeometryAll(uv, &prevGeometryBuffer);
+      // let geometry = sampleGeometryAllWithId(uv, &prevGeometryBuffer, faceIdx, objectIdx);
+      let _dp = geometry.position - p;
+      let _d = dot(_dp, _dp);
+      if _d < d { 
+        min_uv = uv;
+        uv_p = geometry.position;
+        dp = _dp;
+        d = _d;
       }
     }
+
+    // var dx = p - geometryBuffer[quadNeighborXIdx].position;
+    // var dy = p - geometryBuffer[quadNeighborYIdx].position;
+
+    // if quadIdx == 0 || quadIdx == 2 {
+    //   dx = -dx;
+    // }
+    // if quadIdx == 0 || quadIdx == 1 {
+    //   dy = -dy;
+    // }
     
+    // return ReprojectionResult(vec4f((vec3f(1e-4) + dp)/2, 1) * 1e4);
+    // return ReprojectionResult(vec4f(dp, 1) * 1e4);
+    // return ReprojectionResult(vec4f(0, 0, d, 1) * 1e2);
     // return ReprojectionResult(vec4f(0, 0, d, 1) * 1e9);
+    // return ReprojectionResult(vec4f(dx*40, 1));
+    // return ReprojectionResult(vec4f(length(dx), length(dy), 0, 1));
+    // return ReprojectionResult(vec4f((cuv - min_uv), d, 1) * 0.01e1);
     // return ReprojectionResult(vec4f((cuv - min_uv), d, 1) * 2e3);
     // return ReprojectionResult(vec4f((
     //   sampleGeometryAll(cuv, &prevGeometryBuffer).position - 
@@ -1415,7 +1427,7 @@ const geometrySampler = () => /* wgsl */ `
     return uv.x + uv.y * viewport.x;
   }
 
-  fn sampleGeometryAll(uv: vec2f, buffer: ptr<storage, array<Geometry>, read>) -> Geometry {
+  fn sampleGeometryAll(uv: vec2f, buffer: ptr<storage, array<Geometry>, read_write>) -> Geometry {
     let uv_u = vec2u(floor(uv));
     let uv_f = fract(uv);
     
@@ -1427,6 +1439,65 @@ const geometrySampler = () => /* wgsl */ `
       (*buffer)[geometryIdx(uv_u + vec2u(1, 1))].position,
     );
     result.position = bilinearInterpolation3(uv_f, positions);
+    return result;
+  }
+
+  fn sampleGeometryAllWithId(uv: vec2f, buffer: ptr<storage, array<Geometry>, read_write>, faceIdx: u32, objectIdx: u32) -> Geometry {
+    let uv_u = vec2u(floor(uv));
+    let uv_f = fract(uv);
+    
+    var result: Geometry;
+    
+    let p1 = buffer[geometryIdx(uv_u)];
+    let p2 = buffer[geometryIdx(uv_u + vec2u(1, 0))];
+    let p3 = buffer[geometryIdx(uv_u + vec2u(0, 1))];
+    let p4 = buffer[geometryIdx(uv_u + vec2u(1, 1))];
+    
+    var p = vec4(0.);
+    var n = 0u;
+    if objectIdx == p1.objectIdx {
+      var w = 1.;
+      if faceIdx == p1.faceIdx {
+        w = 2.;
+      }
+
+      p += vec4(p1.position, 1) * w * (1 - uv_f.x) * (1 - uv_f.y);
+      n++;
+    }
+    if objectIdx == p2.objectIdx {
+      var w = 1.;
+      if faceIdx == p2.faceIdx {
+        w = 2.;
+      }
+      
+      p += vec4(p1.position, 1) * w * (uv_f.x) * (1 - uv_f.y);
+      n++;
+    }
+    if objectIdx == p3.objectIdx {
+      var w = 1.;
+      if faceIdx == p3.faceIdx {
+        w = 2.;
+      }
+      
+      p += vec4(p1.position, 1) * w * (1 - uv_f.x) * (uv_f.y);
+      n++;
+    }
+    if objectIdx == p4.objectIdx {
+      var w = 1.;
+      if faceIdx == p4.faceIdx {
+        w = 2.;
+      }
+      
+      p += vec4(p1.position, 1) * w * (uv_f.x) * (uv_f.y);
+      n++;
+    }
+
+    if n > 1 {
+      result.position = p.xyz / p.w;
+    } else {
+      result = sampleGeometryAll(uv, buffer);
+    }
+
     return result;
   }
 `;
@@ -1523,7 +1594,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindVarBuffer('storage', 'imageBuffer: array<vec4f>', imageBuffer())}
     ${x.bindVarBuffer('read-only-storage', 'prevImageBuffer: array<vec4f>', prevImageBuffer())}
     ${x.bindVarBuffer('storage', 'geometryBuffer: array<Geometry>', geometryBuffer())}
-    ${x.bindVarBuffer('read-only-storage', 'prevGeometryBuffer: array<Geometry>', prevGeometryBuffer())}
+    ${x.bindVarBuffer('storage', 'prevGeometryBuffer: array<Geometry>', prevGeometryBuffer())}
     ${x.bindVarBuffer('uniform', 'viewMatrix: mat4x4f', viewBuffer)}
     ${x.bindVarBuffer('uniform', 'viewInvMatrix: mat4x4f', viewInvBuffer)}
     ${x.bindVarBuffer('uniform', 'prevViewInvMatrix: mat4x4f', prevViewInvBuffer)}
@@ -1600,12 +1671,13 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
         var hit: BVHIntersectionResult;
         hit = scene(ray, hitDist);
 
-        let point = ray.pos + ray.dir * hit.barycentric.x;
+        let dist = hit.barycentric.x;
+        let point = ray.pos + ray.dir * dist;
         geometryBuffer[idx].position = point;
         geometryBuffer[idx].faceIdx = hit.faceIdx;
         geometryBuffer[idx].objectIdx = hit.objectIdx;
 
-        let result = reproject(fpos, point, vec3f(0));
+        let result = reproject(dist, fpos, point, vec3f(0));
         imageBuffer[idx] = result.color;
 
         return;
@@ -1634,7 +1706,8 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       color += pixelColor(&hit, ray, hitDist);
       samples++;
 
-      let point = ray.pos + ray.dir * hit.barycentric.x;
+      let dist = hit.barycentric.x;
+      let point = ray.pos + ray.dir * dist;
       geometryBuffer[idx].position = point;
       geometryBuffer[idx].faceIdx = hit.faceIdx;
       geometryBuffer[idx].objectIdx = hit.objectIdx;
@@ -1650,8 +1723,9 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
         if _reproject {
           let face = faces[hit.faceIdx];
           let uv = hit.barycentric.yz;
-          let point = ray.pos + ray.dir * hit.barycentric.x;
-          let result = reproject(fpos, point, color);
+          let dist = hit.barycentric.x;
+          let point = ray.pos + ray.dir * dist;
+          let result = reproject(dist, fpos, point, vec3f(0));
           if result.color.w > 0 {
             color += result.color.xyz / result.color.w;
             samples++;
@@ -1660,7 +1734,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       }
 
       if _reproject {
-        let result = reproject(fpos, point, color);
+        let result = reproject(dist, fpos, point, color);
         imageBuffer[idx] = result.color;
       }
 
