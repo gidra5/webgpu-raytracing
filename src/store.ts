@@ -174,11 +174,11 @@ export const reprojectionFrustrum = (prevView: Accessor<mat4 | undefined>) =>
     return Iterator.zip(left, top, c, d).flat().toArray();
   });
 
-export const prevViewInv = (prevView: Accessor<mat4 | undefined>) =>
+export const invMat = (mat: Accessor<mat4 | undefined>) =>
   createMemo(() => {
-    const _prevView = prevView();
-    if (_prevView) {
-      return mat4.invert(mat4.create(), _prevView);
+    const m = mat();
+    if (m) {
+      return mat4.invert(mat4.create(), m);
     }
     return mat4.create();
   });

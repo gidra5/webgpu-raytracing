@@ -17,7 +17,7 @@ import {
   FovOrientation,
   incrementCounter,
   LensShape,
-  prevViewInv,
+  invMat,
   ProjectionType,
   reprojectionFrustrum,
   setRenderGPUTime,
@@ -52,10 +52,11 @@ const [debugBVHRenderBundle, setDebugBVHRenderBundle] =
 const [prevView, setPrevView] = createSignal<mat4>(undefined, {
   equals: (a, b) => a && mat4.exactEquals(a, b),
 });
-const _prevViewInv = prevViewInv(prevView);
+const _prevViewInv = invMat(prevView);
+const _viewInv = invMat(viewMatrix);
 const prevViewInvBuffer = reactiveUniformBuffer(16, _prevViewInv);
+const viewInvBuffer = reactiveUniformBuffer(16, _viewInv);
 const _reprojectionFrustrum = reprojectionFrustrum(prevView);
-const prevViewBuffer = reactiveUniformBuffer(16, prevView);
 const viewBuffer = reactiveUniformBuffer(
   16,
   viewMatrix,
@@ -1064,9 +1065,15 @@ const reproject = () => /* wgsl */ `
     return round(x / n) * n;
   }
 
-  fn reprojectPoint(p: vec3f, view: mat4x4f) -> vec2f {
+  fn reprojectPoint(p: vec3f) -> vec2f {
     let pp = prevViewInvMatrix * vec4(p, 1.);
-    let duv = reprojectionFrustrum * pp.xyz; 
+    let duv = reprojectionFrustrum * pp.xyz;
+    return duv.xy / duv.zw;
+  }
+
+  fn unprojectPoint(p: vec3f) -> vec2f {
+    let pp = viewInvMatrix * vec4(p, 1.);
+    let duv = reprojectionFrustrum * pp.xyz;
     return duv.xy / duv.zw;
   }
 
@@ -1109,8 +1116,8 @@ const reproject = () => /* wgsl */ `
 
   // current uv, projected point, latest color for that point
   fn reproject(cuv: vec2f, p: vec3f, c: vec3f) -> ReprojectionResult {
-    let view = prevViewMatrix2;
-    let uv = reprojectPoint(p, view);
+    let uv_error = unprojectPoint(p) - cuv;
+    let uv = reprojectPoint(p) - uv_error;
     if any(uv < vec2(0)) || any(uv > vec2(viewportf)) { // outside viewport
       if ${store.debugReprojection} {
         return ReprojectionResult(vec4f(0, 1, 0, 1));
@@ -1124,7 +1131,7 @@ const reproject = () => /* wgsl */ `
     var dp = uv_p - p;
     var d = dot(dp, dp);
 
-    min_uv = reprojectPoint(uv_p, view);
+    min_uv = reprojectPoint(uv_p) - uv_error;
     uv_p = sampleGeometryAll(min_uv, &prevGeometryBuffer).position;
     dp = uv_p - p;
     d = dot(dp, dp);
@@ -1518,8 +1525,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindVarBuffer('storage', 'geometryBuffer: array<Geometry>', geometryBuffer())}
     ${x.bindVarBuffer('read-only-storage', 'prevGeometryBuffer: array<Geometry>', prevGeometryBuffer())}
     ${x.bindVarBuffer('uniform', 'viewMatrix: mat4x4f', viewBuffer)}
-    ${x.bindVarBuffer('uniform', 'prevViewMatrix: mat4x4f', prevViewBuffer)}
-    ${x.bindVarBuffer('uniform', 'prevViewMatrix2: mat4x4f', prevViewBuffer2)}
+    ${x.bindVarBuffer('uniform', 'viewInvMatrix: mat4x4f', viewInvBuffer)}
     ${x.bindVarBuffer('uniform', 'prevViewInvMatrix: mat4x4f', prevViewInvBuffer)}
     ${x.bindVarBuffer('uniform', 'reprojectionFrustrum: mat3x4f', reprojectionFrustrumBuffer)}
 
