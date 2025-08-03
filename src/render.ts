@@ -1112,7 +1112,7 @@ const reproject = () => /* wgsl */ `
   }
 
 
-  const threshold = 1e-2;
+  const threshold = 1e-8;
 
   // current uv, projected point, latest color for that point
   fn reproject(hit_dist: f32, cuv: vec2f, p: vec3f, c: vec3f) -> ReprojectionResult {
@@ -1124,9 +1124,18 @@ const reproject = () => /* wgsl */ `
     let objectIdx = currentGeometry.objectIdx;
 
     var min_uv = uv;
-    var uv_p = sampleGeometryAll(min_uv, &prevGeometryBuffer).position;
+    var uv_g = sampleGeometryAll(min_uv, &prevGeometryBuffer);
+    var uv_p = uv_g.position;
     var dp = uv_p - p;
     var d = dot(dp, dp);
+
+    if uv_g.objectIdx != objectIdx {
+      return ReprojectionResult(vec4f(0));
+    }
+
+    if uv_g.faceIdx != faceIdx {
+      return ReprojectionResult(vec4f(0));
+    }
 
     // var dd: vec2f;
     // var dx: vec3f;
@@ -1488,14 +1497,17 @@ const geometrySampler = () => /* wgsl */ `
     let uv_u = vec2u(floor(uv));
     let uv_f = fract(uv);
     
+    let closest = (*buffer)[geometryIdx(uv_u)];
     var result: Geometry;
     let positions = mat4x3f(
-      (*buffer)[geometryIdx(uv_u)].position,
+      closest.position,
       (*buffer)[geometryIdx(uv_u + vec2u(1, 0))].position,
       (*buffer)[geometryIdx(uv_u + vec2u(0, 1))].position,
       (*buffer)[geometryIdx(uv_u + vec2u(1, 1))].position,
     );
     result.position = bilinearInterpolation3(uv_f, positions);
+    result.faceIdx = closest.faceIdx;
+    result.objectIdx = closest.objectIdx;
     return result;
   }
 
@@ -1551,6 +1563,8 @@ const geometrySampler = () => /* wgsl */ `
 
     if n > 1 {
       result.position = p.xyz / p.w;
+      result.faceIdx = faceIdx;
+      result.objectIdx = objectIdx;
     } else {
       result = sampleGeometryAll(uv, buffer);
     }
