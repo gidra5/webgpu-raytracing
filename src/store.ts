@@ -139,27 +139,10 @@ export const reprojectionFrustrum = (prevView: Accessor<mat4 | undefined>) =>
     const hfov = store.fov / 2; // horizontal field of view
     const tanHFov = Math.tan(hfov);
     const vfov = Math.atan(tanHFov / aspectRatio); // vertical field of view
-    const w = view[15];
-    const rayZ = -w / tanHFov;
     const forward = vec3.fromValues(0, 0, 1);
 
-    const cornerRay = (x: number, y: number) => {
-      const dir = vec3.fromValues(x, y * aspectRatio, rayZ);
-      vec3.normalize(dir, dir);
-      const dir4 = vec4.fromValues(dir[0], dir[1], dir[2], 0);
-      vec3.set(dir, dir4[0], dir4[1], dir4[2]);
-      return dir;
-    };
-    // frustrum side plane normals
-    const frustrum = Iterator.zip(
-      [cornerRay(-1, -1), cornerRay(1, -1)],
-      [cornerRay(-1, 1), cornerRay(-1, -1)]
-    )
-      .map(([a, b]) => vec3.cross(vec3.create(), a, b))
-      .map((a) => vec3.normalize(vec3.create(), a))
-      .toArray();
-
-    const [left, top] = frustrum;
+    const left = vec3.fromValues(Math.cos(hfov), 0, -Math.sin(hfov));
+    const top = vec3.fromValues(0, Math.sin(vfov), -Math.cos(vfov));
     const c = vec3.scale(vec3.create(), forward, -2 * Math.cos(hfov));
     const d = vec3.scale(vec3.create(), forward, -2 * Math.cos(vfov));
 

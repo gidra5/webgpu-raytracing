@@ -1118,13 +1118,6 @@ const reproject = () => /* wgsl */ `
   fn reproject(hit_dist: f32, cuv: vec2f, p: vec3f, c: vec3f) -> ReprojectionResult {
     let uv_error = unprojectPoint(p) - cuv;
     let uv = reprojectPoint(p) - uv_error;
-    if any(uv < vec2(0)) || any(uv > vec2(viewportf)) { // outside viewport
-      if ${store.debugReprojection} {
-        return ReprojectionResult(vec4f(0, 1, 0, 1));
-      } else {
-        return ReprojectionResult(vec4f(0));
-      }
-    }
 
     let currentGeometry = geometryBuffer[geometryIdx(vec2u(cuv))];
     let faceIdx = currentGeometry.faceIdx;
@@ -1135,50 +1128,94 @@ const reproject = () => /* wgsl */ `
     var dp = uv_p - p;
     var d = dot(dp, dp);
 
-    // for (var x = -1; x <= 1; x = x + 1) {
-    //   for (var y = -1; y <= 1; y = y + 1) {
-    //     let uv = min_uv + vec2f(f32(x), f32(y));
-    //     let geometry = sampleGeometryAllWithId(uv, &prevGeometryBuffer);
-    //     if 
-    //     let _dp = uv_p - geometry.position;
-    //     let _d = dot(dp, dp);
-    //     if _d < d { 
-    //       min_uv = uv;
-    //       uv_p = geometry.position;
-    //       dp = _dp;
-    //       d = _d;
-    //     }
+    // var dd: vec2f;
+    // var dx: vec3f;
+    // var dy: vec3f;
+    // {
+    //   // var dx = p - geometryBuffer[quadNeighborXIdx].position;
+    //   // var dy = p - geometryBuffer[quadNeighborYIdx].position;
+
+    //   // if quadIdx == 0 || quadIdx == 2 {
+    //   //   dx = -dx;
+    //   // }
+    //   // if quadIdx == 0 || quadIdx == 1 {
+    //   //   dy = -dy;
+    //   // }
+    //   dx = sampleGeometryAll(min_uv + vec2f(1, 0), &prevGeometryBuffer).position - p;
+    //   dy = sampleGeometryAll(min_uv + vec2f(0, 1), &prevGeometryBuffer).position - p;
+    //   dd = vec2(dot(dx, dx), dot(dy, dy));
+    // }
+
+    // {
+    //   let uv = reprojectPoint(uv_p) - uv_error;
+    //   // let geometry = sampleGeometryAll2(uv, &prevGeometryBuffer, dd);
+    //   let geometry = sampleGeometryAll(uv, &prevGeometryBuffer);
+    //   // let geometry = sampleGeometryAllWithId(uv, &prevGeometryBuffer, faceIdx, objectIdx);
+    //   let _dp = geometry.position - p;
+    //   let _d = dot(_dp, _dp);
+    //   if _d < d {
+    //     min_uv = uv;
+    //     uv_p = geometry.position;
+    //     dp = _dp;
+    //     d = _d;
     //   }
     // }
 
     {
-      let uv = reprojectPoint(uv_p) - uv_error;
-      let geometry = sampleGeometryAll(uv, &prevGeometryBuffer);
-      // let geometry = sampleGeometryAllWithId(uv, &prevGeometryBuffer, faceIdx, objectIdx);
-      let _dp = geometry.position - p;
-      let _d = dot(_dp, _dp);
-      if _d < d { 
-        min_uv = uv;
-        uv_p = geometry.position;
-        dp = _dp;
-        d = _d;
+      let dx = sampleGeometryAll(min_uv + vec2f(1, 0), &prevGeometryBuffer).position - p;
+      let dy = sampleGeometryAll(min_uv + vec2f(0, 1), &prevGeometryBuffer).position - p;
+      
+      let A = mat2x3f(dx, dy);
+      let At = transpose(A);
+      let AtA = At * A;
+      let det = 1/(AtA[1][1] * AtA[0][0] - AtA[0][1] * AtA[1][0]);
+      let AtAinv = mat2x2f(
+        AtA[1][1], -AtA[1][0],
+        -AtA[0][1], AtA[0][0]
+      ) * det;
+      let Atdp = At * dp;
+      let duv = AtAinv * Atdp;
+
+      let uv1 = min_uv + duv;
+      let uv_p1 = sampleGeometryAll(uv1, &prevGeometryBuffer).position;
+      let _dp1 = uv_p1 - p;
+      let _d1 = dot(_dp1, _dp1);
+      
+      let uv2 = reprojectPoint(uv_p) - uv_error;
+      let uv_p2 = sampleGeometryAll(uv2, &prevGeometryBuffer).position;
+      let _dp2 = uv_p2 - p;
+      let _d2 = dot(_dp2, _dp2);
+
+      if _d1 <= _d2 && _d1 < d {
+        min_uv = uv1;
+        uv_p = uv_p1;
+        dp = _dp1;
+        d = _d1;
+      } else if _d2 <= _d1 && _d2 < d {
+        min_uv = uv2;
+        uv_p = uv_p2;
+        dp = _dp2;
+        d = _d2;
+      }
+    }
+    
+    if any(min_uv < vec2(0)) || any(min_uv > vec2(viewportf)) { // outside viewport
+      if ${store.debugReprojection} {
+        return ReprojectionResult(vec4f(0, 1, 0, 1));
+      } else {
+        return ReprojectionResult(vec4f(0));
       }
     }
 
-    // var dx = p - geometryBuffer[quadNeighborXIdx].position;
-    // var dy = p - geometryBuffer[quadNeighborYIdx].position;
-
-    // if quadIdx == 0 || quadIdx == 2 {
-    //   dx = -dx;
-    // }
-    // if quadIdx == 0 || quadIdx == 1 {
-    //   dy = -dy;
-    // }
     
     // return ReprojectionResult(vec4f((vec3f(1e-4) + dp)/2, 1) * 1e4);
     // return ReprojectionResult(vec4f(dp, 1) * 1e4);
-    // return ReprojectionResult(vec4f(0, 0, d, 1) * 1e2);
+    // return ReprojectionResult(vec4f(0, 0, d, 1) * 1e8);
+    // return ReprojectionResult(vec4f(duv * 1e2, d * 1e4, 1));
+    // return ReprojectionResult(vec4f(duv, 0, 1) * 1e0);
     // return ReprojectionResult(vec4f(0, 0, d, 1) * 1e9);
+    // return ReprojectionResult(vec4f(dd, 0, 1) * 1e3);
+    // return ReprojectionResult(vec4f(dd, 0, 1));
     // return ReprojectionResult(vec4f(dx*40, 1));
     // return ReprojectionResult(vec4f(length(dx), length(dy), 0, 1));
     // return ReprojectionResult(vec4f((cuv - min_uv), d, 1) * 0.01e1);
@@ -1425,6 +1462,26 @@ const imageSampler = /* wgsl */ `
 const geometrySampler = () => /* wgsl */ `
   fn geometryIdx(uv: vec2u) -> u32 {
     return uv.x + uv.y * viewport.x;
+  }
+
+  fn sampleGeometryAll2(uv: vec2f, buffer: ptr<storage, array<Geometry>, read_write>, dd: vec2f) -> Geometry {
+    var result: Geometry;
+    
+    var d = 0;
+    let s = 1/(4 * dd);
+    let w = 1.;
+    for (var x = -w; x <= w; x = x + s.x) {
+      for (var y = -w; y <= w; y = y + s.y) {
+        let uv = uv + vec2f(f32(x), f32(y));
+        let geometry = sampleGeometryAll(uv, buffer);
+        result.position += geometry.position;
+        d++;
+      }
+    }
+
+    result.position /= f32(d);
+
+    return result;
   }
 
   fn sampleGeometryAll(uv: vec2f, buffer: ptr<storage, array<Geometry>, read_write>) -> Geometry {
