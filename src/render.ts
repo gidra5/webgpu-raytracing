@@ -11,7 +11,7 @@ import {
   renderPass,
   renderPipeline,
   writeUint32Buffer,
-  writeVec2fBuffer,
+  writeVec3fBuffer,
 } from './gpu';
 import {
   FovOrientation,
@@ -60,6 +60,11 @@ const _reprojectionFrustrum = reprojectionFrustrum(prevView);
 const viewBuffer = reactiveUniformBuffer(
   16,
   viewMatrix,
+  GPUBufferUsage.COPY_SRC
+);
+const prevViewBuffer = reactiveUniformBuffer(
+  16,
+  prevView,
   GPUBufferUsage.COPY_SRC
 );
 const viewProjBuffer = reactiveUniformBuffer(16, viewProjectionMatrix);
@@ -743,8 +748,9 @@ const raygen = () => /* wgsl */ `
   }
 
   fn ray_transform(_ray: Ray, view: mat4x4f) -> Ray {
+    let worldSpaceJitter = jitter.xy / viewportf;
     var ray = _ray;
-    let ray_pos = view * vec4(ray.pos, 1.);
+    let ray_pos = view * vec4(ray.pos + vec3f(worldSpaceJitter, 0), 1.);
     ray.pos = ray_pos.xyz;
     ray.dir = normalize(vec3(ray.dir.xy, ray.dir.z * ray_pos.w));
     ray.dir = (view * vec4(ray.dir, 0.)).xyz;
@@ -1066,14 +1072,17 @@ const reproject = () => /* wgsl */ `
   }
 
   fn reprojectPoint(p: vec3f) -> vec2f {
-    let pp = prevViewInvMatrix * vec4(p, 1.);
-    let duv = reprojectionFrustrum * pp.xyz;
-    return duv.xy / duv.zw;
+    return reprojectPure(p, prevViewInvMatrix, prevJitter.xy);
   }
 
   fn unprojectPoint(p: vec3f) -> vec2f {
-    let pp = viewInvMatrix * vec4(p, 1.);
-    let duv = reprojectionFrustrum * pp.xyz;
+    return reprojectPure(p, viewInvMatrix, jitter.xy);
+  }
+
+  fn reprojectPure(p: vec3f, viewInv: mat4x4f, jitter: vec2f) -> vec2f {
+    let worldSpaceJitter = jitter / viewportf;
+    let pp = viewInv * vec4(p, 1.);
+    let duv = reprojectionFrustrum * (pp.xyz - vec3f(worldSpaceJitter, 0));
     return duv.xy / duv.zw;
   }
 
@@ -1129,14 +1138,6 @@ const reproject = () => /* wgsl */ `
     var dp = uv_p - p;
     var d = dot(dp, dp);
 
-    if uv_g.objectIdx != objectIdx {
-      return ReprojectionResult(vec4f(0));
-    }
-
-    if uv_g.faceIdx != faceIdx {
-      return ReprojectionResult(vec4f(0));
-    }
-
     // var dd: vec2f;
     // var dx: vec3f;
     // var dy: vec3f;
@@ -1155,21 +1156,6 @@ const reproject = () => /* wgsl */ `
     //   dd = vec2(dot(dx, dx), dot(dy, dy));
     // }
 
-    // {
-    //   let uv = reprojectPoint(uv_p) - uv_error;
-    //   // let geometry = sampleGeometryAll2(uv, &prevGeometryBuffer, dd);
-    //   let geometry = sampleGeometryAll(uv, &prevGeometryBuffer);
-    //   // let geometry = sampleGeometryAllWithId(uv, &prevGeometryBuffer, faceIdx, objectIdx);
-    //   let _dp = geometry.position - p;
-    //   let _d = dot(_dp, _dp);
-    //   if _d < d {
-    //     min_uv = uv;
-    //     uv_p = geometry.position;
-    //     dp = _dp;
-    //     d = _d;
-    //   }
-    // }
-
     {
       let dx = sampleGeometryAll(min_uv + vec2f(1, 0), &prevGeometryBuffer).position - p;
       let dy = sampleGeometryAll(min_uv + vec2f(0, 1), &prevGeometryBuffer).position - p;
@@ -1186,22 +1172,26 @@ const reproject = () => /* wgsl */ `
       let duv = AtAinv * Atdp;
 
       let uv1 = min_uv + duv;
-      let uv_p1 = sampleGeometryAll(uv1, &prevGeometryBuffer).position;
+      let uv_g1 = sampleGeometryAll(uv1, &prevGeometryBuffer);
+      let uv_p1 = uv_g1.position;
       let _dp1 = uv_p1 - p;
       let _d1 = dot(_dp1, _dp1);
       
       let uv2 = reprojectPoint(uv_p) - uv_error;
-      let uv_p2 = sampleGeometryAll(uv2, &prevGeometryBuffer).position;
+      let uv_g2 = sampleGeometryAll(uv2, &prevGeometryBuffer);
+      let uv_p2 = uv_g2.position;
       let _dp2 = uv_p2 - p;
       let _d2 = dot(_dp2, _dp2);
 
       if _d1 <= _d2 && _d1 < d {
         min_uv = uv1;
+        uv_g = uv_g1;
         uv_p = uv_p1;
         dp = _dp1;
         d = _d1;
       } else if _d2 <= _d1 && _d2 < d {
         min_uv = uv2;
+        uv_g = uv_g1;
         uv_p = uv_p2;
         dp = _dp2;
         d = _d2;
@@ -1216,13 +1206,19 @@ const reproject = () => /* wgsl */ `
       }
     }
 
+    if uv_g.objectIdx != objectIdx {
+      return ReprojectionResult(vec4f(0));
+    }
     
     // return ReprojectionResult(vec4f((vec3f(1e-4) + dp)/2, 1) * 1e4);
     // return ReprojectionResult(vec4f(dp, 1) * 1e4);
     // return ReprojectionResult(vec4f(0, 0, d, 1) * 1e8);
     // return ReprojectionResult(vec4f(duv * 1e2, d * 1e4, 1));
-    // return ReprojectionResult(vec4f(duv, 0, 1) * 1e0);
+    // return ReprojectionResult(vec4f(duv, 0, 1) * 1e-1);
+    // return ReprojectionResult(vec4f(min_uv - cuv, 0, 1) * 1e-1);
+    // return ReprojectionResult(vec4f((min_uv - cuv) - duv*4, 0, 1) * 1e0);
     // return ReprojectionResult(vec4f(0, 0, d, 1) * 1e9);
+    // return ReprojectionResult(vec4f(0, 0, d, 1) * 1e4);
     // return ReprojectionResult(vec4f(dd, 0, 1) * 1e3);
     // return ReprojectionResult(vec4f(dd, 0, 1));
     // return ReprojectionResult(vec4f(dx*40, 1));
@@ -1233,16 +1229,17 @@ const reproject = () => /* wgsl */ `
     //   sampleGeometryAll(cuv, &prevGeometryBuffer).position - 
     //   p) * 1e32, 1)); 
 
-    if !(d < threshold) { // didn't converge fast enough, rejecting
+    if !(d < threshold) {
       if ${store.debugReprojection} {
-        return ReprojectionResult(vec4f(d, 0, 0, 1));
+        return ReprojectionResult(vec4f(0, 0, d, 1) * 1e10);
       } else {
         return ReprojectionResult(vec4f(0));
       }
     }
 
     if ${store.debugReprojection} {
-      return ReprojectionResult(vec4f(fract(min_uv/4), 1, 1));
+      return ReprojectionResult(vec4f(0, 0, d, 1) * 1e10);
+      // return ReprojectionResult(vec4f(0, 0, 0, 1)); 
     } else if ${store.bilateralFilter} {
       let color = bilateralFilter(min_uv, p, c);
       if color.w == 0. {
@@ -1496,11 +1493,12 @@ const geometrySampler = () => /* wgsl */ `
   fn sampleGeometryAll(uv: vec2f, buffer: ptr<storage, array<Geometry>, read_write>) -> Geometry {
     let uv_u = vec2u(floor(uv));
     let uv_f = fract(uv);
+    let closest_uv = round(uv);
     
-    let closest = (*buffer)[geometryIdx(uv_u)];
+    let closest = (*buffer)[geometryIdx(vec2u(closest_uv))];
     var result: Geometry;
     let positions = mat4x3f(
-      closest.position,
+      (*buffer)[geometryIdx(uv_u)].position,
       (*buffer)[geometryIdx(uv_u + vec2u(1, 0))].position,
       (*buffer)[geometryIdx(uv_u + vec2u(0, 1))].position,
       (*buffer)[geometryIdx(uv_u + vec2u(1, 1))].position,
@@ -1667,6 +1665,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindVarBuffer('storage', 'geometryBuffer: array<Geometry>', geometryBuffer())}
     ${x.bindVarBuffer('storage', 'prevGeometryBuffer: array<Geometry>', prevGeometryBuffer())}
     ${x.bindVarBuffer('uniform', 'viewMatrix: mat4x4f', viewBuffer)}
+    ${x.bindVarBuffer('uniform', 'prevViewMatrix: mat4x4f', prevViewBuffer)}
     ${x.bindVarBuffer('uniform', 'viewInvMatrix: mat4x4f', viewInvBuffer)}
     ${x.bindVarBuffer('uniform', 'prevViewInvMatrix: mat4x4f', prevViewInvBuffer)}
     ${x.bindVarBuffer('uniform', 'reprojectionFrustrum: mat3x4f', reprojectionFrustrumBuffer)}
@@ -1679,9 +1678,9 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindVarBuffer('uniform', 'seed: u32', seedUniformBuffer)}
     ${x.bindVarBuffer('uniform', 'counter: u32', counterUniformBuffer)}
     ${x.bindVarBuffer('uniform', 'updatePrev: u32', updatePrevUniformBuffer)}
-    ${x.bindVarBuffer('uniform', 'jitter: vec2f', jitterBuffer)}
-    ${x.bindVarBuffer('uniform', 'prevJitter: vec2f', prevJitterBuffer)}
-
+    ${x.bindVarBuffer('uniform', 'jitter: vec3f', jitterBuffer)}
+    ${x.bindVarBuffer('uniform', 'prevJitter: vec3f', prevJitterBuffer)}
+    
     ${x.bindTexture('skyboxTexture', 'unfilterable-float', skyboxTexture)}
     ${x.bindTexture('skyboxImportanceSampleTexture', 'unfilterable-float', skyboxImportanceSampleTexture)}
     ${x.bindSampler('skyboxSampler', 'non-filtering', skyboxSampler)}
@@ -1734,7 +1733,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       }
 
       let fpos = vec2f(upos);
-      let pos = fpos + jitter;
+      let pos = fpos;
 
       if ${store.debugReprojection} {
         let ray = cameraRay(pos, viewMatrix);
@@ -1966,9 +1965,13 @@ export async function renderFrame(now: number) {
   writeUint32Buffer(counterUniformBuffer, store.counter);
   writeUint32Buffer(updatePrevUniformBuffer, updatePrev ? 1 : 0);
   if (updatePrev) {
-    const jitter = vec2.fromValues(Math.random() - 0.5, Math.random() - 0.5);
-    vec2.scale(jitter, jitter, store.jitterStrength);
-    writeVec2fBuffer(jitterBuffer, jitter);
+    const jitter = vec3.fromValues(
+      Math.random() - 0.5,
+      Math.random() - 0.5,
+      Math.random() - 0.5
+    );
+    vec3.scale(jitter, jitter, store.jitterStrength);
+    writeVec3fBuffer(jitterBuffer, jitter);
   }
   incrementCounter();
   const view = viewMatrix();
