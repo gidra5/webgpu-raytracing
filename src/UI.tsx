@@ -19,6 +19,8 @@ import {
   ShadingType,
   store,
   setResolutionScale,
+  ReprojectionFiltering,
+  setReprojectionFiltering,
 } from './store';
 import { useSmoothedValue } from './utils';
 
@@ -53,7 +55,7 @@ const App: Component = () => {
         <input
           class="m-0"
           type="checkbox"
-          checked={store.debugReprojection}
+          checked={store.reprojection.debug}
           onChange={(e) => setDebugReprojection(e.target.checked)}
         />
         Debug Reprojection
@@ -63,7 +65,7 @@ const App: Component = () => {
         <input
           class="m-0"
           type="number"
-          value={store.reprojectionRate}
+          value={store.reprojection.rate}
           onChange={(e) => setReprojectionRate(Number(e.target.value))}
         />
       </label>
@@ -80,6 +82,19 @@ const App: Component = () => {
           <option value="depthDelta">Depth Delta</option>
           <option value="normals">Normals</option>
           <option value="reproject">Reproject</option>
+        </select>
+      </label>
+      <label class="flex gap-2 text-white text-sm items-baseline">
+        Reprojection filtering
+        <select
+          value={store.reprojection.filtering}
+          onChange={(e) => setReprojectionFiltering(Number(e.target.value))}
+        >
+          <option value={ReprojectionFiltering.Average}>Average</option>
+          <option value={ReprojectionFiltering.Bilateral}>Bilateral</option>
+          <option value={ReprojectionFiltering.ExponentialAverage}>
+            Exponential Average
+          </option>
         </select>
       </label>
       <label class="flex gap-2 text-white text-sm items-baseline">

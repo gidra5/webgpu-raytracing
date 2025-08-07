@@ -1068,13 +1068,19 @@ const reproject = () => /* wgsl */ `
   }
 
   fn reprojectPoint(p: vec3f) -> vec2f {
-    // return reprojectPure(p, prevViewInvMatrix, prevJitter);
-    return merge_2(reprojectPoint2(p));
+    if ${store.reprojection.doubleAccuracy} {
+      return merge_2(reprojectPoint2(p)); 
+    } else {
+      return reprojectPure(p, prevViewInvMatrix, prevJitter);
+    }
   }
 
   fn unprojectPoint(p: vec3f) -> vec2f {
-    // return reprojectPure(p, viewInvMatrix, jitter);
-    return merge_2(unprojectPoint2(p));
+    if ${store.reprojection.doubleAccuracy} {
+      return merge_2(unprojectPoint2(p));
+    } else {
+      return reprojectPure(p, viewInvMatrix, jitter);
+    }
   }
 
   fn reprojectPure(p: vec3f, viewInv: mat4x4f, jitter: vec2f) -> vec2f {
@@ -1135,11 +1141,11 @@ const reproject = () => /* wgsl */ `
   }
 
 
-  const threshold = 1e-2;
+  const threshold = ${store.reprojection.pointAccuracy * store.reprojection.pointAccuracy};
 
   // current uv, projected point, latest color for that point
   fn reproject(hit_dist: f32, cuv: vec2f, p: vec3f, c: vec3f) -> ReprojectionResult {
-    let uv_error = unprojectPoint(p) - cuv;
+    let uv_error = ${store.reprojection.identityErrorCorrection ? 'unprojectPoint(p) - cuv' : 'vec2f(0)'};
     let uv = reprojectPoint(p) - uv_error;
 
     let currentGeometry = geometryBuffer[geometryIdx(vec2u(cuv))];
@@ -1196,7 +1202,7 @@ const reproject = () => /* wgsl */ `
     }
     
     if any(min_uv < vec2(0)) || any(min_uv > vec2(viewportf)) { // outside viewport
-      if ${store.debugReprojection} {
+      if ${store.reprojection.debug} {
         return ReprojectionResult(vec4f(0, 1, 0, 1));
       } else {
         return ReprojectionResult(vec4f(0));
@@ -1204,7 +1210,7 @@ const reproject = () => /* wgsl */ `
     }
 
     if uv_g.objectIdx != objectIdx {
-      if ${store.debugReprojection} {
+      if ${store.reprojection.debug} {
       return ReprojectionResult(vec4f(1,1,0,1));
       } else {
         return ReprojectionResult(vec4f(0));
@@ -1212,22 +1218,28 @@ const reproject = () => /* wgsl */ `
     }
 
     if !(d < threshold) {
-      if ${store.debugReprojection} {
+      if ${store.reprojection.debug} {
         return ReprojectionResult(vec4f(0, 0, d, 1) / threshold);
       } else {
         return ReprojectionResult(vec4f(0));
       }
     }
 
-    if ${store.debugReprojection} {
+    if ${store.reprojection.debug} {
       return ReprojectionResult(vec4f(0, 0, d, 1) / threshold);
-    } else if ${store.bilateralFilter} {
+    } else if ${store.reprojection.filtering === ReprojectionFiltering.Bilateral} {
       let color = bilateralFilter(min_uv, p, c);
       if color.w == 0. {
         let color = sampleImage4(min_uv, &prevImageBuffer);
         return ReprojectionResult(color);
       }
       return ReprojectionResult(color);
+    } else if ${store.reprojection.filtering === ReprojectionFiltering.Average} {
+      let color = sampleImage4(min_uv, &prevImageBuffer);
+      return ReprojectionResult(color);
+    } else if ${store.reprojection.filtering === ReprojectionFiltering.ExponentialAverage} {
+      let color = sampleImage4(min_uv, &prevImageBuffer);
+      return ReprojectionResult(color * ${store.reprojection.filteringRate});
     } else {
       let color = sampleImage4(min_uv, &prevImageBuffer);
       return ReprojectionResult(color);
@@ -1675,7 +1687,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindTexture('skyboxImportanceSampleTexture', 'unfilterable-float', skyboxImportanceSampleTexture)}
     ${x.bindSampler('skyboxSampler', 'non-filtering', skyboxSampler)}
 
-    const _reproject = ${store.reprojectionRate > 0};
+    const _reproject = ${store.reprojection.rate > 0};
     const viewport = vec2u(${store.view[0]}, ${store.view[1]});
     const viewportf = vec2f(viewport);
     const aspect = viewportf.y / viewportf.x;
@@ -1726,7 +1738,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       let fpos = vec2f(upos);
       let pos = fpos;
 
-      if ${store.debugReprojection} {
+      if ${store.reprojection.debug} {
         let ray = cameraRay(pos, viewMatrix);
         let hitDist = pixelHitDist(idx, ray);
         var hit: BVHIntersectionResult;
@@ -1950,8 +1962,8 @@ const rpd: GPURenderPassDescriptor = {
 
 let frameCounter = 0;
 export async function renderFrame(now: number) {
-  const rate = store.reprojectionRate;
-  const updatePrev = store.debugReprojection
+  const rate = store.reprojection.rate;
+  const updatePrev = store.reprojection.debug
     ? rate === 0 || frameCounter % rate === 0
     : rate === 0 || frameCounter % rate === 0 || store.counter !== 0;
   frameCounter = (frameCounter + 1) % rate;

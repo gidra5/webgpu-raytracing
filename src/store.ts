@@ -35,6 +35,19 @@ export enum Tonemapping {
   None,
 }
 
+export enum SkyboxType {
+  None,
+  Plain,
+  Exr,
+  Hdr,
+}
+
+export enum ReprojectionFiltering {
+  Average,
+  Bilateral,
+  ExponentialAverage,
+}
+
 type BlitView =
   | 'image'
   | 'prevImage'
@@ -72,7 +85,17 @@ const [store, setStore] = createStore({
   lensShape: LensShape.Circle,
   tonemapping: Tonemapping.Aces,
 
-  reprojectionRate: 1,
+  reprojection: {
+    rate: 1,
+    pointAccuracy: 1e-1,
+    doubleAccuracy: true,
+    doubleReprojectErrorCorrection: true,
+    gradientErrorCorrection: true,
+    identityErrorCorrection: true,
+    filtering: ReprojectionFiltering.Average,
+    filteringRate: 0.9,
+    debug: false,
+  },
 
   jitterStrength: 0,
   resolutionScale: 1,
@@ -87,8 +110,6 @@ const [store, setStore] = createStore({
   },
 
   debugBVH: false,
-  debugReprojection: false,
-  bilateralFilter: false,
   blitView: 'image' as BlitView,
 
   timings: {
@@ -173,13 +194,20 @@ export const setScale = (scale: number) => {
   resetCounter();
 };
 
+export const setReprojectionFiltering = (
+  reprojectionFiltering: ReprojectionFiltering
+) => {
+  setStore('reprojection', 'filtering', reprojectionFiltering);
+  resetCounter();
+};
+
 export const setResolutionScale = (scale: number) => {
   setStore('resolutionScale', scale);
   resetCounter();
 };
 
 export const setDebugReprojection = (debug: boolean) => {
-  setStore('debugReprojection', debug);
+  setStore('reprojection', 'debug', debug);
   resetCounter();
 };
 
@@ -204,7 +232,7 @@ export const setLensShape = (shape: LensShape) => {
 };
 
 export const setReprojectionRate = (rate: number) => {
-  setStore('reprojectionRate', rate);
+  setStore('reprojection', 'rate', rate);
   resetCounter();
 };
 
