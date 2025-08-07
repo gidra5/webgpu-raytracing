@@ -84,11 +84,6 @@ const prevJitterBuffer = createUniformBuffer(
   'Prev Jitter Buffer',
   GPUBufferUsage.COPY_DST
 );
-const prevViewBuffer2 = createUniformBuffer(
-  16 * 4,
-  'Prev View Buffer 2',
-  GPUBufferUsage.COPY_DST
-);
 
 console.log('loading models');
 const { models, materials } = await loadModels();
@@ -119,7 +114,6 @@ const skyboxSampler = device.createSampler();
 
 const seedUniformBuffer = createUniformBuffer(4);
 const counterUniformBuffer = createUniformBuffer(4);
-const updatePrevUniformBuffer = createUniformBuffer(4);
 
 const resize = () => {
   const scale = devicePixelRatio * store.resolutionScale;
@@ -750,7 +744,7 @@ const raygen = () => /* wgsl */ `
   }
 
   fn ray_transform(_ray: Ray, view: mat4x4f) -> Ray {
-    let worldSpaceJitter = jitter.xy / viewportf;
+    let worldSpaceJitter = jitter / viewportf;
     var ray = _ray;
     let ray_pos = view * vec4(ray.pos + vec3f(worldSpaceJitter, 0), 1.);
     ray.pos = ray_pos.xyz;
@@ -1963,13 +1957,14 @@ export async function renderFrame(now: number) {
   frameCounter = (frameCounter + 1) % rate;
   writeUint32Buffer(seedUniformBuffer, Math.random() * 0xffffffff);
   writeUint32Buffer(counterUniformBuffer, store.counter);
-  writeUint32Buffer(updatePrevUniformBuffer, updatePrev ? 1 : 0);
+  incrementCounter();
+
   if (updatePrev) {
     const jitter = vec2.fromValues(Math.random() - 0.5, Math.random() - 0.5);
     vec2.scale(jitter, jitter, store.jitterStrength);
     writeVec2fBuffer(jitterBuffer, jitter);
   }
-  incrementCounter();
+
   const view = viewMatrix();
 
   const encoder = device.createCommandEncoder();
@@ -2001,7 +1996,6 @@ export async function renderFrame(now: number) {
     encoder.copyBufferToBuffer(jitterBuffer, prevJitterBuffer);
     encoder.copyBufferToBuffer(imageBuffer(), prevImageBuffer());
     encoder.copyBufferToBuffer(geometryBuffer(), prevGeometryBuffer());
-    encoder.copyBufferToBuffer(viewBuffer, prevViewBuffer2);
   }
 
   await submit(encoder, () => {
