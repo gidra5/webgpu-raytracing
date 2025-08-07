@@ -88,6 +88,9 @@ const [store, setStore] = createStore({
   reprojection: {
     rate: 1,
     pointAccuracy: 1e-1,
+    objectClamping: true,
+    faceClamping: true,
+    distanceClamping: true,
     doubleAccuracy: true,
     doubleReprojectErrorCorrection: true,
     gradientErrorCorrection: true,

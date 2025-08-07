@@ -28,6 +28,7 @@ import {
   Tonemapping,
   viewMatrix,
   viewProjectionMatrix,
+  ReprojectionFiltering,
 } from './store';
 import { createEffect, createSignal } from 'solid-js';
 import rng from './shaders/rng';
@@ -1143,6 +1144,40 @@ const reproject = () => /* wgsl */ `
 
   const threshold = ${store.reprojection.pointAccuracy * store.reprojection.pointAccuracy};
 
+  struct Reprojection {
+    uv: vec2f,
+    g: Geometry,
+    p: vec3f,
+    dp: vec3f,
+    d: f32,
+  }
+
+  fn reprojection(uv: vec2f, p: vec3f) -> Reprojection {
+    let uv_g = sampleGeometryAll(uv, &prevGeometryBuffer);
+    let uv_p = uv_g.position;
+    let dp = uv_p - p;
+    let d = dot(dp, dp);
+    return Reprojection(uv, uv_g, uv_p, dp, d);
+  }
+
+  fn gradientReprojection(uv: vec2f, p: vec3f, dp: vec3f) -> Reprojection {
+    let dx = sampleGeometryAll(uv + vec2f(1, 0), &prevGeometryBuffer).position - p;
+    let dy = sampleGeometryAll(uv + vec2f(0, 1), &prevGeometryBuffer).position - p;
+
+    let A = mat2x3f(dx, dy);
+    let At = transpose(A);
+    let AtA = At * A;
+    let det = 1/(AtA[1][1] * AtA[0][0] - AtA[0][1] * AtA[1][0]);
+    let AtAinv = mat2x2f(
+      AtA[1][1], -AtA[1][0],
+      -AtA[0][1], AtA[0][0]
+    ) * det;
+    let Atdp = At * dp;
+    let duv = AtAinv * Atdp;
+
+    return reprojection(uv + duv, p);
+  }
+
   // current uv, projected point, latest color for that point
   fn reproject(hit_dist: f32, cuv: vec2f, p: vec3f, c: vec3f) -> ReprojectionResult {
     let uv_error = ${store.reprojection.identityErrorCorrection ? 'unprojectPoint(p) - cuv' : 'vec2f(0)'};
@@ -1152,56 +1187,31 @@ const reproject = () => /* wgsl */ `
     let faceIdx = currentGeometry.faceIdx;
     let objectIdx = currentGeometry.objectIdx;
 
-    var min_uv = uv;
-    var uv_g = sampleGeometryAll(min_uv, &prevGeometryBuffer);
-    var uv_p = uv_g.position;
-    var dp = uv_p - p;
-    var d = dot(dp, dp);
+    var reproj = reprojection(uv, p);
 
     {
-      let dx = sampleGeometryAll(min_uv + vec2f(1, 0), &prevGeometryBuffer).position - p;
-      let dy = sampleGeometryAll(min_uv + vec2f(0, 1), &prevGeometryBuffer).position - p;
+      let uv = reproj.uv;
+      let uv_p = reproj.p;
+      let dp = reproj.dp;
 
-      let A = mat2x3f(dx, dy);
-      let At = transpose(A);
-      let AtA = At * A;
-      let det = 1/(AtA[1][1] * AtA[0][0] - AtA[0][1] * AtA[1][0]);
-      let AtAinv = mat2x2f(
-        AtA[1][1], -AtA[1][0],
-        -AtA[0][1], AtA[0][0]
-      ) * det;
-      let Atdp = At * dp;
-      let duv = AtAinv * Atdp;
+      if ${store.reprojection.gradientErrorCorrection} {
+        let _reproj = gradientReprojection(uv, p, dp);
 
-      let uv1 = min_uv + duv;
-      let uv_g1 = sampleGeometryAll(uv1, &prevGeometryBuffer);
-      let uv_p1 = uv_g1.position;
-      let _dp1 = uv_p1 - p;
-      let _d1 = dot(_dp1, _dp1);
-      
-      let uv2 = reprojectPoint(uv_p) - uv_error;
-      let uv_g2 = sampleGeometryAll(uv2, &prevGeometryBuffer);
-      let uv_p2 = uv_g2.position;
-      let _dp2 = uv_p2 - p;
-      let _d2 = dot(_dp2, _dp2);
-
-      if _d1 < d {
-        min_uv = uv1;
-        uv_g = uv_g1;
-        uv_p = uv_p1;
-        dp = _dp1;
-        d = _d1;
+        if _reproj.d < reproj.d {
+          reproj = _reproj;
+        }
       }
-      if _d2 < d {
-        min_uv = uv2;
-        uv_g = uv_g1;
-        uv_p = uv_p2;
-        dp = _dp2;
-        d = _d2;
+      
+      if ${store.reprojection.doubleReprojectErrorCorrection} {
+        let _reproj = reprojection(reprojectPoint(uv_p) - uv_error, p);
+
+        if _reproj.d < reproj.d {
+          reproj = _reproj;
+        }
       }
     }
     
-    if any(min_uv < vec2(0)) || any(min_uv > vec2(viewportf)) { // outside viewport
+    if any(reproj.uv < vec2(0)) || any(reproj.uv > vec2(viewportf)) { // outside viewport
       if ${store.reprojection.debug} {
         return ReprojectionResult(vec4f(0, 1, 0, 1));
       } else {
@@ -1209,7 +1219,7 @@ const reproject = () => /* wgsl */ `
       }
     }
 
-    if uv_g.objectIdx != objectIdx {
+    if ${store.reprojection.objectClamping} && reproj.g.objectIdx != objectIdx {
       if ${store.reprojection.debug} {
       return ReprojectionResult(vec4f(1,1,0,1));
       } else {
@@ -1217,31 +1227,39 @@ const reproject = () => /* wgsl */ `
       }
     }
 
-    if !(d < threshold) {
+    if ${store.reprojection.faceClamping} && reproj.g.faceIdx != faceIdx {
       if ${store.reprojection.debug} {
-        return ReprojectionResult(vec4f(0, 0, d, 1) / threshold);
+      return ReprojectionResult(vec4f(0.5,0.5,0,1));
+      } else {
+        return ReprojectionResult(vec4f(0));
+      }
+    }
+
+    if ${store.reprojection.distanceClamping} && !(reproj.d < threshold) {
+      if ${store.reprojection.debug} {
+        return ReprojectionResult(vec4f(0, 0, reproj.d, 1) / threshold);
       } else {
         return ReprojectionResult(vec4f(0));
       }
     }
 
     if ${store.reprojection.debug} {
-      return ReprojectionResult(vec4f(0, 0, d, 1) / threshold);
+      return ReprojectionResult(vec4f(0, 0, reproj.d, 1) / threshold);
     } else if ${store.reprojection.filtering === ReprojectionFiltering.Bilateral} {
-      let color = bilateralFilter(min_uv, p, c);
+      let color = bilateralFilter(reproj.uv, p, c);
       if color.w == 0. {
-        let color = sampleImage4(min_uv, &prevImageBuffer);
+        let color = sampleImage4(reproj.uv, &prevImageBuffer);
         return ReprojectionResult(color);
       }
       return ReprojectionResult(color);
     } else if ${store.reprojection.filtering === ReprojectionFiltering.Average} {
-      let color = sampleImage4(min_uv, &prevImageBuffer);
+      let color = sampleImage4(reproj.uv, &prevImageBuffer);
       return ReprojectionResult(color);
     } else if ${store.reprojection.filtering === ReprojectionFiltering.ExponentialAverage} {
-      let color = sampleImage4(min_uv, &prevImageBuffer);
+      let color = sampleImage4(reproj.uv, &prevImageBuffer);
       return ReprojectionResult(color * ${store.reprojection.filteringRate});
     } else {
-      let color = sampleImage4(min_uv, &prevImageBuffer);
+      let color = sampleImage4(reproj.uv, &prevImageBuffer);
       return ReprojectionResult(color);
     }
   }
