@@ -1,4 +1,4 @@
-import { mat3, mat4, quat, vec2, vec3, vec4 } from 'gl-matrix';
+import { mat3, mat4, quat, vec2, vec3 } from 'gl-matrix';
 import { createStore } from 'solid-js/store';
 import { front, right, up } from './camera';
 import { Accessor, createMemo } from 'solid-js';

@@ -11,7 +11,7 @@ import {
   renderPass,
   renderPipeline,
   writeUint32Buffer,
-  writeVec3fBuffer,
+  writeVec2fBuffer,
 } from './gpu';
 import {
   FovOrientation,
@@ -38,6 +38,7 @@ import {
   loadModelsToBuffers,
   loadSkybox,
 } from './scene';
+import double from './shaders/double';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const context = canvas.getContext('webgpu');
@@ -49,30 +50,30 @@ const [prevGeometryBuffer, setPrevGeometryBuffer] = createSignal<GPUBuffer>();
 const [blitRenderBundle, setBlitRenderBundle] = createSignal<GPURenderBundle>();
 const [debugBVHRenderBundle, setDebugBVHRenderBundle] =
   createSignal<GPURenderBundle>();
-const [prevView, setPrevView] = createSignal<mat4>(undefined, {
+const [prevView, setPrevView] = createSignal<mat4>(mat4.create(), {
   equals: (a, b) => a && mat4.exactEquals(a, b),
 });
 const _prevViewInv = invMat(prevView);
 const _viewInv = invMat(viewMatrix);
-const prevViewInvBuffer = reactiveUniformBuffer(16, _prevViewInv);
-const viewInvBuffer = reactiveUniformBuffer(16, _viewInv);
+const [prevViewInvBufferHi, prevViewInvBufferLo] = reactiveUniformBuffer(
+  16,
+  _prevViewInv
+);
+const [viewInvBufferHi, viewInvBufferLo] = reactiveUniformBuffer(16, _viewInv);
 const _reprojectionFrustrum = reprojectionFrustrum(prevView);
-const viewBuffer = reactiveUniformBuffer(
+const [viewBuffer] = reactiveUniformBuffer(
   16,
   viewMatrix,
   GPUBufferUsage.COPY_SRC
 );
-const prevViewBuffer = reactiveUniformBuffer(
+const [prevViewBuffer] = reactiveUniformBuffer(
   16,
   prevView,
   GPUBufferUsage.COPY_SRC
 );
-const viewProjBuffer = reactiveUniformBuffer(16, viewProjectionMatrix);
-const reprojectionFrustrumBuffer = reactiveUniformBuffer(
-  12,
-  _reprojectionFrustrum,
-  GPUBufferUsage.COPY_SRC
-);
+const [viewProjBuffer] = reactiveUniformBuffer(16, viewProjectionMatrix);
+const [reprojectionFrustrumBufferHi, reprojectionFrustrumBufferLo] =
+  reactiveUniformBuffer(12, _reprojectionFrustrum, GPUBufferUsage.COPY_SRC);
 const jitterBuffer = createUniformBuffer(
   16,
   'Jitter Buffer',
@@ -282,6 +283,7 @@ createEffect(() => {
 const structs = /* wgsl */ `
   struct Geometry {
     position: vec3f,
+    depth: f32,
     faceIdx: u32,
     objectIdx: u32,
   }
@@ -1072,11 +1074,13 @@ const reproject = () => /* wgsl */ `
   }
 
   fn reprojectPoint(p: vec3f) -> vec2f {
-    return reprojectPure(p, prevViewInvMatrix, prevJitter.xy);
+    // return reprojectPure(p, prevViewInvMatrix, prevJitter);
+    return merge_2(reprojectPoint2(p));
   }
 
   fn unprojectPoint(p: vec3f) -> vec2f {
-    return reprojectPure(p, viewInvMatrix, jitter.xy);
+    // return reprojectPure(p, viewInvMatrix, jitter);
+    return merge_2(unprojectPoint2(p));
   }
 
   fn reprojectPure(p: vec3f, viewInv: mat4x4f, jitter: vec2f) -> vec2f {
@@ -1084,6 +1088,22 @@ const reproject = () => /* wgsl */ `
     let pp = viewInv * vec4(p, 1.);
     let duv = reprojectionFrustrum * (pp.xyz - vec3f(worldSpaceJitter, 0));
     return duv.xy / duv.zw;
+  }
+
+  fn reprojectPoint2(p: vec3f) -> F64_2 {
+    return reprojectPure2(p, F64_4x4(prevViewInvMatrix, prevViewInvMatrixLo), prevJitter);
+  }
+
+  fn unprojectPoint2(p: vec3f) -> F64_2 {
+    return reprojectPure2(p, F64_4x4(viewInvMatrix, viewInvMatrixLo), jitter);
+  }
+
+  fn reprojectPure2(p: vec3f, viewInv: F64_4x4, jitter: vec2f) -> F64_2 {
+    let worldSpaceJitter = jitter / viewportf;
+    let pp = matmul_4x4(viewInv, split_4(vec4(p, 1.)));
+    let dp = sub_3(F64_3(pp.hi.xyz, pp.lo.xyz), split_3(vec3f(worldSpaceJitter, 0)));
+    let duv = matmul_3x4(F64_3x4(reprojectionFrustrum, reprojectionFrustrumLo), dp);
+    return div_2(F64_2(duv.hi.xy, duv.lo.xy), F64_2(duv.hi.zw, duv.lo.zw));
   }
 
   const bilateralFilterRadius = 2;
@@ -1121,7 +1141,7 @@ const reproject = () => /* wgsl */ `
   }
 
 
-  const threshold = 1e-8;
+  const threshold = 1e-2;
 
   // current uv, projected point, latest color for that point
   fn reproject(hit_dist: f32, cuv: vec2f, p: vec3f, c: vec3f) -> ReprojectionResult {
@@ -1138,28 +1158,10 @@ const reproject = () => /* wgsl */ `
     var dp = uv_p - p;
     var d = dot(dp, dp);
 
-    // var dd: vec2f;
-    // var dx: vec3f;
-    // var dy: vec3f;
-    // {
-    //   // var dx = p - geometryBuffer[quadNeighborXIdx].position;
-    //   // var dy = p - geometryBuffer[quadNeighborYIdx].position;
-
-    //   // if quadIdx == 0 || quadIdx == 2 {
-    //   //   dx = -dx;
-    //   // }
-    //   // if quadIdx == 0 || quadIdx == 1 {
-    //   //   dy = -dy;
-    //   // }
-    //   dx = sampleGeometryAll(min_uv + vec2f(1, 0), &prevGeometryBuffer).position - p;
-    //   dy = sampleGeometryAll(min_uv + vec2f(0, 1), &prevGeometryBuffer).position - p;
-    //   dd = vec2(dot(dx, dx), dot(dy, dy));
-    // }
-
     {
       let dx = sampleGeometryAll(min_uv + vec2f(1, 0), &prevGeometryBuffer).position - p;
       let dy = sampleGeometryAll(min_uv + vec2f(0, 1), &prevGeometryBuffer).position - p;
-      
+
       let A = mat2x3f(dx, dy);
       let At = transpose(A);
       let AtA = At * A;
@@ -1183,13 +1185,14 @@ const reproject = () => /* wgsl */ `
       let _dp2 = uv_p2 - p;
       let _d2 = dot(_dp2, _dp2);
 
-      if _d1 <= _d2 && _d1 < d {
+      if _d1 < d {
         min_uv = uv1;
         uv_g = uv_g1;
         uv_p = uv_p1;
         dp = _dp1;
         d = _d1;
-      } else if _d2 <= _d1 && _d2 < d {
+      }
+      if _d2 < d {
         min_uv = uv2;
         uv_g = uv_g1;
         uv_p = uv_p2;
@@ -1207,39 +1210,23 @@ const reproject = () => /* wgsl */ `
     }
 
     if uv_g.objectIdx != objectIdx {
-      return ReprojectionResult(vec4f(0));
+      if ${store.debugReprojection} {
+      return ReprojectionResult(vec4f(1,1,0,1));
+      } else {
+        return ReprojectionResult(vec4f(0));
+      }
     }
-    
-    // return ReprojectionResult(vec4f((vec3f(1e-4) + dp)/2, 1) * 1e4);
-    // return ReprojectionResult(vec4f(dp, 1) * 1e4);
-    // return ReprojectionResult(vec4f(0, 0, d, 1) * 1e8);
-    // return ReprojectionResult(vec4f(duv * 1e2, d * 1e4, 1));
-    // return ReprojectionResult(vec4f(duv, 0, 1) * 1e-1);
-    // return ReprojectionResult(vec4f(min_uv - cuv, 0, 1) * 1e-1);
-    // return ReprojectionResult(vec4f((min_uv - cuv) - duv*4, 0, 1) * 1e0);
-    // return ReprojectionResult(vec4f(0, 0, d, 1) * 1e9);
-    // return ReprojectionResult(vec4f(0, 0, d, 1) * 1e4);
-    // return ReprojectionResult(vec4f(dd, 0, 1) * 1e3);
-    // return ReprojectionResult(vec4f(dd, 0, 1));
-    // return ReprojectionResult(vec4f(dx*40, 1));
-    // return ReprojectionResult(vec4f(length(dx), length(dy), 0, 1));
-    // return ReprojectionResult(vec4f((cuv - min_uv), d, 1) * 0.01e1);
-    // return ReprojectionResult(vec4f((cuv - min_uv), d, 1) * 2e3);
-    // return ReprojectionResult(vec4f((
-    //   sampleGeometryAll(cuv, &prevGeometryBuffer).position - 
-    //   p) * 1e32, 1)); 
 
     if !(d < threshold) {
       if ${store.debugReprojection} {
-        return ReprojectionResult(vec4f(0, 0, d, 1) * 1e10);
+        return ReprojectionResult(vec4f(0, 0, d, 1) / threshold);
       } else {
         return ReprojectionResult(vec4f(0));
       }
     }
 
     if ${store.debugReprojection} {
-      return ReprojectionResult(vec4f(0, 0, d, 1) * 1e10);
-      // return ReprojectionResult(vec4f(0, 0, 0, 1)); 
+      return ReprojectionResult(vec4f(0, 0, d, 1) / threshold);
     } else if ${store.bilateralFilter} {
       let color = bilateralFilter(min_uv, p, c);
       if color.w == 0. {
@@ -1497,13 +1484,20 @@ const geometrySampler = () => /* wgsl */ `
     
     let closest = (*buffer)[geometryIdx(vec2u(closest_uv))];
     var result: Geometry;
-    let positions = mat4x3f(
-      (*buffer)[geometryIdx(uv_u)].position,
-      (*buffer)[geometryIdx(uv_u + vec2u(1, 0))].position,
-      (*buffer)[geometryIdx(uv_u + vec2u(0, 1))].position,
-      (*buffer)[geometryIdx(uv_u + vec2u(1, 1))].position,
+    let depths = vec4f(
+      1 / (*buffer)[geometryIdx(uv_u)].depth,
+      1 / (*buffer)[geometryIdx(uv_u + vec2u(1, 0))].depth,
+      1 / (*buffer)[geometryIdx(uv_u + vec2u(0, 1))].depth,
+      1 / (*buffer)[geometryIdx(uv_u + vec2u(1, 1))].depth,
     );
-    result.position = bilinearInterpolation3(uv_f, positions);
+    let positions = mat4x3f(
+      (*buffer)[geometryIdx(uv_u)].position * depths[0],
+      (*buffer)[geometryIdx(uv_u + vec2u(1, 0))].position * depths[1],
+      (*buffer)[geometryIdx(uv_u + vec2u(0, 1))].position * depths[2],
+      (*buffer)[geometryIdx(uv_u + vec2u(1, 1))].position * depths[3],
+    );
+    result.depth = 1 / bilinearInterpolation(uv_f, depths);
+    result.position = bilinearInterpolation3(uv_f, positions) * result.depth;
     result.faceIdx = closest.faceIdx;
     result.objectIdx = closest.objectIdx;
     return result;
@@ -1666,9 +1660,12 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindVarBuffer('storage', 'prevGeometryBuffer: array<Geometry>', prevGeometryBuffer())}
     ${x.bindVarBuffer('uniform', 'viewMatrix: mat4x4f', viewBuffer)}
     ${x.bindVarBuffer('uniform', 'prevViewMatrix: mat4x4f', prevViewBuffer)}
-    ${x.bindVarBuffer('uniform', 'viewInvMatrix: mat4x4f', viewInvBuffer)}
-    ${x.bindVarBuffer('uniform', 'prevViewInvMatrix: mat4x4f', prevViewInvBuffer)}
-    ${x.bindVarBuffer('uniform', 'reprojectionFrustrum: mat3x4f', reprojectionFrustrumBuffer)}
+    ${x.bindVarBuffer('uniform', 'viewInvMatrix: mat4x4f', viewInvBufferHi)}
+    ${x.bindVarBuffer('uniform', 'prevViewInvMatrix: mat4x4f', prevViewInvBufferHi)}
+    ${x.bindVarBuffer('uniform', 'reprojectionFrustrum: mat3x4f', reprojectionFrustrumBufferHi)}
+    ${x.bindVarBuffer('uniform', 'viewInvMatrixLo: mat4x4f', viewInvBufferLo)}
+    ${x.bindVarBuffer('uniform', 'prevViewInvMatrixLo: mat4x4f', prevViewInvBufferLo)}
+    ${x.bindVarBuffer('uniform', 'reprojectionFrustrumLo: mat3x4f', reprojectionFrustrumBufferLo)}
 
     ${x.bindVarBuffer('read-only-storage', 'faces: array<Face>', facesBuffer)}
     ${x.bindVarBuffer('read-only-storage', 'materials: array<Material>', materialsBuffer)}
@@ -1677,10 +1674,9 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
 
     ${x.bindVarBuffer('uniform', 'seed: u32', seedUniformBuffer)}
     ${x.bindVarBuffer('uniform', 'counter: u32', counterUniformBuffer)}
-    ${x.bindVarBuffer('uniform', 'updatePrev: u32', updatePrevUniformBuffer)}
-    ${x.bindVarBuffer('uniform', 'jitter: vec3f', jitterBuffer)}
-    ${x.bindVarBuffer('uniform', 'prevJitter: vec3f', prevJitterBuffer)}
-    
+    ${x.bindVarBuffer('uniform', 'jitter: vec2f', jitterBuffer)}
+    ${x.bindVarBuffer('uniform', 'prevJitter: vec2f', prevJitterBuffer)}
+
     ${x.bindTexture('skyboxTexture', 'unfilterable-float', skyboxTexture)}
     ${x.bindTexture('skyboxImportanceSampleTexture', 'unfilterable-float', skyboxImportanceSampleTexture)}
     ${x.bindSampler('skyboxSampler', 'non-filtering', skyboxSampler)}
@@ -1691,6 +1687,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     const aspect = viewportf.y / viewportf.x;
     const viewportN = viewportf / viewportf.x; // viewport normalized
 
+    ${double}
     ${skybox}
     ${tonemapping}
     ${rng}
@@ -1744,6 +1741,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
         let dist = hit.barycentric.x;
         let point = ray.pos + ray.dir * dist;
         geometryBuffer[idx].position = point;
+        geometryBuffer[idx].depth = dist;
         geometryBuffer[idx].faceIdx = hit.faceIdx;
         geometryBuffer[idx].objectIdx = hit.objectIdx;
 
@@ -1763,6 +1761,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       if counter == 0u && !_reproject {
         imageBuffer[idx] = vec4f(0);
         geometryBuffer[idx].position = vec3f(0);
+        geometryBuffer[idx].depth = 0;
         geometryBuffer[idx].faceIdx = 0;
         geometryBuffer[idx].objectIdx = 0;
       }
@@ -1779,6 +1778,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       let dist = hit.barycentric.x;
       let point = ray.pos + ray.dir * dist;
       geometryBuffer[idx].position = point;
+      geometryBuffer[idx].depth = dist;
       geometryBuffer[idx].faceIdx = hit.faceIdx;
       geometryBuffer[idx].objectIdx = hit.objectIdx;
 
@@ -1965,13 +1965,9 @@ export async function renderFrame(now: number) {
   writeUint32Buffer(counterUniformBuffer, store.counter);
   writeUint32Buffer(updatePrevUniformBuffer, updatePrev ? 1 : 0);
   if (updatePrev) {
-    const jitter = vec3.fromValues(
-      Math.random() - 0.5,
-      Math.random() - 0.5,
-      Math.random() - 0.5
-    );
-    vec3.scale(jitter, jitter, store.jitterStrength);
-    writeVec3fBuffer(jitterBuffer, jitter);
+    const jitter = vec2.fromValues(Math.random() - 0.5, Math.random() - 0.5);
+    vec2.scale(jitter, jitter, store.jitterStrength);
+    writeVec2fBuffer(jitterBuffer, jitter);
   }
   incrementCounter();
   const view = viewMatrix();

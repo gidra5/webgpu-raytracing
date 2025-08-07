@@ -1,5 +1,7 @@
 import 'uno.css';
 import { render } from 'solid-js/web';
+import { glMatrix } from 'gl-matrix';
+glMatrix.setMatrixArrayType(Array);
 
 import UI from './UI';
 import { handleControls } from './controls';

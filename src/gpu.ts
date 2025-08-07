@@ -147,7 +147,12 @@ export const reactiveUniformBuffer = <T extends number | Iterable<number>>(
   value: Accessor<T>,
   usage: GPUBufferUsageFlags = 0
 ) => {
-  const buffer = createUniformBuffer(
+  const bufferHi = createUniformBuffer(
+    size * Float32Array.BYTES_PER_ELEMENT,
+    undefined,
+    usage
+  );
+  const bufferLo = createUniformBuffer(
     size * Float32Array.BYTES_PER_ELEMENT,
     undefined,
     usage
@@ -155,14 +160,23 @@ export const reactiveUniformBuffer = <T extends number | Iterable<number>>(
 
   createEffect(() => {
     const _value = value();
-    const arrayBuffer =
-      typeof _value === 'number'
-        ? new Float32Array([_value])
-        : new Float32Array(_value);
-    writeBuffer(buffer, 0, arrayBuffer);
+    if (typeof _value === 'number') {
+      let hi = new Float32Array([_value]);
+      let lo = new Float32Array([_value - hi[0]]);
+      writeBuffer(bufferLo, 0, lo);
+      writeBuffer(bufferHi, 0, hi);
+    } else {
+      let hi = new Float32Array(_value);
+      let lo = new Float32Array(
+        [...(_value as Iterable<number>)].map((v, i) => v - hi[i])
+      );
+
+      writeBuffer(bufferLo, 0, lo);
+      writeBuffer(bufferHi, 0, hi);
+    }
   });
 
-  return buffer;
+  return [bufferHi, bufferLo] as const;
 };
 
 export const renderPass = (
