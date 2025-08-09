@@ -21,6 +21,8 @@ import {
   setResolutionScale,
   ReprojectionFiltering,
   setReprojectionFiltering,
+  SkyboxType,
+  setStore,
 } from './store';
 import { useSmoothedValue } from './utils';
 
@@ -108,6 +110,17 @@ const App: Component = () => {
         >
           <option value={NormalsType.Flat}>Flat</option>
           <option value={NormalsType.Interpolated}>Interpolated</option>
+        </select>
+      </label>
+      <label class="flex gap-2 text-white text-sm items-baseline">
+        Skybox type
+        <select
+          value={store.skybox}
+          onChange={(e) => setStore('skybox', Number(e.target.value))}
+        >
+          <option value={SkyboxType.None}>None</option>
+          <option value={SkyboxType.Plain}>Plain</option>
+          <option value={SkyboxType.Exr}>Exr</option>
         </select>
       </label>
       <label class="flex gap-2 text-white text-sm items-baseline">

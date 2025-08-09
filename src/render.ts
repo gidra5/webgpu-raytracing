@@ -150,7 +150,9 @@ createEffect<GPUBuffer[]>((prevBuffers) => {
   const height = store.view[1];
 
   // color + accumulated samples count
-  const imageSize = Float32Array.BYTES_PER_ELEMENT * 4 * width * height;
+  // 4 images in 1 buffer
+  const imageSize =
+    store.imageLayers * Float32Array.BYTES_PER_ELEMENT * 4 * width * height;
   const current = createStorageBuffer(
     imageSize,
     'Raytraced Image Buffer',
@@ -164,7 +166,8 @@ createEffect<GPUBuffer[]>((prevBuffers) => {
   );
   setPrevImageBuffer(prev);
 
-  const geometryBufferItemSize = Float32Array.BYTES_PER_ELEMENT * 32;
+  const geometryBufferItemSize =
+    store.imageLayers * Float32Array.BYTES_PER_ELEMENT * 32;
   const geometryBufferSize =
     store.geometryBufferScale * geometryBufferItemSize * width * height;
   const currentGeometry = createStorageBuffer(
@@ -1536,7 +1539,7 @@ const bilinearInterpolation = /* wgsl */ `
 
 const imageSampler = /* wgsl */ `
   fn imageIdx(uv: vec2u) -> u32 {
-    return uv.x + uv.y * viewport.x;
+    return uv.x + uv.y * viewport.x + layer * viewport.x * viewport.y;
   }
 
   // fn sampleImage(uv: vec2f, _image: ptr<function, array<vec4f>>) -> f32 {
@@ -1601,7 +1604,7 @@ const imageSampler = /* wgsl */ `
 
 const geometrySampler = () => /* wgsl */ `
   fn geometryIdx(uv: vec2u) -> u32 {
-    return uv.x + uv.y * viewport.x;
+    return uv.x + uv.y * viewport.x + layer * viewport.x * viewport.y;
   }
 
   fn sampleGeometryAll(uv: vec2f, buffer: ptr<storage, array<Geometry>, read_write>) -> Geometry {
@@ -1830,6 +1833,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${matInv}
     ${derivatives()}
 
+    var<private> layer: u32;
     var<private> quadIdx: u32;
     var<private> quad: array<u32, 4>;
     var<private> quadNeighborXIdx: u32;
@@ -1841,6 +1845,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       @builtin(local_invocation_index) localInvocationIndex: u32
     ) {
       let upos = globalInvocationId.xy;
+      layer = globalInvocationId.z;
       let idx = imageIdx(upos);
       quadIdx = localInvocationIndex % 4;
       quad[0] = quadBroadcast(idx, 0);

@@ -57,7 +57,7 @@ type BlitView =
   | 'normals'
   | 'reproject';
 
-const [store, setStore] = createStore({
+export const [store, setStore] = createStore({
   loadingTitle: '' as string | null,
 
   position: vec3.fromValues(0, 0, 0),
@@ -66,7 +66,7 @@ const [store, setStore] = createStore({
 
   counter: 0,
   sampleCount: 1,
-  bouncesDepth: 2,
+  bouncesDepth: 4,
   samplesPerPoint: 1,
   samplesPerBounce: 1,
 
@@ -85,6 +85,7 @@ const [store, setStore] = createStore({
   lensShape: LensShape.Circle,
   tonemapping: Tonemapping.Aces,
   skybox: SkyboxType.Plain,
+  imageLayers: 1,
 
   reprojection: {
     rate: 1,
@@ -190,8 +191,6 @@ export const invMat = (mat: Accessor<mat4 | undefined>) =>
     }
     return mat4.create();
   });
-
-export { store };
 
 export const setScale = (scale: number) => {
   setStore('scale', scale);
