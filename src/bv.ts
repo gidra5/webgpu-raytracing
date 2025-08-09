@@ -1,8 +1,6 @@
 import { vec3 } from 'gl-matrix';
 import { Face } from './scene';
 import { Iterator } from 'iterator-js';
-import { assert } from './utils';
-import { store } from './store';
 
 export enum Axis {
   X,

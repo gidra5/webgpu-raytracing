@@ -1,10 +1,11 @@
-import { mat4, vec2, vec3 } from 'gl-matrix';
+import { mat4, vec2 } from 'gl-matrix';
 import {
   computePass,
   createStorageBuffer,
   createUniformBuffer,
   getDevice,
   getTimestampHandler,
+  PipelineBuilder,
   reactiveComputePipeline,
   reactiveUniformBuffer,
   renderBundlePass,
@@ -29,6 +30,7 @@ import {
   viewMatrix,
   viewProjectionMatrix,
   ReprojectionFiltering,
+  SkyboxType,
 } from './store';
 import { createEffect, createSignal } from 'solid-js';
 import rng from './shaders/rng';
@@ -107,11 +109,23 @@ const { facesBuffer, bvhBuffer, bvhCount, modelsBuffer } =
   ]);
 
 console.log('loading skybox');
-const {
-  texture: skyboxTexture,
-  importanceSampleTexture: skyboxImportanceSampleTexture,
-} = await loadSkybox();
-const skyboxSampler = device.createSampler();
+type SkyboxData = {
+  texture: GPUTexture;
+  importanceSampleTexture: GPUTexture;
+  sampler: GPUSampler;
+};
+const [skybox, setSkybox] = createSignal<SkyboxData>();
+
+createEffect(() => {
+  if (store.skybox === SkyboxType.Exr) {
+    (async () => {
+      const { texture, importanceSampleTexture } = await loadSkybox();
+      const sampler = device.createSampler();
+
+      setSkybox({ texture, importanceSampleTexture, sampler });
+    })();
+  }
+});
 
 const seedUniformBuffer = createUniformBuffer(4);
 const counterUniformBuffer = createUniformBuffer(4);
@@ -947,47 +961,62 @@ const scene = () => /* wgsl */ `
   }
 `;
 
-const skybox = /* wgsl */ `
-  // Function to sample the skybox
-  fn sampleSkyboxTexture(uv: vec2f) -> vec3f {
-    let color = textureSampleLevel(skyboxTexture, skyboxSampler, uv, 0);
-    // let color = vec4f(0);
-    return srgb_to_linear(color.xyz);
+const skyboxModule = (x: PipelineBuilder) => {
+  if (skybox()) {
+    return /* wgsl */ `
+      ${x.bindTexture('skyboxImportanceSampleTexture', 'unfilterable-float', skybox().importanceSampleTexture)}
+      ${x.bindSampler('skyboxSampler', 'non-filtering', skybox().sampler)}
+      ${x.bindTexture('skyboxTexture', 'unfilterable-float', skybox().texture)}
+
+      // Function to sample the skybox
+      fn sampleSkyboxTexture(uv: vec2f) -> vec3f {
+        let color = textureSampleLevel(skyboxTexture, skyboxSampler, uv, 0);
+        // let color = vec4f(0);
+        return srgb_to_linear(color.xyz);
+      }
+
+      // Function to sample the skybox
+      fn sampleSkybox(dir: vec3f) -> vec3f {
+        let u = (atan2(dir.z, dir.x) * INV_PI + 1) * 0.5;
+        let v = 1 - acos(dir.y) * INV_PI;
+        let uv = vec2<f32>(u, v);
+
+        return sampleSkyboxTexture(uv);
+      }
+      
+      fn importanceSampleSkybox(uv: vec2f) -> vec3f {
+        let sample = textureSampleLevel(skyboxImportanceSampleTexture, skyboxSampler, uv, 0);
+        // let sample = vec4f(0);
+        return sample.xyz;
+      }
+
+      // Function to convert UV coordinates to a 3D direction vector
+      fn uv_to_direction(uv: vec2<f32>) -> vec3<f32> {
+        // Inverse of the equirectangular projection
+        let phi = (uv.x * 2 - 1) * PI; 
+        let theta = (1 - uv.y) * PI;
+
+        let sinTheta = sin(theta);
+        let cosTheta = sqrt(1 - sinTheta * sinTheta);
+        let sinPhi = sin(phi);
+        let cosPhi = sqrt(1 - sinPhi * sinPhi);
+
+        // Standard spherical coordinates to Cartesian (assuming Y-up)
+        let x = sinTheta * cosPhi;
+        let y = cosTheta;
+        let z = sinTheta * sinPhi;
+        return normalize(vec3<f32>(x, y, z));
+      }
+    `;
   }
 
-  // Function to sample the skybox
-  fn sampleSkybox(dir: vec3f) -> vec3f {
-    let u = (atan2(dir.z, dir.x) * INV_PI + 1) * 0.5;
-    let v = 1 - acos(dir.y) * INV_PI;
-    let uv = vec2<f32>(u, v);
-
-    return sampleSkyboxTexture(uv);
-  }
-  
-  fn importanceSampleSkybox(uv: vec2f) -> vec3f {
-    let sample = textureSampleLevel(skyboxImportanceSampleTexture, skyboxSampler, uv, 0);
-    // let sample = vec4f(0);
-    return sample.xyz;
-  }
-
-  // Function to convert UV coordinates to a 3D direction vector
-  fn uv_to_direction(uv: vec2<f32>) -> vec3<f32> {
-    // Inverse of the equirectangular projection
-    let phi = (uv.x * 2 - 1) * PI; 
-    let theta = (1 - uv.y) * PI;
-
-    let sinTheta = sin(theta);
-    let cosTheta = sqrt(1 - sinTheta * sinTheta);
-    let sinPhi = sin(phi);
-    let cosPhi = sqrt(1 - sinPhi * sinPhi);
-
-    // Standard spherical coordinates to Cartesian (assuming Y-up)
-    let x = sinTheta * cosPhi;
-    let y = cosTheta;
-    let z = sinTheta * sinPhi;
-    return normalize(vec3<f32>(x, y, z));
-  }
-`;
+  return /* wgsl */ `
+    // Function to sample the skybox
+    fn sampleSkybox(dir: vec3f) -> vec3f {
+      return vec3f(0.2) / ${store.exposure};
+    }
+  `;
+};
 
 const derivatives = () => /* wgsl */ `
   fn dFdx1(p: f32) -> f32 {
@@ -1309,6 +1338,37 @@ const computeColor = () => /* wgsl */ `
     return color / ${store.samplesPerPoint};
   }
 
+  fn skyboxColor(pos: vec3f, normal: vec3f) -> vec4f {
+    ${(() => {
+      if (store.skybox === SkyboxType.Exr && skybox()) {
+        return /* wgsl */ `
+          let sample = importanceSampleSkybox(random_2());
+          let uv = sample.xy;
+          let dir = uv_to_direction(uv);
+          let ray = Ray(pos, dir);
+          if !sceneAnyHit(ray, f32max) {
+            let pdf = sample.z;
+            let color = sampleSkyboxTexture(uv);
+            return vec4f(max(0, dot(normal, dir)) * color.xyz / pdf, 1); 
+          }
+        `;
+      } else if (store.skybox === SkyboxType.Plain) {
+        return /* wgsl */ `
+          let dir = normalize(vec3(1));
+          let ray = Ray(pos, dir);
+          if !sceneAnyHit(ray, f32max) {
+            let color = vec3f(1) / ${store.exposure};
+            return vec4f(max(0, dot(normal, dir)) * color.xyz, 1); 
+          }
+        `;
+      } else {
+        return '';
+      }
+    })()}
+
+    return vec4f(0);
+  }
+
   struct BounceStackEntry {
     ray: Ray,
     maxDist: f32,
@@ -1353,14 +1413,9 @@ const computeColor = () => /* wgsl */ `
           stack[top] = BounceStackEntry(ray, f32max, vec4f(color, 1), throughput);
   
           {
-            let sample = importanceSampleSkybox(random_2());
-            let uv = sample.xy;
-            let dir = uv_to_direction(uv);
-            let ray = Ray(ray.pos, dir);
-            if !sceneAnyHit(ray, f32max) {
-              let pdf = sample.z;
-              let color = sampleSkyboxTexture(uv);
-              stack[top].color += vec4f(max(0, dot(normal, dir)) * color.xyz * throughput / pdf, 1); 
+            let color = skyboxColor(ray.pos, normal);
+            if color.w == 1 {
+              stack[top].color += vec4f(color.xyz * throughput, 1);
             }
           }
     
@@ -1693,10 +1748,6 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindVarBuffer('uniform', 'jitter: vec2f', jitterBuffer)}
     ${x.bindVarBuffer('uniform', 'prevJitter: vec2f', prevJitterBuffer)}
 
-    ${x.bindTexture('skyboxTexture', 'unfilterable-float', skyboxTexture)}
-    ${x.bindTexture('skyboxImportanceSampleTexture', 'unfilterable-float', skyboxImportanceSampleTexture)}
-    ${x.bindSampler('skyboxSampler', 'non-filtering', skyboxSampler)}
-
     const _reproject = ${store.reprojection.rate > 0};
     const viewport = vec2u(${store.view[0]}, ${store.view[1]});
     const viewportf = vec2f(viewport);
@@ -1704,7 +1755,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     const viewportN = viewportf / viewportf.x; // viewport normalized
 
     ${double}
-    ${skybox}
+    ${skyboxModule(x)}
     ${tonemapping}
     ${rng}
     ${intervals}

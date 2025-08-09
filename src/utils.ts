@@ -49,3 +49,13 @@ export const useSmoothedValue = (
 
 export const wait = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms));
+
+let yieldTime = 250;
+let yieldTS = performance.now();
+export const yieldEventLoop = async () => {
+  let ts = performance.now();
+  if (ts - yieldTS > yieldTime) {
+    yieldTS = ts;
+    await wait(0);
+  }
+};

@@ -377,5 +377,7 @@ export const loadSkybox = async () => {
     }
   );
 
+  console.log('skybox done');
+
   return { texture, importanceSampleTexture };
 };

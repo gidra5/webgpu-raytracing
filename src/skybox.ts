@@ -1,5 +1,6 @@
 import { Iterator } from 'iterator-js';
 import { EXRData } from 'parse-exr';
+import { yieldEventLoop } from './utils';
 
 function sRGBtoLin(colorChannel: number) {
   // Send this function a decimal sRGB gamma encoded color value
@@ -24,6 +25,7 @@ export const preprocess = async (skybox: EXRData) => {
 
   let luminanceTotal = 0;
   for (const i of Iterator.natural(skybox.width)) {
+    await yieldEventLoop();
     for (const j of Iterator.natural(skybox.height)) {
       let idx = i + j * skybox.width;
       const color = skybox.data.subarray(idx * 4, (idx + 1) * 4);
@@ -37,7 +39,10 @@ export const preprocess = async (skybox: EXRData) => {
     }
   }
 
+  await yieldEventLoop();
+
   for (const i of Iterator.natural(skybox.width)) {
+    await yieldEventLoop();
     for (const j of Iterator.natural(skybox.height)) {
       luminance[i][j] /= luminanceTotal;
     }
@@ -51,12 +56,14 @@ export const preprocess = async (skybox: EXRData) => {
   );
 
   for (const i of Iterator.natural(skybox.width)) {
+    await yieldEventLoop();
     let colTotal = 0;
     const colCDF = new Array(skybox.height);
     for (const j of Iterator.natural(skybox.height)) {
       colTotal += luminance[i][j];
       colCDF[j] = colTotal;
     }
+    await yieldEventLoop();
 
     for (const j of Iterator.natural(skybox.height)) {
       conditionalCDF[i][j] = colCDF[j] / colTotal;
@@ -65,6 +72,8 @@ export const preprocess = async (skybox: EXRData) => {
     marginalCDFTotal += colTotal;
     marginalCDF[i] = marginalCDFTotal;
   }
+
+  await yieldEventLoop();
 
   // normalize marginal CDF
   for (const i of Iterator.natural(skybox.width)) {
@@ -77,6 +86,7 @@ export const preprocess = async (skybox: EXRData) => {
   );
 
   for (const i of Iterator.natural(skybox.width)) {
+    await yieldEventLoop();
     let low = 0;
     let high = skybox.width - 1;
     let vIdx = 0;
@@ -93,6 +103,7 @@ export const preprocess = async (skybox: EXRData) => {
     const v = vIdx / skybox.width;
 
     for (const j of Iterator.natural(skybox.height)) {
+      await yieldEventLoop();
       let low = 0;
       let high = skybox.height - 1;
       let u = 0;
@@ -111,6 +122,8 @@ export const preprocess = async (skybox: EXRData) => {
       buffer[i][j] = [v, u];
     }
   }
+
+  await yieldEventLoop();
 
   const x = function* () {
     for (const j of Iterator.natural(skybox.height)) {

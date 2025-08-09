@@ -39,7 +39,6 @@ export enum SkyboxType {
   None,
   Plain,
   Exr,
-  Hdr,
 }
 
 export enum ReprojectionFiltering {
@@ -85,6 +84,7 @@ const [store, setStore] = createStore({
   projectionType: ProjectionType.Perspective,
   lensShape: LensShape.Circle,
   tonemapping: Tonemapping.Aces,
+  skybox: SkyboxType.Plain,
 
   reprojection: {
     rate: 1,
