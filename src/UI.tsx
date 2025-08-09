@@ -101,7 +101,7 @@ const App: Component = () => {
         </select>
       </label>
       <label class="flex gap-2 text-white text-sm items-baseline">
-        Shading type
+        Normals type
         <select
           value={store.normalsType}
           onChange={(e) => setShadingType(Number(e.target.value))}

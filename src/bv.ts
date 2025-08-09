@@ -1,6 +1,7 @@
 import { vec3 } from 'gl-matrix';
 import { Face } from './scene';
 import { Iterator } from 'iterator-js';
+import { store } from './store';
 
 export enum Axis {
   X,
@@ -10,17 +11,19 @@ export enum Axis {
 
 const BV_MIN_DELTA = 0.01;
 export type BoundingVolume = {
+  // AABB for triangles
   min: vec3;
   max: vec3;
 
   // left child BV index is implicitly the next value
+  // will be -1 for leaf nodes
   rightIdx: number; // right child BV index
   faces: number[]; // face indices
 };
 export type BoundingVolumeHierarchy = BoundingVolume[];
 
 const bv = (min: vec3, max: vec3): BoundingVolume => {
-  return { min, max, rightIdx: -1, faces: [-1, -1] };
+  return { min, max, rightIdx: -1, faces: [] };
 };
 
 export const facesBV = (faces: Face[]): BoundingVolume => {
@@ -116,19 +119,12 @@ export const subdivide = (
   const parent = bvh[bvh.length - 1];
   depth++;
 
-  // if (
-  //   faces.length <= store.bvh.leafSoftMaxSize ||
-  //   depth >= store.bvh.maxDepth
-  // ) {
-  //   for (let i = 0; i < faces.length; i++) {
-  //     parent.faces.push(faces[i].idx);
-  //   }
-  //   return [];
-  // }
-
-  if (faces.length <= 2) {
+  if (
+    faces.length <= store.bvh.leafSoftMaxSize ||
+    depth >= store.bvh.maxDepth
+  ) {
     for (let i = 0; i < faces.length; i++) {
-      parent.faces[i] = faces[i].idx;
+      parent.faces.push(faces[i].idx);
     }
     return [];
   }

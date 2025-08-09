@@ -95,11 +95,11 @@ console.log('loading materials');
 const { materialsBuffer } = await loadMaterialsToBuffers(materials);
 
 console.log('loading scene');
-const { facesBuffer, bvhBuffer, bvhCount, modelsBuffer } =
+const { facesBuffer, bvhBuffer, bvhFacesBuffer, bvhCount, modelsBuffer } =
   // await loadModelsToBuffers(models);
   await loadModelsToBuffers([
-    models[2],
     models[10],
+    models[2],
     models[6],
     models[11],
     models[8],
@@ -305,14 +305,15 @@ const structs = /* wgsl */ `
   struct BoundRay {
     pos: vec3f, // Origin
     dir: vec3f, // Direction (normalized)
-    maxDist: f32, 
+    maxDist: f32,
   };
 
   struct BoundingVolume {
     min: vec3f,
     rightIdx: i32,
     max: vec3f,
-    faces: array<i32, 2>,
+    facesCount: u32,
+    facesOffset: u32,
   }
   
   struct Offset {
@@ -584,14 +585,11 @@ const bvh = () => /* wgsl */ `
       top--;
       let bv = bvh[model.bvh.offset + idx];
 
-      let isLeaf = bv.rightIdx == -1; // right will be -1 too
+      let isLeaf = bv.rightIdx == -1;
       if (isLeaf) {
-        for (var i = 0u; i < 2; i = i + 1) {
-          let offset = bv.faces[i];
-          if offset == -1 {
-            continue;
-          }
-          let faceIdx = model.faces.offset + u32(offset);
+        for (var i = bv.facesOffset; i < bv.facesOffset + bv.facesCount; i = i + 1) {
+          let offset = bvhFaces[i];
+          let faceIdx = model.faces.offset + offset;
           let face = faces[faceIdx];
           let hit = rayIntersectFace(ray, face, Interval(min_dist, maxDist));
           if (!hit.hit) {
@@ -668,12 +666,9 @@ const bvh = () => /* wgsl */ `
 
       let isLeaf = bv.rightIdx == -1; // right will be -1 too
       if (isLeaf) {
-        for (var i = 0u; i < 2; i = i + 1) {
-          let offset = bv.faces[i];
-          if offset == -1 {
-            continue;
-          }
-          let faceIdx = model.faces.offset + u32(offset);
+        for (var i = bv.facesOffset; i < bv.facesOffset + bv.facesCount; i = i + 1) {
+          let offset = bvhFaces[i];
+          let faceIdx = model.faces.offset + offset;
           let face = faces[faceIdx];
           let hit = rayIntersectFace(ray, face, Interval(min_dist, result.barycentric.x));
           if (!hit.hit) {
@@ -975,7 +970,7 @@ const scene = () => /* wgsl */ `
       let n1 = face.points[0].normal;
       let n2 = face.points[1].normal;
       let n3 = face.points[2].normal;
-      return mat3x3f(n1, n2, n3) * uv2toUV3(uv);
+      return normalize(mat3x3f(n1, n2, n3) * uv2toUV3(uv));
     } else {
       return face.faceNormal;
     }
@@ -1803,6 +1798,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindVarBuffer('read-only-storage', 'materials: array<Material>', materialsBuffer)}
     ${x.bindVarBuffer('read-only-storage', 'models: array<Model>', modelsBuffer)}
     ${x.bindVarBuffer('read-only-storage', 'bvh: array<BoundingVolume>', bvhBuffer)}
+    ${x.bindVarBuffer('read-only-storage', 'bvhFaces: array<u32>', bvhFacesBuffer)}
 
     ${x.bindVarBuffer('uniform', 'seed: u32', seedUniformBuffer)}
     ${x.bindVarBuffer('uniform', 'counter: u32', counterUniformBuffer)}

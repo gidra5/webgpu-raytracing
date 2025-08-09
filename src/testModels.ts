@@ -75,8 +75,6 @@ export const unitCubeModel = makeModel(
   cubeModelMatrix
 );
 
-// console.log(unitCubeModel);
-
 const triangleModelMatrix = mat4.create();
 mat4.translate(
   triangleModelMatrix,
@@ -94,5 +92,3 @@ export const triangleModel = makeModel(
   [[0, 1, 2]],
   triangleModelMatrix
 );
-
-// console.log(triangleModel);

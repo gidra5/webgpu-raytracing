@@ -2,7 +2,7 @@ import { vec3 } from 'gl-matrix';
 import wavefrontObjParser from 'obj-file-parser';
 import { createStorageBuffer, createTexture } from './gpu';
 import { Iterator } from 'iterator-js';
-import { BoundingVolumeHierarchy, facesBVH } from './bv';
+import { BoundingVolume, BoundingVolumeHierarchy, facesBVH } from './bv';
 import { triangleModel, unitCubeModel } from './testModels';
 import MTLFile from './mtl';
 import { makeShaderDataDefinitions, makeStructuredView } from 'webgpu-utils';
@@ -48,6 +48,7 @@ const materialSize = 8;
 const facesAllocations: Allocation[] = [];
 // bvh offsets and counts are in bvSize units
 const bvhAllocations: Allocation[] = [];
+const bvhFacesAllocations: Allocation[] = [];
 
 const allocate = (allocations: Allocation[], count: number) => {
   const lastAllocation = allocations[allocations.length - 1];
@@ -60,26 +61,10 @@ const allocate = (allocations: Allocation[], count: number) => {
 
 const allocateFace = (count: number) => allocate(facesAllocations, count);
 const allocateBVH = (count: number) => allocate(bvhAllocations, count);
-
-const backface = (face: Face): Face => {
-  const p0 = face.points[0].position;
-  const e1 = face.points[1].position;
-  const e2 = face.points[2].position;
-  const n1 = vec3.negate(vec3.create(), face.points[0].normal);
-  const n2 = vec3.negate(vec3.create(), face.points[1].normal);
-  const n3 = vec3.negate(vec3.create(), face.points[2].normal);
-  const normal = vec3.negate(vec3.create(), face.normal);
-
-  return {
-    materialIdx: face.materialIdx,
-    idx: 0,
-    normal,
-    points: [
-      { position: p0, normal: n1, texture: face.points[0].texture },
-      { position: e2, normal: n3, texture: face.points[2].texture },
-      { position: e1, normal: n2, texture: face.points[1].texture },
-    ],
-  };
+const allocateBVHFace = (count: number) => allocate(bvhFacesAllocations, count);
+const totalAllocationSize = (allocations: Allocation[]) => {
+  const lastAllocation = allocations[allocations.length - 1];
+  return lastAllocation ? lastAllocation.offset + lastAllocation.count : 0;
 };
 
 export const loadModels = async () => {
@@ -224,25 +209,53 @@ const loadModelData = async (mapped: ArrayBuffer) => {
   }
 };
 
-const loadBVH = async (mapped: ArrayBuffer, model: Model, offset: number) => {
-  const mappedF32 = new Float32Array(mapped);
-  const mappedI32 = new Int32Array(mapped);
+const loadBVToBuffer = (
+  mapped: ArrayBuffer,
+  bv: BoundingVolume,
+  offset: number
+) => {
+  const f32Offset = offset * Float32Array.BYTES_PER_ELEMENT;
+  const code = `
+    struct BoundingVolume {
+      min: vec3f,
+      rightIdx: i32,
+      max: vec3f,
+      facesCount: u32,
+      facesOffset: u32,
+    }
+  `;
+  const defs = makeShaderDataDefinitions(code);
+  const values = makeStructuredView(
+    defs.structs.BoundingVolume,
+    mapped,
+    f32Offset
+  );
+  const facesCount = bv.faces.length;
+  const facesOffset = allocateBVHFace(facesCount);
 
+  values.set({
+    min: bv.min,
+    max: bv.max,
+    rightIdx: bv.rightIdx,
+    facesCount: facesCount,
+    facesOffset: facesOffset,
+  });
+};
+
+const loadBVH = async (
+  mapped: ArrayBuffer,
+  model: Model,
+  offset: number,
+  bvhFaces: number[][]
+) => {
   for (const [bv, i] of Iterator.iter(model.bvh).enumerate()) {
     let idx = offset + bvSize * i;
-    mappedF32[idx + 0] = bv.min[0];
-    mappedF32[idx + 1] = bv.min[1];
-    mappedF32[idx + 2] = bv.min[2];
-    mappedI32[idx + 3] = bv.rightIdx;
-    mappedF32[idx + 4] = bv.max[0];
-    mappedF32[idx + 5] = bv.max[1];
-    mappedF32[idx + 6] = bv.max[2];
-    mappedI32[idx + 7] = bv.faces[0];
-    mappedI32[idx + 8] = bv.faces[1];
+    loadBVToBuffer(mapped, bv, idx);
+    bvhFaces.push(bv.faces);
   }
 };
 
-const loadMaterialToBuffer = async (
+const loadMaterialToBuffer = (
   mapped: ArrayBuffer,
   material: Material,
   offset: number
@@ -273,7 +286,7 @@ export const loadMaterialsToBuffers = async (materials: Material[]) => {
   const materialsMapped = materialsBuffer.getMappedRange();
 
   for (const [material, i] of Iterator.iter(materials).enumerate()) {
-    await loadMaterialToBuffer(materialsMapped, material, i * materialSize);
+    loadMaterialToBuffer(materialsMapped, material, i * materialSize);
   }
 
   materialsBuffer.unmap();
@@ -307,12 +320,30 @@ export const loadModelsToBuffers = async (models: Model[]) => {
   );
   const bvhMapped = bvhBuffer.getMappedRange();
 
+  const bvhFaces: number[][] = [];
+
   for (const model of models) {
     const offset = allocateBVH(model.bvh.length);
-    await loadBVH(bvhMapped, model, offset * bvSize);
+    await loadBVH(bvhMapped, model, offset * bvSize, bvhFaces);
   }
 
   bvhBuffer.unmap();
+
+  const bvhFacesCount = totalAllocationSize(bvhFacesAllocations);
+  const bvhFacesBuffer = createStorageBuffer(
+    bvhFacesCount * Uint32Array.BYTES_PER_ELEMENT,
+    'BVH Faces Buffer',
+    0,
+    true
+  );
+  const bvhFacesMapped = bvhFacesBuffer.getMappedRange();
+  const bvhFacesU32Mapped = new Uint32Array(bvhFacesMapped);
+
+  for (const [faces, i] of Iterator.iter(bvhFaces).enumerate()) {
+    bvhFacesU32Mapped.set(faces, bvhFacesAllocations[i].offset);
+  }
+
+  bvhFacesBuffer.unmap();
 
   const modelsBuffer = createStorageBuffer(
     models.length * modelSize * Uint32Array.BYTES_PER_ELEMENT,
@@ -325,7 +356,7 @@ export const loadModelsToBuffers = async (models: Model[]) => {
 
   modelsBuffer.unmap();
 
-  return { facesBuffer, bvhBuffer, bvhCount, modelsBuffer };
+  return { facesBuffer, bvhBuffer, bvhFacesBuffer, bvhCount, modelsBuffer };
 };
 
 const loadExr = async (url: string) => {
