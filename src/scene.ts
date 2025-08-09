@@ -131,7 +131,7 @@ export const loadModels = async () => {
       uvArray = uvArray.concat(textureCoords.map(objTexToVec3));
 
       const _faces = faces
-        .map((f): Face[] => {
+        .map((f): Face => {
           const i0 = f.vertices[0].vertexIndex - 1;
           const i1 = f.vertices[1].vertexIndex - 1;
           const i2 = f.vertices[2].vertexIndex - 1;
@@ -167,9 +167,8 @@ export const loadModels = async () => {
               { position: e2, normal: nrmArray[j2], texture: uvArray[k3] },
             ],
           };
-          return [face, backface(face)];
+          return face;
         })
-        .flat()
         .map((face, i) => ({ ...face, idx: i }));
 
       const bvh = facesBVH(_faces);

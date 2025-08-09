@@ -386,6 +386,58 @@ const rayIntersect = /* wgsl */ `
   }
 
   @must_use
+  fn rayIntersectBackface(
+    ray: Ray,
+    face: Face,
+    interval: Interval
+  ) -> FaceIntersectonResult {
+    var result: FaceIntersectonResult;
+    result.hit = false;
+
+    // Mäller-Trumbore algorithm
+    // https://en.wikipedia.org/wiki/Möller–Trumbore_intersection_algorithm
+    // https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection.html
+    
+    let p0 = face.points[0].pos;
+    let e2 = face.points[1].pos;
+    let e1 = face.points[2].pos;
+
+    let h = cross(ray.dir, e2);
+    let det = dot(e1, h);
+    
+    // near zero determinant will detect parallel rays
+    if det < EPSILON * EPSILON { 
+      return result;
+    }
+
+    let s = ray.pos - p0;
+    let u = dot(s, h);
+
+    if u < 0.0f || u > det {
+      return result;
+    }
+
+    let q = cross(s, e1);
+    let v = dot(ray.dir, q);
+
+    if v < 0.0f || u + v > det {
+      return result;
+    }
+
+    let t = dot(e2, q);
+    let pt = vec3f(t, u, v) / det;
+
+    if !intervalSurrounds(interval, pt.x) {
+      return result;
+    }
+
+    result.barycentric = pt;
+    result.hit = true;
+    
+    return result;
+  }
+
+  @must_use
   fn rayIntersectFace(
     ray: Ray,
     face: Face,
@@ -405,7 +457,6 @@ const rayIntersect = /* wgsl */ `
     let h = cross(ray.dir, e2);
     let det = dot(e1, h);
     
-    // negative determinant will do backface culling
     // near zero determinant will detect parallel rays
     if det < EPSILON * EPSILON { 
       return result;
@@ -1099,7 +1150,7 @@ const reproject = () => /* wgsl */ `
 
   fn reprojectPoint(p: vec3f) -> vec2f {
     if ${store.reprojection.doubleAccuracy} {
-      return merge_2(reprojectPoint2(p)); 
+      return merge_2(reprojectPointPrecise(p)); 
     } else {
       return reprojectPure(p, prevViewInvMatrix, prevJitter);
     }
@@ -1107,7 +1158,7 @@ const reproject = () => /* wgsl */ `
 
   fn unprojectPoint(p: vec3f) -> vec2f {
     if ${store.reprojection.doubleAccuracy} {
-      return merge_2(unprojectPoint2(p));
+      return merge_2(unprojectPointPrecise(p));
     } else {
       return reprojectPure(p, viewInvMatrix, jitter);
     }
@@ -1120,15 +1171,15 @@ const reproject = () => /* wgsl */ `
     return duv.xy / duv.zw;
   }
 
-  fn reprojectPoint2(p: vec3f) -> F64_2 {
-    return reprojectPure2(p, F64_4x4(prevViewInvMatrix, prevViewInvMatrixLo), prevJitter);
+  fn reprojectPointPrecise(p: vec3f) -> F64_2 {
+    return reprojectPurePrecise(p, F64_4x4(prevViewInvMatrix, prevViewInvMatrixLo), prevJitter);
   }
 
-  fn unprojectPoint2(p: vec3f) -> F64_2 {
-    return reprojectPure2(p, F64_4x4(viewInvMatrix, viewInvMatrixLo), jitter);
+  fn unprojectPointPrecise(p: vec3f) -> F64_2 {
+    return reprojectPurePrecise(p, F64_4x4(viewInvMatrix, viewInvMatrixLo), jitter);
   }
 
-  fn reprojectPure2(p: vec3f, viewInv: F64_4x4, jitter: vec2f) -> F64_2 {
+  fn reprojectPurePrecise(p: vec3f, viewInv: F64_4x4, jitter: vec2f) -> F64_2 {
     let worldSpaceJitter = jitter / viewportf;
     let pp = matmul_4x4(viewInv, split_4(vec4(p, 1.)));
     let dp = sub_3(F64_3(pp.hi.xyz, pp.lo.xyz), split_3(vec3f(worldSpaceJitter, 0)));
@@ -1207,14 +1258,9 @@ const reproject = () => /* wgsl */ `
     return reprojection(uv + duv, p);
   }
 
-  // current uv, projected point, latest color for that point
-  fn reproject(hit_dist: f32, cuv: vec2f, p: vec3f, c: vec3f) -> ReprojectionResult {
+  fn reprojectPrecise(cuv: vec2f, p: vec3f) -> Reprojection {
     let uv_error = ${store.reprojection.identityErrorCorrection ? 'unprojectPoint(p) - cuv' : 'vec2f(0)'};
     let uv = reprojectPoint(p) - uv_error;
-
-    let currentGeometry = geometryBuffer[geometryIdx(vec2u(cuv))];
-    let faceIdx = currentGeometry.faceIdx;
-    let objectIdx = currentGeometry.objectIdx;
 
     var reproj = reprojection(uv, p);
 
@@ -1239,6 +1285,17 @@ const reproject = () => /* wgsl */ `
         }
       }
     }
+
+    return reproj;
+  }
+
+  fn reprojectFast(cuv: vec2f, p: vec3f) -> Reprojection {
+    return reprojection(reprojectPoint(p), p);
+  }
+
+  // current uv, projected point, latest color for that point
+  fn reproject(hit_dist: f32, cuv: vec2f, p: vec3f, c: vec3f) -> ReprojectionResult {
+    let reproj = reprojectPrecise(cuv, p);
     
     if any(reproj.uv < vec2(0)) || any(reproj.uv > vec2(viewportf)) { // outside viewport
       if ${store.reprojection.debug} {
@@ -1247,6 +1304,18 @@ const reproject = () => /* wgsl */ `
         return ReprojectionResult(vec4f(0));
       }
     }
+
+    if ${store.reprojection.distanceClamping} && !(reproj.d < threshold) {
+      if ${store.reprojection.debug} {
+        return ReprojectionResult(vec4f(0, 0, reproj.d, 1) / threshold);
+      } else {
+        return ReprojectionResult(vec4f(0));
+      }
+    }
+
+    let currentGeometry = geometryBuffer[geometryIdx(vec2u(cuv))];
+    let faceIdx = currentGeometry.faceIdx;
+    let objectIdx = currentGeometry.objectIdx;
 
     if ${store.reprojection.objectClamping} && reproj.g.objectIdx != objectIdx {
       if ${store.reprojection.debug} {
@@ -1259,14 +1328,6 @@ const reproject = () => /* wgsl */ `
     if ${store.reprojection.faceClamping} && reproj.g.faceIdx != faceIdx {
       if ${store.reprojection.debug} {
       return ReprojectionResult(vec4f(0.5,0.5,0,1));
-      } else {
-        return ReprojectionResult(vec4f(0));
-      }
-    }
-
-    if ${store.reprojection.distanceClamping} && !(reproj.d < threshold) {
-      if ${store.reprojection.debug} {
-        return ReprojectionResult(vec4f(0, 0, reproj.d, 1) / threshold);
       } else {
         return ReprojectionResult(vec4f(0));
       }
