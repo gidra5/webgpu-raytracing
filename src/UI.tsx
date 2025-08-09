@@ -16,7 +16,7 @@ import {
   setReprojectionRate,
   setScale,
   setShadingType,
-  ShadingType,
+  NormalsType,
   store,
   setResolutionScale,
   ReprojectionFiltering,
@@ -103,11 +103,11 @@ const App: Component = () => {
       <label class="flex gap-2 text-white text-sm items-baseline">
         Shading type
         <select
-          value={store.shadingType}
+          value={store.normalsType}
           onChange={(e) => setShadingType(Number(e.target.value))}
         >
-          <option value={ShadingType.Flat}>Flat</option>
-          <option value={ShadingType.Phong}>Phong</option>
+          <option value={NormalsType.Flat}>Flat</option>
+          <option value={NormalsType.Interpolated}>Interpolated</option>
         </select>
       </label>
       <label class="flex gap-2 text-white text-sm items-baseline">

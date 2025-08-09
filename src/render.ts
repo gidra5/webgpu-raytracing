@@ -24,7 +24,7 @@ import {
   setRenderGPUTime,
   setRenderJSTime,
   setView,
-  ShadingType,
+  NormalsType,
   store,
   Tonemapping,
   viewMatrix,
@@ -848,7 +848,7 @@ const raygen = () => /* wgsl */ `
 `;
 
 const scene = () => /* wgsl */ `
-  const flatShading = ${store.shadingType};
+  const flatShading = ${store.normalsType};
     
   const ambience = ${store.ambience};
   const sun_color = vec3f(1);
@@ -971,7 +971,7 @@ const scene = () => /* wgsl */ `
   }
 
   fn faceNormal(face: Face, uv: vec2f) -> vec3f {
-    if (flatShading == ${ShadingType.Phong}) {
+    if (flatShading == ${NormalsType.Interpolated}) {
       let n1 = face.points[0].normal;
       let n2 = face.points[1].normal;
       let n3 = face.points[2].normal;

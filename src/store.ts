@@ -4,9 +4,9 @@ import { front, right, up } from './camera';
 import { Accessor, createMemo } from 'solid-js';
 import { Iterator } from 'iterator-js';
 
-export enum ShadingType {
+export enum NormalsType {
   Flat,
-  Phong,
+  Interpolated,
 }
 
 export enum ProjectionType {
@@ -80,7 +80,7 @@ const [store, setStore] = createStore({
   // exposure: 1,
   gamma: 1,
   ambience: 0.1,
-  shadingType: ShadingType.Phong,
+  normalsType: NormalsType.Interpolated,
   projectionType: ProjectionType.Perspective,
   lensShape: LensShape.Circle,
   tonemapping: Tonemapping.Aces,
@@ -271,8 +271,8 @@ export const setFovOrientation = (fovOrientation: FovOrientation) => {
   resetCounter();
 };
 
-export const setShadingType = (shadingType: ShadingType) => {
-  setStore('shadingType', shadingType);
+export const setShadingType = (shadingType: NormalsType) => {
+  setStore('normalsType', shadingType);
   resetCounter();
 };
 
