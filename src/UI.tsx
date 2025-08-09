@@ -95,6 +95,9 @@ const App: Component = () => {
           <option value={ReprojectionFiltering.ExponentialAverage}>
             Exponential Average
           </option>
+          <option value={ReprojectionFiltering.ErrorWeighted}>
+            Distance Weighted
+          </option>
         </select>
       </label>
       <label class="flex gap-2 text-white text-sm items-baseline">

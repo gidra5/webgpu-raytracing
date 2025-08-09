@@ -46,6 +46,7 @@ export enum ReprojectionFiltering {
   Average,
   Bilateral,
   ExponentialAverage,
+  ErrorWeighted,
 }
 
 type BlitView =
@@ -66,7 +67,7 @@ const [store, setStore] = createStore({
 
   counter: 0,
   sampleCount: 1,
-  bouncesDepth: 4,
+  bouncesDepth: 2,
   samplesPerPoint: 1,
   samplesPerBounce: 1,
 
@@ -95,7 +96,7 @@ const [store, setStore] = createStore({
     doubleReprojectErrorCorrection: true,
     gradientErrorCorrection: true,
     identityErrorCorrection: true,
-    filtering: ReprojectionFiltering.Average,
+    filtering: ReprojectionFiltering.ErrorWeighted,
     filteringRate: 0.9,
     debug: false,
   },

@@ -1117,7 +1117,7 @@ const reproject = () => /* wgsl */ `
     for (var i = -bilateralFilterRadius; i <= bilateralFilterRadius; i = i + 1) {
       for (var j = -bilateralFilterRadius; j <= bilateralFilterRadius; j = j + 1) {
         let _uv = uv + vec2f(f32(i), f32(j)) * bilateralFilterStep;
-        let _color = sampleImage4(_uv, &prevImageBuffer);
+        let _color = sampleImage4(_uv, &prevImageBuffer, &prevGeometryBuffer);
         if _color.w <= 0 {
           continue;
         }
@@ -1248,18 +1248,23 @@ const reproject = () => /* wgsl */ `
     } else if ${store.reprojection.filtering === ReprojectionFiltering.Bilateral} {
       let color = bilateralFilter(reproj.uv, p, c);
       if color.w == 0. {
-        let color = sampleImage4(reproj.uv, &prevImageBuffer);
+        let color = sampleImage4(reproj.uv, &prevImageBuffer, &prevGeometryBuffer);
         return ReprojectionResult(color);
       }
       return ReprojectionResult(color);
     } else if ${store.reprojection.filtering === ReprojectionFiltering.Average} {
-      let color = sampleImage4(reproj.uv, &prevImageBuffer);
+      let color = sampleImage4(reproj.uv, &prevImageBuffer, &prevGeometryBuffer);
       return ReprojectionResult(color);
+    } else if ${store.reprojection.filtering === ReprojectionFiltering.ErrorWeighted} {
+      let color = sampleImage4(reproj.uv, &prevImageBuffer, &prevGeometryBuffer);
+      let q = pow(reproj.d, 0.15);
+      let p = 1/(1+q);
+      return ReprojectionResult(color * max(p, ${store.reprojection.filteringRate}));
     } else if ${store.reprojection.filtering === ReprojectionFiltering.ExponentialAverage} {
-      let color = sampleImage4(reproj.uv, &prevImageBuffer);
+      let color = sampleImage4(reproj.uv, &prevImageBuffer, &prevGeometryBuffer);
       return ReprojectionResult(color * ${store.reprojection.filteringRate});
     } else {
-      let color = sampleImage4(reproj.uv, &prevImageBuffer);
+      let color = sampleImage4(reproj.uv, &prevImageBuffer, &prevGeometryBuffer);
       return ReprojectionResult(color);
     }
   }
@@ -1320,7 +1325,7 @@ const computeColor = () => /* wgsl */ `
     stack[top] = BounceStackEntry(_ray, maxDist, vec4f(0), vec3f(1));
 
     while (stack[top].color.w < ${store.samplesPerBounce}) {
-      while (top < maxBounces - 1) {
+      while (top < maxBounces) {
         // shoot a ray out into the world
         let entry = stack[top];
         let hit = scene(entry.ray, entry.maxDist);
@@ -1355,7 +1360,7 @@ const computeColor = () => /* wgsl */ `
             if !sceneAnyHit(ray, f32max) {
               let pdf = sample.z;
               let color = sampleSkyboxTexture(uv);
-              stack[top].color += vec4f(dot(normal, dir) * color.xyz * throughput / pdf, 1); 
+              stack[top].color += vec4f(max(0, dot(normal, dir)) * color.xyz * throughput / pdf, 1); 
             }
           }
     
@@ -1449,29 +1454,36 @@ const imageSampler = /* wgsl */ `
   //   return value;
   // }
 
-  fn sampleImage3(uv: vec2f, _image: ptr<storage, array<vec3f>, read_write>) -> vec3f {
-    let uv_u = vec2u(floor(uv));
-    let uv_f = fract(uv);
-    let m = mat4x3f(
-      (*_image)[imageIdx(uv_u)],
-      (*_image)[imageIdx(uv_u + vec2u(1, 0))],
-      (*_image)[imageIdx(uv_u + vec2u(0, 1))],
-      (*_image)[imageIdx(uv_u + vec2u(1, 1))],
-    );
-    let value = bilinearInterpolation3(uv_f, m);
-    return value;
-  }
+  // fn sampleImage3(uv: vec2f, _image: ptr<storage, array<vec3f>, read_write>) -> vec3f {
+  //   let uv_u = vec2u(floor(uv));
+  //   let uv_f = fract(uv);
+  //   let m = mat4x3f(
+  //     (*_image)[imageIdx(uv_u)],
+  //     (*_image)[imageIdx(uv_u + vec2u(1, 0))],
+  //     (*_image)[imageIdx(uv_u + vec2u(0, 1))],
+  //     (*_image)[imageIdx(uv_u + vec2u(1, 1))],
+  //   );
+  //   let value = bilinearInterpolation3(uv_f, m);
+  //   return value;
+  // }
 
-  fn sampleImage4(uv: vec2f, _image: ptr<storage, array<vec4f>, read>) -> vec4f {
+  fn sampleImage4(uv: vec2f, _image: ptr<storage, array<vec4f>, read>, buffer: ptr<storage, array<Geometry>, read_write>) -> vec4f {
     let uv_u = vec2u(floor(uv));
     let uv_f = fract(uv);
-    let m = mat4x4f(
-      (*_image)[imageIdx(uv_u)],
-      (*_image)[imageIdx(uv_u + vec2u(1, 0))],
-      (*_image)[imageIdx(uv_u + vec2u(0, 1))],
-      (*_image)[imageIdx(uv_u + vec2u(1, 1))],
+    let depths = vec4f(
+      1 / (*buffer)[geometryIdx(uv_u)].depth,
+      1 / (*buffer)[geometryIdx(uv_u + vec2u(1, 0))].depth,
+      1 / (*buffer)[geometryIdx(uv_u + vec2u(0, 1))].depth,
+      1 / (*buffer)[geometryIdx(uv_u + vec2u(1, 1))].depth,
     );
-    let value = bilinearInterpolation4(uv_f, m);
+    let m = mat4x4f(
+      (*_image)[imageIdx(uv_u)] * depths[0],
+      (*_image)[imageIdx(uv_u + vec2u(1, 0))] * depths[1],
+      (*_image)[imageIdx(uv_u + vec2u(0, 1))] * depths[2],
+      (*_image)[imageIdx(uv_u + vec2u(1, 1))] * depths[3],
+    );
+    let depth = 1 / bilinearInterpolation(uv_f, depths);
+    let value = bilinearInterpolation4(uv_f, m) * depth;
     return value;
   }
 `;
@@ -1479,26 +1491,6 @@ const imageSampler = /* wgsl */ `
 const geometrySampler = () => /* wgsl */ `
   fn geometryIdx(uv: vec2u) -> u32 {
     return uv.x + uv.y * viewport.x;
-  }
-
-  fn sampleGeometryAll2(uv: vec2f, buffer: ptr<storage, array<Geometry>, read_write>, dd: vec2f) -> Geometry {
-    var result: Geometry;
-    
-    var d = 0;
-    let s = 1/(4 * dd);
-    let w = 1.;
-    for (var x = -w; x <= w; x = x + s.x) {
-      for (var y = -w; y <= w; y = y + s.y) {
-        let uv = uv + vec2f(f32(x), f32(y));
-        let geometry = sampleGeometryAll(uv, buffer);
-        result.position += geometry.position;
-        d++;
-      }
-    }
-
-    result.position /= f32(d);
-
-    return result;
   }
 
   fn sampleGeometryAll(uv: vec2f, buffer: ptr<storage, array<Geometry>, read_write>) -> Geometry {
