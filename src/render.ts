@@ -1469,6 +1469,29 @@ const reproject = () => /* wgsl */ `
       return ReprojectionResult(color);
     }
   }
+
+  fn reprojectFull(hit_dist: f32, cuv: vec2f, p: vec3f, c: vec3f) -> ReprojectionResult {
+    let _layer = layer;
+    for (var i = 0u; i < ${store.imageLayers}; i = i + 1u) {
+      // layer = 2;
+      layer = i;
+      let result = reproject(hit_dist, cuv, p, c);
+      if result.color.w > 0 {
+        layer = _layer;
+        return result;
+      }
+    }
+
+    // layer = 1;
+    // let result = reproject(hit_dist, cuv, p, c);
+    // if result.color.w > 0 {
+    //   layer = _layer;
+    //   return result;
+    // }
+
+    layer = _layer;
+    return ReprojectionResult(vec4f(0));
+  }
 `;
 
 const computeColor = () => /* wgsl */ `
@@ -2052,7 +2075,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
           let uv = hit.barycentric.yz;
           let dist = hit.barycentric.x;
           let point = ray.pos + ray.dir * dist;
-          let result = reproject(dist, fpos, point, vec3f(0));
+          let result = reprojectFull(dist, fpos, point, vec3f(0));
           if result.color.w > 0 {
             color += result.color.xyz / result.color.w;
             samples++;
@@ -2061,7 +2084,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       }
 
       if _reproject {
-        let result = reproject(dist, fpos, point, color);
+        let result = reprojectFull(dist, fpos, point, color);
         imageBuffer[idx] = result.color;
       }
 

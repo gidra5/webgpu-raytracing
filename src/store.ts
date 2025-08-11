@@ -85,7 +85,7 @@ export const [store, setStore] = createStore({
   lensShape: LensShape.Circle,
   tonemapping: Tonemapping.Aces,
   skybox: SkyboxType.Plain,
-  imageLayers: 1,
+  imageLayers: 3,
 
   reprojection: {
     rate: 1,
