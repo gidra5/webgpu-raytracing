@@ -403,10 +403,12 @@ const rayIntersect = /* wgsl */ `
     // https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection.html
     
     let p0 = face.points[0].pos;
-    let e2 = face.points[1].pos;
-    let e1 = face.points[2].pos;
+    let e1 = face.points[1].pos;
+    let e2 = face.points[2].pos;
 
-    let h = cross(ray.dir, e2);
+    let dir = -ray.dir;
+
+    let h = cross(dir, e2);
     let det = dot(e1, h);
     
     // near zero determinant will detect parallel rays
@@ -422,13 +424,13 @@ const rayIntersect = /* wgsl */ `
     }
 
     let q = cross(s, e1);
-    let v = dot(ray.dir, q);
+    let v = dot(dir, q);
 
     if v < 0.0f || u + v > det {
       return result;
     }
 
-    let t = dot(e2, q);
+    let t = -dot(e2, q);
     let pt = vec3f(t, u, v) / det;
 
     if !intervalSurrounds(interval, pt.x) {
@@ -540,6 +542,27 @@ const bvh = () => /* wgsl */ `
 
     for (var objectIdx = 0u; objectIdx < arrayLength(&models); objectIdx++) {
       let hit = rayIntersectObjectBVH(ray, objectIdx, result.barycentric.x);
+      if !hit.hit {
+        continue;
+      }
+      result = hit;
+    }
+
+    return result;
+  }
+  
+  @must_use
+  fn rayBackfaceIntersectBVH(
+    ray: Ray,
+    maxDist: f32,
+  ) -> BVHIntersectionResult {
+    var result: BVHIntersectionResult;
+    result.barycentric = vec3f(maxDist, 0, 0);
+    result.hit = false;
+    result.faceIdx = 0;
+
+    for (var objectIdx = 0u; objectIdx < arrayLength(&models); objectIdx++) {
+      let hit = rayBackfaceIntersectObjectBVH(ray, objectIdx, result.barycentric.x);
       if !hit.hit {
         continue;
       }
@@ -674,6 +697,90 @@ const bvh = () => /* wgsl */ `
           let faceIdx = model.faces.offset + offset;
           let face = faces[faceIdx];
           let hit = rayIntersectFace(ray, face, Interval(min_dist, result.barycentric.x));
+          if (!hit.hit) {
+            continue;
+          }
+          result.barycentric = hit.barycentric;
+          result.hit = true;
+          result.faceIdx = faceIdx;
+          result.objectIdx = objectIdx;
+        }
+        continue;
+      }
+
+      let leftIdx = u32(idx + 1);
+      let rightIdx = u32(bv.rightIdx);
+      let left = bvh[model.bvh.offset + leftIdx];
+      let right = bvh[model.bvh.offset + rightIdx];
+      let resultLeft = rayIntersectBV(ray, left, Interval(min_dist, result.barycentric.x));
+      let resultRight = rayIntersectBV(ray, right, Interval(min_dist, result.barycentric.x));
+      if resultLeft.hit && resultRight.hit {
+        let leftEntry = BVHIntersectionStackEntry(leftIdx, resultLeft.t);
+        let rightEntry = BVHIntersectionStackEntry(rightIdx, resultRight.t);
+        if resultLeft.t < resultRight.t {
+          top++;
+          stack[top] = rightEntry;
+          top++;
+          stack[top] = leftEntry;
+        } else {
+          top++;
+          stack[top] = leftEntry;
+          top++;
+          stack[top] = rightEntry;
+        }
+      } else if resultLeft.hit {
+        top++;
+        stack[top] = BVHIntersectionStackEntry(leftIdx, resultLeft.t);
+      } else if resultRight.hit {
+        top++;
+        stack[top] = BVHIntersectionStackEntry(rightIdx, resultRight.t);
+      }
+    }
+
+    return result;
+  }
+
+  @must_use
+  fn rayBackfaceIntersectObjectBVH(
+    ray: Ray,
+    objectIdx: u32,
+    maxDist: f32
+  ) -> BVHIntersectionResult {
+    var result: BVHIntersectionResult;
+    result.barycentric = vec3f(maxDist, 0, 0);
+    result.hit = false;
+    result.faceIdx = 0;
+    
+    var stack: array<BVHIntersectionStackEntry, BV_MAX_STACK_DEPTH>;
+    var top: i32;
+
+    let model = models[objectIdx];
+    let bv = bvh[model.bvh.offset];
+    let bvResult = rayIntersectBV(ray, bv, Interval(min_dist, result.barycentric.x));
+    if (!bvResult.hit) {
+      return result;
+    }
+
+    top = 0;
+    stack[top] = BVHIntersectionStackEntry(0, bvResult.t);
+
+    while (top > -1) {
+      let stackEntry = stack[top];
+      top--;
+      if stackEntry.t > result.barycentric.x {
+        continue;
+      }
+
+      let idx = stackEntry.idx;
+      let bv = bvh[model.bvh.offset + idx];
+
+      let isLeaf = bv.rightIdx == -1; // right will be -1 too
+      if (isLeaf) {
+        for (var i = bv.facesOffset; i < bv.facesOffset + bv.facesCount; i = i + 1) {
+          let offset = bvhFaces[i];
+          let faceIdx = model.faces.offset + offset;
+          let face = faces[faceIdx];
+          let hit = rayIntersectBackface(ray, face, Interval(min_dist, result.barycentric.x));
           if (!hit.hit) {
             continue;
           }
@@ -859,6 +966,10 @@ const scene = () => /* wgsl */ `
 
   fn scene(ray: Ray, maxDist: f32) -> BVHIntersectionResult {
     return rayIntersectBVH(ray, maxDist);
+  }
+
+  fn sceneBackface(ray: Ray, maxDist: f32) -> BVHIntersectionResult {
+    return rayBackfaceIntersectBVH(ray, maxDist);
   }
 
   fn objectFaceHit(faceIdx: u32, objectIdx: u32, ray: Ray, maxDist: f32) -> BVHIntersectionResult {
@@ -2114,7 +2225,7 @@ export async function renderFrame(now: number) {
     computePass.dispatchWorkgroups(
       Math.ceil(canvas.width / COMPUTE_WORKGROUP_SIZE_X),
       Math.ceil(canvas.height / COMPUTE_WORKGROUP_SIZE_Y),
-      1
+      store.imageLayers
     );
   });
 
