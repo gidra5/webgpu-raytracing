@@ -533,15 +533,16 @@ const bvh = () => /* wgsl */ `
   @must_use
   fn rayIntersectBVH(
     ray: Ray,
-    maxDist: f32
+    int: Interval
   ) -> BVHIntersectionResult {
     var result: BVHIntersectionResult;
-    result.barycentric = vec3f(maxDist, 0, 0);
+    result.barycentric = vec3f(int.max, 0, 0);
     result.hit = false;
     result.faceIdx = 0;
 
     for (var objectIdx = 0u; objectIdx < arrayLength(&models); objectIdx++) {
-      let hit = rayIntersectObjectBVH(ray, objectIdx, result.barycentric.x);
+      let int = Interval(int.min, result.barycentric.x);
+      let hit = rayIntersectObjectBVH(ray, objectIdx, int);
       if !hit.hit {
         continue;
       }
@@ -554,15 +555,16 @@ const bvh = () => /* wgsl */ `
   @must_use
   fn rayBackfaceIntersectBVH(
     ray: Ray,
-    maxDist: f32,
+    int: Interval
   ) -> BVHIntersectionResult {
     var result: BVHIntersectionResult;
-    result.barycentric = vec3f(maxDist, 0, 0);
+    result.barycentric = vec3f(int.max, 0, 0);
     result.hit = false;
     result.faceIdx = 0;
 
     for (var objectIdx = 0u; objectIdx < arrayLength(&models); objectIdx++) {
-      let hit = rayBackfaceIntersectObjectBVH(ray, objectIdx, result.barycentric.x);
+      let int = Interval(int.min, result.barycentric.x);
+      let hit = rayBackfaceIntersectObjectBVH(ray, objectIdx, int);
       if !hit.hit {
         continue;
       }
@@ -660,10 +662,10 @@ const bvh = () => /* wgsl */ `
   fn rayIntersectObjectBVH(
     ray: Ray,
     objectIdx: u32,
-    maxDist: f32
+    int: Interval
   ) -> BVHIntersectionResult {
     var result: BVHIntersectionResult;
-    result.barycentric = vec3f(maxDist, 0, 0);
+    result.barycentric = vec3f(int.max, 0, 0);
     result.hit = false;
     result.faceIdx = 0;
     
@@ -672,7 +674,7 @@ const bvh = () => /* wgsl */ `
 
     let model = models[objectIdx];
     let bv = bvh[model.bvh.offset];
-    let bvResult = rayIntersectBV(ray, bv, Interval(min_dist, result.barycentric.x));
+    let bvResult = rayIntersectBV(ray, bv, Interval(int.min, result.barycentric.x));
     if (!bvResult.hit) {
       return result;
     }
@@ -696,7 +698,7 @@ const bvh = () => /* wgsl */ `
           let offset = bvhFaces[i];
           let faceIdx = model.faces.offset + offset;
           let face = faces[faceIdx];
-          let hit = rayIntersectFace(ray, face, Interval(min_dist, result.barycentric.x));
+          let hit = rayIntersectFace(ray, face, Interval(int.min, result.barycentric.x));
           if (!hit.hit) {
             continue;
           }
@@ -712,8 +714,8 @@ const bvh = () => /* wgsl */ `
       let rightIdx = u32(bv.rightIdx);
       let left = bvh[model.bvh.offset + leftIdx];
       let right = bvh[model.bvh.offset + rightIdx];
-      let resultLeft = rayIntersectBV(ray, left, Interval(min_dist, result.barycentric.x));
-      let resultRight = rayIntersectBV(ray, right, Interval(min_dist, result.barycentric.x));
+      let resultLeft = rayIntersectBV(ray, left, Interval(int.min, result.barycentric.x));
+      let resultRight = rayIntersectBV(ray, right, Interval(int.min, result.barycentric.x));
       if resultLeft.hit && resultRight.hit {
         let leftEntry = BVHIntersectionStackEntry(leftIdx, resultLeft.t);
         let rightEntry = BVHIntersectionStackEntry(rightIdx, resultRight.t);
@@ -744,10 +746,10 @@ const bvh = () => /* wgsl */ `
   fn rayBackfaceIntersectObjectBVH(
     ray: Ray,
     objectIdx: u32,
-    maxDist: f32
+    int: Interval
   ) -> BVHIntersectionResult {
     var result: BVHIntersectionResult;
-    result.barycentric = vec3f(maxDist, 0, 0);
+    result.barycentric = vec3f(int.max, 0, 0);
     result.hit = false;
     result.faceIdx = 0;
     
@@ -756,7 +758,7 @@ const bvh = () => /* wgsl */ `
 
     let model = models[objectIdx];
     let bv = bvh[model.bvh.offset];
-    let bvResult = rayIntersectBV(ray, bv, Interval(min_dist, result.barycentric.x));
+    let bvResult = rayIntersectBV(ray, bv, Interval(int.min, result.barycentric.x));
     if (!bvResult.hit) {
       return result;
     }
@@ -780,7 +782,7 @@ const bvh = () => /* wgsl */ `
           let offset = bvhFaces[i];
           let faceIdx = model.faces.offset + offset;
           let face = faces[faceIdx];
-          let hit = rayIntersectBackface(ray, face, Interval(min_dist, result.barycentric.x));
+          let hit = rayIntersectBackface(ray, face, Interval(int.min, result.barycentric.x));
           if (!hit.hit) {
             continue;
           }
@@ -796,8 +798,8 @@ const bvh = () => /* wgsl */ `
       let rightIdx = u32(bv.rightIdx);
       let left = bvh[model.bvh.offset + leftIdx];
       let right = bvh[model.bvh.offset + rightIdx];
-      let resultLeft = rayIntersectBV(ray, left, Interval(min_dist, result.barycentric.x));
-      let resultRight = rayIntersectBV(ray, right, Interval(min_dist, result.barycentric.x));
+      let resultLeft = rayIntersectBV(ray, left, Interval(int.min, result.barycentric.x));
+      let resultRight = rayIntersectBV(ray, right, Interval(int.min, result.barycentric.x));
       if resultLeft.hit && resultRight.hit {
         let leftEntry = BVHIntersectionStackEntry(leftIdx, resultLeft.t);
         let rightEntry = BVHIntersectionStackEntry(rightIdx, resultRight.t);
@@ -964,12 +966,12 @@ const scene = () => /* wgsl */ `
     return rayIntersectBVHAnyHit(ray, maxDist);
   }
 
-  fn scene(ray: Ray, maxDist: f32) -> BVHIntersectionResult {
-    return rayIntersectBVH(ray, maxDist);
+  fn scene(ray: Ray, i: Interval) -> BVHIntersectionResult {
+    return rayIntersectBVH(ray, i);
   }
 
-  fn sceneBackface(ray: Ray, maxDist: f32) -> BVHIntersectionResult {
-    return rayBackfaceIntersectBVH(ray, maxDist);
+  fn sceneBackface(ray: Ray, i: Interval) -> BVHIntersectionResult {
+    return rayBackfaceIntersectBVH(ray, i);
   }
 
   fn objectFaceHit(faceIdx: u32, objectIdx: u32, ray: Ray, maxDist: f32) -> BVHIntersectionResult {
@@ -991,7 +993,7 @@ const scene = () => /* wgsl */ `
 
     {
       let model = models[objectIdx];
-      let _hit = rayIntersectObjectBVH(ray, objectIdx, hit.barycentric.x + EPSILON);
+      let _hit = rayIntersectObjectBVH(ray, objectIdx, Interval(min_dist, hit.barycentric.x + EPSILON));
       if _hit.hit {
         hit = _hit;
       }
@@ -1012,7 +1014,7 @@ const scene = () => /* wgsl */ `
 
     {
       let model = models[objectIdx];
-      let _hit = rayIntersectObjectBVH(ray, objectIdx, maxDist);
+      let _hit = rayIntersectObjectBVH(ray, objectIdx, Interval(min_dist, maxDist));
       if _hit.hit {
         return true;
       }
@@ -1558,11 +1560,26 @@ const computeColor = () => /* wgsl */ `
       while (top < maxBounces) {
         // shoot a ray out into the world
         let entry = stack[top];
-        let hit = scene(entry.ray, entry.maxDist);
         var color = select(entry.color.rgb / entry.color.w, entry.color.rgb, entry.color.w == 0);
         var throughput = entry.throughput;
+        var hit: BVHIntersectionResult;
         if top == 0 {
+          hit = scene(entry.ray, Interval(min_dist, entry.maxDist));
+
+          for (var i = 1u; i < layer; i = i + 1u) {
+            let d = hit.barycentric.x + EPSILON;
+            let hit1 = scene(entry.ray, Interval(d, f32max));
+            let hit2 = sceneBackface(entry.ray, Interval(d, f32max));
+            if !hit2.hit || hit1.barycentric.x < hit2.barycentric.x {
+              hit = hit1;
+            } else {
+              hit = hit2;
+            }
+          }
+
           *_hit = hit;
+        } else {
+          hit = scene(entry.ray, Interval(min_dist, entry.maxDist));
         }
         if !hit.hit {
           stack[top].color += vec4f(sampleSkybox(entry.ray.dir) * throughput, 1);
@@ -1976,7 +1993,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
         let ray = cameraRay(pos, viewMatrix);
         let hitDist = pixelHitDist(idx, ray);
         var hit: BVHIntersectionResult;
-        hit = scene(ray, hitDist);
+        hit = scene(ray, Interval(min_dist, hitDist));
 
         let dist = hit.barycentric.x;
         let point = ray.pos + ray.dir * dist;
