@@ -31,6 +31,7 @@ import {
   viewProjectionMatrix,
   ReprojectionFiltering,
   SkyboxType,
+  BlitView,
 } from './store';
 import { createEffect, createSignal } from 'solid-js';
 import rng from './shaders/rng';
@@ -225,32 +226,45 @@ createEffect(() => {
       }
 
       fn getColor(idx: u32, pos: vec2f) -> vec3f {
-        if ${store.blitView == 'image'} {
+        if ${store.blitView == BlitView.Image} {
           let value = imageBuffer[idx];
           let color = value.rgb / value.w * exposure;
           return imageColor(color); 
-        } else if ${store.blitView == 'prevImage'} {
+        } else if ${store.blitView == BlitView.Image2} {
+          let value = imageBuffer[idx + 1 * viewport.x * viewport.y];
+          let color = value.rgb / value.w * exposure;
+          return imageColor(color); 
+        } else if ${store.blitView == BlitView.Image3} {
+          let value = imageBuffer[idx + 2 * viewport.x * viewport.y];
+          let color = value.rgb / value.w * exposure;
+          return imageColor(color);
+        } else if ${store.blitView == BlitView.PrevImage} {
           let value = prevImageBuffer[idx];
           let color = value.rgb / value.w * exposure;
           return imageColor(color); 
-        } else if ${store.blitView == 'normals'} {
+        } else if ${store.blitView == BlitView.PrevImage2} {
+          let value = prevImageBuffer[idx + 1 * viewport.x * viewport.y];
+          let color = value.rgb / value.w * exposure;
+          return imageColor(color); 
+        } else if ${store.blitView == BlitView.PrevImage3} {
+          let value = prevImageBuffer[idx + 2 * viewport.x * viewport.y];
+          let color = value.rgb / value.w * exposure;
+          return imageColor(color);
+        } else if ${store.blitView == BlitView.Normals} {
           let value = imageBuffer[idx];
-          return value.rgb; 
-        } else if ${store.blitView == 'reproject'} {
+          return value.rgb;
+        } else if ${store.blitView == BlitView.Reproject} {
           let value = imageBuffer[idx];
-          return value.rgb; 
-        } else if ${store.blitView == 'depth'} {
-          // return vec3f(depthBuffer[idx][0]) / 10;
+          return value.rgb;
+        } else if ${store.blitView == BlitView.Depth} {
           let value = imageBuffer[idx];
-          return value.rgb / value.w; 
-        } else if ${store.blitView == 'prevDepth'} {
-          // return vec3f(depthBuffer[idx][1]) / 10;
-          let value = imageBuffer[idx];
-          return value.rgb / value.w; 
-        } else if ${store.blitView == 'depthDelta'} {
-          // return vec3f(depthBuffer[idx][0] - depthBuffer[idx][1]);
-          let value = imageBuffer[idx];
-          return value.rgb / value.w; 
+          return value.rgb / value.w;
+        } else if ${store.blitView == BlitView.PrevDepth} {
+          let value = prevImageBuffer[idx];
+          return value.rgb / value.w;
+        } else if ${store.blitView == BlitView.DepthDelta} {
+          let value = imageBuffer[idx] - prevImageBuffer[idx];
+          return value.rgb / value.w;
         }
         return vec3f(0);
       }
@@ -1341,6 +1355,7 @@ const reproject = () => /* wgsl */ `
     p: vec3f,
     dp: vec3f,
     d: f32,
+    layer: u32,
   }
 
   fn reprojection(uv: vec2f, p: vec3f) -> Reprojection {
@@ -1348,7 +1363,7 @@ const reproject = () => /* wgsl */ `
     let uv_p = uv_g.position;
     let dp = uv_p - p;
     let d = dot(dp, dp);
-    return Reprojection(uv, uv_g, uv_p, dp, d);
+    return Reprojection(uv, uv_g, uv_p, dp, d, 0);
   }
 
   fn gradientReprojection(uv: vec2f, p: vec3f, dp: vec3f) -> Reprojection {
@@ -1472,8 +1487,8 @@ const reproject = () => /* wgsl */ `
 
   fn reprojectFull(hit_dist: f32, cuv: vec2f, p: vec3f, c: vec3f) -> ReprojectionResult {
     let _layer = layer;
+
     for (var i = 0u; i < ${store.imageLayers}; i = i + 1u) {
-      // layer = 2;
       layer = i;
       let result = reproject(hit_dist, cuv, p, c);
       if result.color.w > 0 {
@@ -1481,13 +1496,6 @@ const reproject = () => /* wgsl */ `
         return result;
       }
     }
-
-    // layer = 1;
-    // let result = reproject(hit_dist, cuv, p, c);
-    // if result.color.w > 0 {
-    //   layer = _layer;
-    //   return result;
-    // }
 
     layer = _layer;
     return ReprojectionResult(vec4f(0));
@@ -1589,8 +1597,12 @@ const computeColor = () => /* wgsl */ `
         if top == 0 {
           hit = scene(entry.ray, Interval(min_dist, entry.maxDist));
 
-          for (var i = 1u; i < layer; i = i + 1u) {
-            let d = hit.barycentric.x + EPSILON;
+          for (var i = 0u; i < layer; i = i + 1u) {
+            if !hit.hit {
+              break;
+            }
+            
+            let d = hit.barycentric.x;
             let hit1 = scene(entry.ray, Interval(d, f32max));
             let hit2 = sceneBackface(entry.ray, Interval(d, f32max));
             if !hit2.hit || hit1.barycentric.x < hit2.barycentric.x {
@@ -2088,7 +2100,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
         imageBuffer[idx] = result.color;
       }
 
-      if ${store.blitView == 'normals'} {
+      if ${store.blitView == BlitView.Normals} {
         imageBuffer[idx] = vec4f(color, 1);
       } else {
         imageBuffer[idx] += vec4f(color, f32(samples));

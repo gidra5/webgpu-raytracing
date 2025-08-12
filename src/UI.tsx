@@ -23,6 +23,7 @@ import {
   setReprojectionFiltering,
   SkyboxType,
   setStore,
+  BlitView,
 } from './store';
 import { useSmoothedValue } from './utils';
 
@@ -77,13 +78,17 @@ const App: Component = () => {
           value={store.blitView}
           onChange={(e) => setBlitView(e.target.value as any)}
         >
-          <option value="image">Image</option>
-          <option value="prevImage">Prev Image</option>
-          <option value="depth">Depth</option>
-          <option value="prevDepth">Prev Depth</option>
-          <option value="depthDelta">Depth Delta</option>
-          <option value="normals">Normals</option>
-          <option value="reproject">Reproject</option>
+          <option value={BlitView.Image}>Image</option>
+          <option value={BlitView.Image2}>Image 2</option>
+          <option value={BlitView.Image3}>Image 3</option>
+          <option value={BlitView.PrevImage}>Prev Image</option>
+          <option value={BlitView.PrevImage2}>Prev Image 2</option>
+          <option value={BlitView.PrevImage3}>Prev Image 3</option>
+          <option value={BlitView.Depth}>Depth</option>
+          <option value={BlitView.PrevDepth}>Prev Depth</option>
+          <option value={BlitView.DepthDelta}>Depth Delta</option>
+          <option value={BlitView.Normals}>Normals</option>
+          <option value={BlitView.Reproject}>Reproject</option>
         </select>
       </label>
       <label class="flex gap-2 text-white text-sm items-baseline">

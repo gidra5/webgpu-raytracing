@@ -48,14 +48,19 @@ export enum ReprojectionFiltering {
   ErrorWeighted,
 }
 
-type BlitView =
-  | 'image'
-  | 'prevImage'
-  | 'depth'
-  | 'prevDepth'
-  | 'depthDelta'
-  | 'normals'
-  | 'reproject';
+export enum BlitView {
+  Image,
+  Image2,
+  Image3,
+  PrevImage,
+  PrevImage2,
+  PrevImage3,
+  Depth,
+  PrevDepth,
+  DepthDelta,
+  Normals,
+  Reproject,
+}
 
 export const [store, setStore] = createStore({
   loadingTitle: '' as string | null,
@@ -85,25 +90,25 @@ export const [store, setStore] = createStore({
   lensShape: LensShape.Circle,
   tonemapping: Tonemapping.Aces,
   skybox: SkyboxType.Plain,
-  imageLayers: 3,
+  imageLayers: 8,
 
   reprojection: {
     rate: 1,
-    pointAccuracy: 1e-1,
-    objectClamping: true,
-    faceClamping: true,
+    pointAccuracy: 1e-4,
+    objectClamping: false,
+    faceClamping: false,
     distanceClamping: true,
     doubleAccuracy: true,
     doubleReprojectErrorCorrection: true,
     gradientErrorCorrection: true,
     identityErrorCorrection: true,
-    filtering: ReprojectionFiltering.ErrorWeighted,
+    filtering: ReprojectionFiltering.Average,
     filteringRate: 0.9,
     debug: false,
   },
 
   jitterStrength: 0,
-  resolutionScale: 1,
+  resolutionScale: 0.6,
   geometryBufferScale: 1,
   scale: 1,
   sensitivity: 0.03,
@@ -115,7 +120,7 @@ export const [store, setStore] = createStore({
   },
 
   debugBVH: false,
-  blitView: 'image' as BlitView,
+  blitView: BlitView.Image,
 
   timings: {
     time: 0, // ms
