@@ -23,9 +23,10 @@ export const preprocess = async (skybox: EXRData) => {
     () => new Array<number>(skybox.height)
   );
 
+  await yieldEventLoop();
+
   let luminanceTotal = 0;
   for (const i of Iterator.natural(skybox.width)) {
-    await yieldEventLoop();
     for (const j of Iterator.natural(skybox.height)) {
       let idx = i + j * skybox.width;
       const color = skybox.data.subarray(idx * 4, (idx + 1) * 4);
@@ -42,7 +43,6 @@ export const preprocess = async (skybox: EXRData) => {
   await yieldEventLoop();
 
   for (const i of Iterator.natural(skybox.width)) {
-    await yieldEventLoop();
     for (const j of Iterator.natural(skybox.height)) {
       luminance[i][j] /= luminanceTotal;
     }
@@ -55,15 +55,14 @@ export const preprocess = async (skybox: EXRData) => {
     () => new Array<number>(skybox.height)
   );
 
+  await yieldEventLoop();
   for (const i of Iterator.natural(skybox.width)) {
-    await yieldEventLoop();
     let colTotal = 0;
     const colCDF = new Array(skybox.height);
     for (const j of Iterator.natural(skybox.height)) {
       colTotal += luminance[i][j];
       colCDF[j] = colTotal;
     }
-    await yieldEventLoop();
 
     for (const j of Iterator.natural(skybox.height)) {
       conditionalCDF[i][j] = colCDF[j] / colTotal;
@@ -85,8 +84,8 @@ export const preprocess = async (skybox: EXRData) => {
     () => new Array<[number, number]>(skybox.height)
   );
 
+  await yieldEventLoop();
   for (const i of Iterator.natural(skybox.width)) {
-    await yieldEventLoop();
     let low = 0;
     let high = skybox.width - 1;
     let vIdx = 0;
@@ -103,7 +102,6 @@ export const preprocess = async (skybox: EXRData) => {
     const v = vIdx / skybox.width;
 
     for (const j of Iterator.natural(skybox.height)) {
-      await yieldEventLoop();
       let low = 0;
       let high = skybox.height - 1;
       let u = 0;

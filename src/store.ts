@@ -71,7 +71,7 @@ export const [store, setStore] = createStore({
 
   counter: 0,
   sampleCount: 1,
-  bouncesDepth: 4,
+  bouncesDepth: 8,
   samplesPerPoint: 1,
   samplesPerBounce: 1,
 
@@ -89,12 +89,12 @@ export const [store, setStore] = createStore({
   projectionType: ProjectionType.Perspective,
   lensShape: LensShape.Circle,
   tonemapping: Tonemapping.Aces,
-  skybox: SkyboxType.Plain,
+  skybox: SkyboxType.Exr,
   imageLayers: 8,
 
   reprojection: {
     rate: 1,
-    pointAccuracy: 1e-4,
+    pointAccuracy: 1,
     objectClamping: false,
     faceClamping: false,
     distanceClamping: true,
@@ -102,7 +102,7 @@ export const [store, setStore] = createStore({
     doubleReprojectErrorCorrection: true,
     gradientErrorCorrection: true,
     identityErrorCorrection: true,
-    filtering: ReprojectionFiltering.Average,
+    filtering: ReprojectionFiltering.ErrorWeighted,
     filteringRate: 0.9,
     debug: false,
   },
@@ -115,8 +115,8 @@ export const [store, setStore] = createStore({
   speed: 2,
   runSpeed: 5,
   bvh: {
-    maxDepth: 16,
-    leafSoftMaxSize: 2,
+    maxDepth: 32,
+    leafSoftMaxSize: 4,
   },
 
   debugBVH: false,

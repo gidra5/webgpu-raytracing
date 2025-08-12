@@ -97,17 +97,17 @@ const { materialsBuffer } = await loadMaterialsToBuffers(materials);
 
 console.log('loading scene');
 const { facesBuffer, bvhBuffer, bvhFacesBuffer, bvhCount, modelsBuffer } =
-  // await loadModelsToBuffers(models);
-  await loadModelsToBuffers([
-    models[10],
-    models[2],
-    models[6],
-    models[11],
-    models[8],
-    models[5],
-    models[3],
-    models[4],
-  ]);
+  await loadModelsToBuffers(models);
+// await loadModelsToBuffers([
+//   models[10],
+//   models[2],
+//   models[6],
+//   models[11],
+//   models[8],
+//   models[5],
+//   models[3],
+//   models[4],
+// ]);
 
 console.log('loading skybox');
 type SkyboxData = {
@@ -1147,7 +1147,6 @@ const skyboxModule = (x: PipelineBuilder) => {
       // Function to sample the skybox
       fn sampleSkyboxTexture(uv: vec2f) -> vec3f {
         let color = textureSampleLevel(skyboxTexture, skyboxSampler, uv, 0);
-        // let color = vec4f(0);
         return srgb_to_linear(color.xyz);
       }
 
@@ -1162,8 +1161,18 @@ const skyboxModule = (x: PipelineBuilder) => {
       
       fn importanceSampleSkybox(uv: vec2f) -> vec3f {
         let sample = textureSampleLevel(skyboxImportanceSampleTexture, skyboxSampler, uv, 0);
-        // let sample = vec4f(0);
         return sample.xyz;
+        // let uv_u = floor(uv);
+        // let uv_f = fract(uv);
+        // let m = mat4x4f(
+        //   textureSampleLevel(skyboxImportanceSampleTexture, skyboxSampler, uv_u, 0),
+        //   textureSampleLevel(skyboxImportanceSampleTexture, skyboxSampler, uv_u + vec2f(1, 0), 0),
+        //   textureSampleLevel(skyboxImportanceSampleTexture, skyboxSampler, uv_u + vec2f(0, 1), 0),
+        //   textureSampleLevel(skyboxImportanceSampleTexture, skyboxSampler, uv_u + vec2f(1, 1), 0),
+        // );
+        // let value = bilinearInterpolation4(uv_f, m);
+
+        // return value.xyz;
       }
 
       // Function to convert UV coordinates to a 3D direction vector
