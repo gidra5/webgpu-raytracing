@@ -71,7 +71,7 @@ export const [store, setStore] = createStore({
 
   counter: 0,
   sampleCount: 1,
-  bouncesDepth: 1,
+  bouncesDepth: 2,
   samplesPerPoint: 1,
   samplesPerBounce: 1,
 
@@ -94,8 +94,8 @@ export const [store, setStore] = createStore({
 
   reprojection: {
     rate: 1,
-    pointAccuracy: 1,
-    objectClamping: false,
+    pointAccuracy: 1e-4,
+    objectClamping: true,
     faceClamping: false,
     distanceClamping: true,
     doubleAccuracy: true,
@@ -108,7 +108,7 @@ export const [store, setStore] = createStore({
   },
 
   jitterStrength: 0,
-  resolutionScale: 0.6,
+  resolutionScale: 1,
   geometryBufferScale: 1,
   scale: 1,
   sensitivity: 0.03,
