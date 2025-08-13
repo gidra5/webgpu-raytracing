@@ -71,7 +71,7 @@ export const [store, setStore] = createStore({
 
   counter: 0,
   sampleCount: 1,
-  bouncesDepth: 8,
+  bouncesDepth: 1,
   samplesPerPoint: 1,
   samplesPerBounce: 1,
 

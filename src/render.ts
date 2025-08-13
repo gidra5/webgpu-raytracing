@@ -1372,7 +1372,7 @@ const reproject = () => /* wgsl */ `
     let uv_p = uv_g.position;
     let dp = uv_p - p;
     let d = dot(dp, dp);
-    return Reprojection(uv, uv_g, uv_p, dp, d, 0);
+    return Reprojection(uv, uv_g, uv_p, dp, d, layer);
   }
 
   fn gradientReprojection(uv: vec2f, p: vec3f, dp: vec3f) -> Reprojection {
@@ -1393,8 +1393,7 @@ const reproject = () => /* wgsl */ `
     return reprojection(uv + duv, p);
   }
 
-  fn reprojectPrecise(cuv: vec2f, p: vec3f) -> Reprojection {
-    let uv_error = ${store.reprojection.identityErrorCorrection ? 'unprojectPoint(p) - cuv' : 'vec2f(0)'};
+  fn reprojectPrecise(uv_error: vec2f, p: vec3f) -> Reprojection {
     let uv = reprojectPoint(p) - uv_error;
 
     var reproj = reprojection(uv, p);
@@ -1429,48 +1428,60 @@ const reproject = () => /* wgsl */ `
   }
 
   // current uv, projected point, latest color for that point
-  fn reproject(hit_dist: f32, cuv: vec2f, p: vec3f, c: vec3f) -> ReprojectionResult {
-    let reproj = reprojectPrecise(cuv, p);
+  fn reprojectDirect(cuv: vec2f, p: vec3f, c: vec3f) -> Reprojection {
+    layer = 0;
+    let uv_error = ${store.reprojection.identityErrorCorrection ? 'unprojectPoint(p) - cuv' : 'vec2f(0)'};
+    var reproj = reprojectPrecise(uv_error, p);
+    for (var i = 1u; i < ${store.imageLayers}; i = i + 1u) {
+      layer = i;
+      let uv_error = ${store.reprojection.identityErrorCorrection ? 'unprojectPoint(p) - cuv' : 'vec2f(0)'};
+      let result = reprojectPrecise(uv_error, p);
+      if result.d < reproj.d {
+        reproj = result;
+      }
+    }
+    
+    return reproj;
+  }
+
+  // current uv, projected point, latest color for that point
+  fn reproject(p: vec3f, c: vec3f) -> Reprojection {
+    layer = 0;
+    var reproj = reprojectPrecise(vec2f(0), p);
+    for (var i = 1u; i < ${store.imageLayers}; i = i + 1u) {
+      layer = i;
+      let result = reprojectPrecise(vec2f(0), p);
+      if result.d < reproj.d {
+        reproj = result;
+      }
+    }
+    
+    return reproj;
+  }
+
+  // current uv, projected point, latest color for that point
+  fn reprojectionSample(g: Geometry, reproj: Reprojection,  p: vec3f, c: vec3f) -> ReprojectionResult {
+    let faceIdx = g.faceIdx;
+    let objectIdx = g.objectIdx;
+    layer = reproj.layer;
     
     if any(reproj.uv < vec2(0)) || any(reproj.uv > vec2(viewportf)) { // outside viewport
-      if ${store.reprojection.debug} {
-        return ReprojectionResult(vec4f(0, 1, 0, 1));
-      } else {
-        return ReprojectionResult(vec4f(0));
-      }
+      return ReprojectionResult(vec4f(0));
     }
 
     if ${store.reprojection.distanceClamping} && !(reproj.d < threshold) {
-      if ${store.reprojection.debug} {
-        return ReprojectionResult(vec4f(0, 0, reproj.d, 1) / threshold);
-      } else {
-        return ReprojectionResult(vec4f(0));
-      }
+      return ReprojectionResult(vec4f(0));
     }
 
-    let currentGeometry = geometryBuffer[geometryIdx(vec2u(cuv))];
-    let faceIdx = currentGeometry.faceIdx;
-    let objectIdx = currentGeometry.objectIdx;
-
     if ${store.reprojection.objectClamping} && reproj.g.objectIdx != objectIdx {
-      if ${store.reprojection.debug} {
-      return ReprojectionResult(vec4f(1,1,0,1));
-      } else {
-        return ReprojectionResult(vec4f(0));
-      }
+      return ReprojectionResult(vec4f(0));
     }
 
     if ${store.reprojection.faceClamping} && reproj.g.faceIdx != faceIdx {
-      if ${store.reprojection.debug} {
-      return ReprojectionResult(vec4f(0.5,0.5,0,1));
-      } else {
-        return ReprojectionResult(vec4f(0));
-      }
+      return ReprojectionResult(vec4f(0));
     }
 
-    if ${store.reprojection.debug} {
-      return ReprojectionResult(vec4f(0, 0, reproj.d, 1) / threshold);
-    } else if ${store.reprojection.filtering === ReprojectionFiltering.Bilateral} {
+    if ${store.reprojection.filtering === ReprojectionFiltering.Bilateral} {
       let color = bilateralFilter(reproj.uv, p, c);
       if color.w == 0. {
         let color = sampleImage4(reproj.uv, &prevImageBuffer, &prevGeometryBuffer);
@@ -1494,20 +1505,25 @@ const reproject = () => /* wgsl */ `
     }
   }
 
-  fn reprojectFull(hit_dist: f32, cuv: vec2f, p: vec3f, c: vec3f) -> ReprojectionResult {
+  fn reprojectFullDirect(cuv: vec2f, p: vec3f, c: vec3f) -> ReprojectionResult {
     let _layer = layer;
 
-    for (var i = 0u; i < ${store.imageLayers}; i = i + 1u) {
-      layer = i;
-      let result = reproject(hit_dist, cuv, p, c);
-      if result.color.w > 0 {
-        layer = _layer;
-        return result;
-      }
-    }
+    let currentGeometry = geometryBuffer[geometryIdx(vec2u(cuv))];
+    let reproj = reprojectDirect(cuv, p, c);
+    let result = reprojectionSample(currentGeometry, reproj, p, c);
 
     layer = _layer;
-    return ReprojectionResult(vec4f(0));
+    return result;
+  }
+
+  fn reprojectFull(g: Geometry, p: vec3f, c: vec3f) -> ReprojectionResult {
+    let _layer = layer;
+
+    let reproj = reproject(p, c);
+    let result = reprojectionSample(g, reproj, p, c);
+
+    layer = _layer;
+    return result;
   }
 `;
 
@@ -1597,12 +1613,13 @@ const computeColor = () => /* wgsl */ `
     stack[top] = BounceStackEntry(_ray, maxDist, vec4f(0), vec3f(1));
 
     while (stack[top].color.w < ${store.samplesPerBounce}) {
-      while (top < maxBounces) {
+      while (top <= maxBounces) {
         // shoot a ray out into the world
         let entry = stack[top];
         var color = select(entry.color.rgb / entry.color.w, entry.color.rgb, entry.color.w == 0);
         var throughput = entry.throughput;
         var hit: BVHIntersectionResult;
+
         if top == 0 {
           hit = scene(entry.ray, Interval(min_dist, entry.maxDist));
 
@@ -1625,39 +1642,40 @@ const computeColor = () => /* wgsl */ `
         } else {
           hit = scene(entry.ray, Interval(min_dist, entry.maxDist));
         }
+
         if !hit.hit {
           stack[top].color += vec4f(sampleSkybox(entry.ray.dir) * throughput, 1);
           break;
-        } else {
-          let face = faces[hit.faceIdx];
-          let material = materials[face.materialIdx];
-          color += material.emission * throughput;
-          throughput *= material.color;
-    
-          let normal = faceNormal(face, hit.barycentric.yz);
-          let ray = Ray(
-            facePointOffset(face, hit.barycentric.yz),
-            sample_cosine_weighted_hemisphere(random_2(), 1, normal)
-          );
+        }
+
+        let face = faces[hit.faceIdx];
+        let material = materials[face.materialIdx];
+        color += material.emission * throughput;
+        throughput *= material.color;
   
-          top++;
-          stack[top] = BounceStackEntry(ray, f32max, vec4f(color, 1), throughput);
+        let normal = faceNormal(face, hit.barycentric.yz);
+        let ray = Ray(
+          facePointOffset(face, hit.barycentric.yz),
+          sample_cosine_weighted_hemisphere(random_2(), 1, normal)
+        );
+
+        top++;
+        stack[top] = BounceStackEntry(ray, f32max, vec4f(color, 1), throughput);
   
-          {
-            let color = skyboxColor(ray.pos, normal);
-            if color.w == 1 {
-              stack[top].color += vec4f(color.xyz * throughput, 1);
-            }
+        {
+          let color = skyboxColor(ray.pos, normal);
+          if color.w == 1 {
+            stack[top].color += vec4f(color.xyz * throughput, 1);
           }
-    
-          // russian roulette
-          {
-            let p = max(throughput.x, max(throughput.y, throughput.z));
-            if random_1() > p {
-              break;
-            }
-            stack[top].throughput /= p;
+        }
+
+        // russian roulette
+        {
+          let p = max(throughput.x, max(throughput.y, throughput.z));
+          if random_1() > p {
+            break;
           }
+          stack[top].throughput /= p;
         }
       }
     }
@@ -2046,17 +2064,11 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
         geometryBuffer[idx].faceIdx = hit.faceIdx;
         geometryBuffer[idx].objectIdx = hit.objectIdx;
 
-        let result = reproject(dist, fpos, point, vec3f(0));
+        let result = reprojectFullDirect(fpos, point, vec3f(0));
         imageBuffer[idx] = result.color;
 
         return;
       }
-
-      // let uv = vec2f(upos) / viewportf;
-      // imageBuffer[idx] = vec4f(vec3f(textureSampleLevel(skyboxImportanceSampleTexture, skyboxSampler, uv, 0).z) * 4e+14, 1);
-      // imageBuffer[idx] = vec4f(vec2f(textureSampleLevel(skyboxImportanceSampleTexture, skyboxSampler, uv, 0).xy), 0, 1); 
-      // imageBuffer[idx] = vec4f(textureSampleLevel(skyboxImportanceSampleTexture, skyboxSampler, uv, 0).xyz, 1);
-      // imageBuffer[idx] = vec4f(textureSampleLevel(skyboxTexture, skyboxSampler, uv, 0).xyz, 1);
 
       rng_state = seed + idx;
       if counter == 0u && !_reproject {
@@ -2083,29 +2095,8 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
       geometryBuffer[idx].faceIdx = hit.faceIdx;
       geometryBuffer[idx].objectIdx = hit.objectIdx;
 
-      for (var i = 0u; i < ${store.sampleCount}; i = i + 1u) {
-        let pos = pos + sample_insquare(random_2()) * 0.5;
-        let ray = cameraRay(pos, viewMatrix);
-        let hitDist = pixelHitDist(idx, ray);
-        var hit: BVHIntersectionResult;
-        color += pixelColor(&hit, ray, hitDist);
-        samples++;
-
-        if _reproject {
-          let face = faces[hit.faceIdx];
-          let uv = hit.barycentric.yz;
-          let dist = hit.barycentric.x;
-          let point = ray.pos + ray.dir * dist;
-          let result = reprojectFull(dist, fpos, point, vec3f(0));
-          if result.color.w > 0 {
-            color += result.color.xyz / result.color.w;
-            samples++;
-          }
-        }
-      }
-
       if _reproject {
-        let result = reprojectFull(dist, fpos, point, color);
+        let result = reprojectFullDirect(fpos, point, color);
         imageBuffer[idx] = result.color;
       }
 
