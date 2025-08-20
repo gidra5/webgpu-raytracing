@@ -536,3 +536,18 @@ export const reactiveComputePipeline = (x: ComputePipelineDescriptor) => {
 
   return [_computePipeline, computeBindGroups] as const;
 };
+
+export const reactiveRenderPipeline = (x: RenderPipelineDescriptor) => {
+  const [_computePipeline, setComputePipeline] =
+    createSignal<GPURenderPipeline>();
+  const [computeBindGroups, setComputeBindGroups] =
+    createSignal<GPUBindGroup[]>();
+
+  createEffect(() => {
+    const { pipeline, bindGroups } = renderPipeline(x);
+    setComputePipeline(pipeline);
+    setComputeBindGroups(bindGroups);
+  });
+
+  return [_computePipeline, computeBindGroups] as const;
+};
