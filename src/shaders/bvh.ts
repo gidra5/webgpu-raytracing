@@ -60,8 +60,9 @@ export default () => /* wgsl */ `
     ray: Ray,
     maxDist: f32
   ) -> bool {
+    let l = OrientedLine(ray.dir, cross(ray.dir + ray.pos, ray.pos));
     for (var objectIdx = 0u; objectIdx < arrayLength(&models); objectIdx++) {
-      let hit = rayIntersectObjectBVHAnyHit(ray, objectIdx, maxDist);
+      let hit = rayIntersectObjectBVHAnyHit(l, ray, objectIdx, maxDist);
       if hit {
         return true;
       }
@@ -72,6 +73,7 @@ export default () => /* wgsl */ `
 
   @must_use
   fn rayIntersectObjectBVHAnyHit(
+    l: OrientedLine,
     ray: Ray,
     objectIdx: u32,
     maxDist: f32
@@ -100,7 +102,7 @@ export default () => /* wgsl */ `
           let offset = bvhFaces[i];
           let faceIdx = model.faces.offset + offset;
           let face = faces[faceIdx];
-          let hit = rayIntersectFaceAnyHit(ray, face, Interval(min_dist, maxDist));
+          let hit = rayIntersectFaceAnyHit(l, ray, face, Interval(min_dist, maxDist));
           if !hit {
             continue;
           }

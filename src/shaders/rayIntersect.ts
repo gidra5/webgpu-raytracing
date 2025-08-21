@@ -71,7 +71,7 @@ export default /* wgsl */ `
       }
 
       let dett = n.w - dot(n.xyz, ray.pos);
-      if (det > 0.0) { 
+      if (det > 0.0) {
         if (dett < 0.0 || dett > interval.max * det) {
           return result;
         }
@@ -82,7 +82,7 @@ export default /* wgsl */ `
         //   return result;
         // }
         // return result;
-      } else { 
+      } else {
         // return result;
         // if (dett > 0.0) {
         // return result;
@@ -172,8 +172,33 @@ export default /* wgsl */ `
     return result;
   }
   
+  fn side(l: OrientedLine, r: OrientedLine) -> f32 {
+    return dot(l.cross, r.dir) + dot(l.dir, r.cross);
+  }
+  
   @must_use
-  fn rayIntersectFaceAnyHit(ray: Ray, face: Face, interval: Interval) -> bool {
+  fn _rayIntersectFaceAnyHit(l: OrientedLine, ray: Ray, face: Face, interval: Interval) -> bool {
+    let n = face.normal;
+    let det = dot(n.xyz, ray.dir);
+
+    if det < EPSILON {
+      return false;
+    }
+
+    let t = n.w - dot(n.xyz, ray.pos);
+    if !intervalSurrounds(interval, t / det) {
+      return false;
+    }
+
+    if !(side(l, face.e1) >= 0 && side(l, face.e2) >= 0 && side(l, face.e3) >= 0) {
+      return false;
+    }
+
+    return true;
+  }
+  
+  @must_use
+  fn rayIntersectFaceAnyHit(l: OrientedLine, ray: Ray, face: Face, interval: Interval) -> bool {
     let p0 = face.points[0].pos;
     let e1 = face.points[1].pos;
     let e2 = face.points[2].pos;

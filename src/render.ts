@@ -118,6 +118,7 @@ const { facesBuffer, bvhBuffer, bvhFacesBuffer, bvhCount, modelsBuffer } =
     models[3],
     models[4],
   ]);
+// await loadModelsToBuffers([models[1]]);
 
 console.log('loading skybox');
 type SkyboxData = {

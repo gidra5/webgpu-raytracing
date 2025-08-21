@@ -17,11 +17,18 @@ type Point = {
   normal: vec3;
   texture: vec3;
 };
+type OrientedLine = {
+  dir: vec3;
+  cross: vec3;
+};
 export type Face = {
   points: [Point, Point, Point];
   normal: vec4;
   uNormal: vec4;
   vNormal: vec4;
+  e1: OrientedLine;
+  e2: OrientedLine;
+  e3: OrientedLine;
   materialIdx: number;
   idx: number;
 };
@@ -150,6 +157,19 @@ export const loadModels = async () => {
           vec3.normalize(vNormal, vNormal);
           const vNormalD = -vec3.dot(p0, vNormal);
 
+          const l1 = {
+            dir: vec3.sub(vec3.create(), p1, p0),
+            cross: vec3.cross(vec3.create(), p1, p0),
+          };
+          const l2 = {
+            dir: vec3.sub(vec3.create(), p2, p1),
+            cross: vec3.cross(vec3.create(), p2, p1),
+          };
+          const l3 = {
+            dir: vec3.sub(vec3.create(), p0, p2),
+            cross: vec3.cross(vec3.create(), p0, p2),
+          };
+
           const materialIdx = materials.findIndex(
             ({ name }) => name === f.material
           );
@@ -169,6 +189,9 @@ export const loadModels = async () => {
               vNormal[2],
               vNormalD
             ),
+            e1: l1,
+            e2: l2,
+            e3: l3,
             idx: 0,
             points: [
               { position: p0, normal: nrmArray[j0], texture: uvArray[k1] },

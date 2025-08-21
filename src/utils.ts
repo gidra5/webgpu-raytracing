@@ -36,11 +36,11 @@ export const useDiff = (
 };
 export const useSmoothedValue = (
   value: Accessor<number>,
-  smooth: number
+  smooth: Accessor<number>
 ): Accessor<number> => {
   const [_value, setValue] = createSignal(value());
   createEffect<number>((prev) => {
-    const next = lerp(prev, value(), smooth);
+    const next = lerp(prev, value(), smooth());
     setValue(next);
     return next;
   }, value());

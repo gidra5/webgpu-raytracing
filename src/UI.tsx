@@ -28,7 +28,7 @@ import {
 import { useSmoothedValue } from './utils';
 
 const App: Component = () => {
-  const smoothing = 0.1;
+  const smoothing = () => store.timings.dt * 0.99;
   const renderTime = useSmoothedValue(() => store.timings.dt * 1000, smoothing);
   const gpuTime = useSmoothedValue(
     () => store.timings.render.gpu / 1000,

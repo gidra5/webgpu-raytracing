@@ -42,10 +42,18 @@ const structs = /* wgsl */ `
     normal: vec3f,
   }
 
+  struct OrientedLine {
+    dir: vec3f,
+    cross: vec3f,
+  }
+
   struct Face {
     normal: vec4f,
     uNormal: vec4f,
     vNormal: vec4f,
+    e1: OrientedLine,
+    e2: OrientedLine,
+    e3: OrientedLine,
     materialIdx: u32,
     points: array<FacePoint, 3>
   }
