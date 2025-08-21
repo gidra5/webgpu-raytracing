@@ -5,7 +5,7 @@ import { Iterator } from 'iterator-js';
 import { BoundingVolume, BoundingVolumeHierarchy, facesBVH } from './bv';
 import { triangleModel, unitCubeModel } from './testModels';
 import MTLFile from './mtl';
-import { makeShaderDataDefinitions, makeStructuredView } from 'webgpu-utils';
+import { makeStructuredView } from 'webgpu-utils';
 import parseExr from 'parse-exr';
 import parseHdr from 'parse-hdr';
 import { preprocess as preprocessSkybox } from './skybox';
@@ -40,11 +40,12 @@ const objVertToVec3 = (v: ObjVertex) => vec3.fromValues(v.x, v.y, v.z);
 const objTexToVec3 = (v: ObjTexture) => vec3.fromValues(v.u, v.v, v.w);
 
 type Allocation = { offset: number; count: number };
-const facePointSize = 8;
-const faceSize = 4 + 3 * facePointSize;
-const bvSize = 12;
-const modelSize = 4;
-const materialSize = 8;
+const faceSize = defs.structs.Face.size / Float32Array.BYTES_PER_ELEMENT;
+const bvSize =
+  defs.structs.BoundingVolume.size / Float32Array.BYTES_PER_ELEMENT;
+const modelSize = defs.structs.Model.size / Float32Array.BYTES_PER_ELEMENT;
+const materialSize =
+  defs.structs.Material.size / Float32Array.BYTES_PER_ELEMENT;
 // face offsets and counts are in faceSize units
 const facesAllocations: Allocation[] = [];
 // bvh offsets and counts are in bvSize units
@@ -171,42 +172,34 @@ const loadModelFacesToBuffer = async (
   model: Model,
   offset: number
 ) => {
-  // fuck alignment
-  // https://www.w3.org/TR/WGSL/#alignment-and-size
-  const mappedF32 = new Float32Array(_mapped);
-  const mappedU32 = new Uint32Array(_mapped);
   for (const [face, i] of Iterator.iter(model.faces).enumerate()) {
-    const { points, normal } = face;
-    const i2 = offset + i * faceSize;
-    mappedF32[i2 + 0] = normal[0];
-    mappedF32[i2 + 1] = normal[1];
-    mappedF32[i2 + 2] = normal[2];
-    mappedU32[i2 + 3] = face.materialIdx;
+    const f32Offset =
+      offset * Float32Array.BYTES_PER_ELEMENT + i * defs.structs.Face.size;
+    const values = makeStructuredView(defs.structs.Face, _mapped, f32Offset);
 
-    for (const [point, j] of Iterator.iter(points).enumerate()) {
-      const { position, normal } = point;
-      const k = i2 + 4 + j * facePointSize;
-      mappedF32[k + 0] = position[0];
-      mappedF32[k + 1] = position[1];
-      mappedF32[k + 2] = position[2];
-      /* padding */
-      mappedF32[k + 4] = normal[0];
-      mappedF32[k + 5] = normal[1];
-      mappedF32[k + 6] = normal[2];
-      /* padding */
-    }
+    const { points, normal } = face;
+    values.set({
+      normal: normal,
+      // uNormal: vec4f,
+      // vNormal: vec4f,
+      materialIdx: face.materialIdx,
+      points: Iterator.iter(points)
+        .map((p) => ({
+          pos: p.position,
+          normal: p.normal,
+        }))
+        .toArray(),
+    });
   }
 };
 
 const loadModelData = async (mapped: ArrayBuffer) => {
-  const mappedU32 = new Uint32Array(mapped);
   for (const [[faces, bvh], i] of Iterator.iter(facesAllocations)
     .zip(bvhAllocations)
     .enumerate()) {
-    mappedU32[modelSize * i + 0] = faces.offset;
-    mappedU32[modelSize * i + 1] = faces.count;
-    mappedU32[modelSize * i + 2] = bvh.offset;
-    mappedU32[modelSize * i + 3] = bvh.count;
+    const f32Offset = modelSize * i * Float32Array.BYTES_PER_ELEMENT;
+    const values = makeStructuredView(defs.structs.Model, mapped, f32Offset);
+    values.set({ faces, bvh });
   }
 };
 
@@ -252,19 +245,9 @@ const loadMaterialToBuffer = (
   offset: number
 ) => {
   const f32Offset = offset * Float32Array.BYTES_PER_ELEMENT;
-  const code = `
-    struct Material {
-      color: vec3f,
-      emission: vec3f
-    };
-  `;
-  const defs = makeShaderDataDefinitions(code);
   const values = makeStructuredView(defs.structs.Material, mapped, f32Offset);
 
-  values.set({
-    color: material.color,
-    emission: material.emission,
-  });
+  values.set({ color: material.color, emission: material.emission });
 };
 
 export const loadMaterialsToBuffers = async (materials: Material[]) => {
