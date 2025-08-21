@@ -55,6 +55,79 @@ export default /* wgsl */ `
   }
 
   @must_use
+  fn _rayIntersectFace(ray: Ray, face: Face, interval: Interval) -> FaceIntersectonResult {
+      var result: FaceIntersectonResult;
+      result.hit = false;
+      result.barycentric = vec3f(interval.max, 0, 0);
+
+      let n = face.normal;
+      let u = face.uNormal;
+      let v = face.vNormal;
+
+      let det = dot(n.xyz, ray.dir);
+
+      if (abs(det) < EPSILON) {
+        return result;
+      }
+
+      let dett = n.w - dot(n.xyz, ray.pos);
+      if (det > 0.0) { 
+        if (dett < 0.0 || dett > interval.max * det) {
+          return result;
+        }
+        // if (dett > interval.max * det) {
+        //   return result;
+        // }
+        // if (dett < 0.0) {
+        //   return result;
+        // }
+        // return result;
+      } else { 
+        // return result;
+        // if (dett > 0.0) {
+        // return result;
+        // }
+        // if (dett < interval.max * det) {
+        //   return result;
+        // }
+        if (dett > 0.0 || dett < interval.max * det) {
+          return result;
+        }
+      }
+        
+      let detp = ray.pos * det + dett * ray.dir;
+      let detu = dot(detp, u.xyz) - u.w * det;
+      if (det > 0.0) {
+        if (detu < 0.0 || detu > det) {
+          return result;
+        }
+      } else { // det < 0.0
+        if (detu > 0.0 || detu < det) { // Note the swapped comparison due to negative det
+          return result;
+        }
+      }
+      
+      let detv = dot(detp, v.xyz) + v.w * det;
+      let detuv = detu + detv;
+      if (det > 0.0) {
+        if (detv < 0.0 || detuv > det) {
+          return result;
+        }
+      } else { // det < 0.0
+        if (detv > 0.0 || detuv < det) { // Note the swapped comparison
+          return result;
+        }
+      }
+
+      let inv_det = 1/det;
+      let pt = vec3f(dett, detu, detv) * inv_det;
+
+      result.barycentric = pt;
+      result.hit = true;
+      return result;
+  }
+  
+  @must_use
   fn rayIntersectFace(ray: Ray, face: Face, interval: Interval) -> FaceIntersectonResult {
     var result: FaceIntersectonResult;
     result.hit = false;

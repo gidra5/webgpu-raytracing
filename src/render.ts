@@ -445,7 +445,7 @@ const scene = () => /* wgsl */ `
     let e1 = face.points[1].pos;
     let e2 = face.points[2].pos;
     let p = p1 + mat2x3f(e1, e2) * uv;
-    return offsetRay(p, face.normal);
+    return offsetRay(p, face.normal.xyz);
   }
 
   fn faceNormal(face: Face, uv: vec2f) -> vec3f {
@@ -455,7 +455,7 @@ const scene = () => /* wgsl */ `
       let n3 = face.points[2].normal;
       return normalize(mat3x3f(n1, n2, n3) * uv2toUV3(uv));
     } else {
-      return face.normal;
+      return face.normal.xyz;
     }
   }
 

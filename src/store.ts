@@ -90,7 +90,7 @@ export const [store, setStore] = createStore({
   lensShape: LensShape.Circle,
   tonemapping: Tonemapping.Aces,
   skybox: SkyboxType.Plain,
-  imageLayers: 8,
+  imageLayers: 1,
 
   reprojection: {
     rate: 1,
@@ -341,10 +341,12 @@ export const move = (d: vec3) => {
   const mvRight = vec3.clone(right);
   vec3.transformQuat(mvRight, mvRight, store.orientation);
   mvRight[1] = 0;
+  vec3.normalize(mvRight, mvRight);
 
   const mvFront = vec3.clone(front);
   vec3.transformQuat(mvFront, mvFront, store.orientation);
   mvFront[1] = 0;
+  vec3.normalize(mvFront, mvFront);
 
   const position = vec3.clone(store.position);
 

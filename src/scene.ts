@@ -1,4 +1,4 @@
-import { vec3 } from 'gl-matrix';
+import { vec3, vec4 } from 'gl-matrix';
 import wavefrontObjParser from 'obj-file-parser';
 import { createStorageBuffer, createTexture } from './gpu';
 import { Iterator } from 'iterator-js';
@@ -19,7 +19,9 @@ type Point = {
 };
 export type Face = {
   points: [Point, Point, Point];
-  normal: vec3;
+  normal: vec4;
+  uNormal: vec4;
+  vNormal: vec4;
   materialIdx: number;
   idx: number;
 };
@@ -133,20 +135,40 @@ export const loadModels = async () => {
           const k2 = f.vertices[1].textureCoordsIndex - 1;
           const k3 = f.vertices[2].textureCoordsIndex - 1;
 
-          const e1 = vec3.create();
-          const e2 = vec3.create();
-          vec3.sub(e1, p1, p0);
-          vec3.sub(e2, p2, p0);
+          const e1 = vec3.sub(vec3.create(), p1, p0);
+          const e2 = vec3.sub(vec3.create(), p2, p0);
 
-          const normal = vec3.create();
-          vec3.cross(normal, e1, e2);
+          const normal = vec3.cross(vec3.create(), e2, e1);
           vec3.normalize(normal, normal);
+          const normalD = vec3.dot(p0, normal);
+
+          const uNormal = vec3.cross(vec3.create(), e2, normal);
+          vec3.normalize(uNormal, uNormal);
+          const uNormalD = -vec3.dot(p0, uNormal);
+
+          const vNormal = vec3.cross(vec3.create(), normal, e1);
+          vec3.normalize(vNormal, vNormal);
+          const vNormalD = -vec3.dot(p0, vNormal);
+
           const materialIdx = materials.findIndex(
             ({ name }) => name === f.material
           );
+
           const face: Face = {
             materialIdx,
-            normal,
+            normal: vec4.fromValues(normal[0], normal[1], normal[2], normalD),
+            uNormal: vec4.fromValues(
+              uNormal[0],
+              uNormal[1],
+              uNormal[2],
+              uNormalD
+            ),
+            vNormal: vec4.fromValues(
+              vNormal[0],
+              vNormal[1],
+              vNormal[2],
+              vNormalD
+            ),
             idx: 0,
             points: [
               { position: p0, normal: nrmArray[j0], texture: uvArray[k1] },
@@ -177,13 +199,9 @@ const loadModelFacesToBuffer = async (
       offset * Float32Array.BYTES_PER_ELEMENT + i * defs.structs.Face.size;
     const values = makeStructuredView(defs.structs.Face, _mapped, f32Offset);
 
-    const { points, normal } = face;
     values.set({
-      normal: normal,
-      // uNormal: vec4f,
-      // vNormal: vec4f,
-      materialIdx: face.materialIdx,
-      points: Iterator.iter(points)
+      ...face,
+      points: Iterator.iter(face.points)
         .map((p) => ({
           pos: p.position,
           normal: p.normal,
