@@ -10,6 +10,7 @@ import parseExr from 'parse-exr';
 import parseHdr from 'parse-hdr';
 import { preprocess as preprocessSkybox } from './skybox';
 import { store } from './store';
+import { defs } from './shaders/structs';
 
 type Point = {
   position: vec3;
@@ -215,16 +216,6 @@ const loadBVToBuffer = (
   offset: number
 ) => {
   const f32Offset = offset * Float32Array.BYTES_PER_ELEMENT;
-  const code = `
-    struct BoundingVolume {
-      min: vec3f,
-      rightIdx: i32,
-      max: vec3f,
-      facesCount: u32,
-      facesOffset: u32,
-    }
-  `;
-  const defs = makeShaderDataDefinitions(code);
   const values = makeStructuredView(
     defs.structs.BoundingVolume,
     mapped,

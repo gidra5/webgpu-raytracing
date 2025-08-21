@@ -52,6 +52,7 @@ import filtering from './shaders/filtering';
 import utils from './shaders/utils';
 import constants from './shaders/constants';
 import raygen from './shaders/raygen';
+import structs from './shaders/structs';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const context = canvas.getContext('webgpu');
@@ -320,60 +321,6 @@ createEffect(() => {
   setBlitRenderBundle(bundle);
 });
 
-const structs = /* wgsl */ `
-  struct Geometry {
-    position: vec3f,
-    depth: f32,
-    faceIdx: u32,
-    objectIdx: u32,
-  }
-
-  struct Ray {
-    pos: vec3f, // Origin
-    dir: vec3f, // Direction (normalized)
-  };
-
-  struct BoundRay {
-    pos: vec3f, // Origin
-    dir: vec3f, // Direction (normalized)
-    maxDist: f32,
-  };
-
-  struct BoundingVolume {
-    min: vec3f,
-    rightIdx: i32,
-    max: vec3f,
-    facesCount: u32,
-    facesOffset: u32,
-  }
-  
-  struct Offset {
-    offset: u32,
-    count: u32,
-  }
-
-  struct Model {
-    faces: Offset,
-    bvh: Offset,
-  }
-
-  struct FacePoint {
-    pos: vec3f,
-    normal: vec3f,
-  }
-
-  struct Face {
-    faceNormal: vec3f,
-    materialIdx: u32,
-    points: array<FacePoint, 3>
-  }
-
-  struct Material {
-    color: vec3f,
-    emission: vec3f
-  };
-`;
-
 const scene = () => /* wgsl */ `
   const flatShading = ${store.normalsType};
     
@@ -498,7 +445,7 @@ const scene = () => /* wgsl */ `
     let e1 = face.points[1].pos;
     let e2 = face.points[2].pos;
     let p = p1 + mat2x3f(e1, e2) * uv;
-    return offsetRay(p, face.faceNormal);
+    return offsetRay(p, face.normal);
   }
 
   fn faceNormal(face: Face, uv: vec2f) -> vec3f {
@@ -508,7 +455,7 @@ const scene = () => /* wgsl */ `
       let n3 = face.points[2].normal;
       return normalize(mat3x3f(n1, n2, n3) * uv2toUV3(uv));
     } else {
-      return face.faceNormal;
+      return face.normal;
     }
   }
 
