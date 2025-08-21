@@ -11,13 +11,10 @@ export default /* wgsl */ `
   }
 
   @must_use
-  fn rayIntersectBackface(
-    ray: Ray,
-    face: Face,
-    interval: Interval
-  ) -> FaceIntersectonResult {
+  fn rayIntersectBackface(ray: Ray, face: Face, interval: Interval) -> FaceIntersectonResult {
     var result: FaceIntersectonResult;
     result.hit = false;
+    result.barycentric = vec3f(f32max, 0, 0);
 
     // Mäller-Trumbore algorithm
     // https://en.wikipedia.org/wiki/Möller–Trumbore_intersection_algorithm
@@ -65,13 +62,10 @@ export default /* wgsl */ `
   }
 
   @must_use
-  fn rayIntersectFace(
-    ray: Ray,
-    face: Face,
-    interval: Interval
-  ) -> FaceIntersectonResult {
+  fn rayIntersectFace(ray: Ray, face: Face, interval: Interval) -> FaceIntersectonResult {
     var result: FaceIntersectonResult;
     result.hit = false;
+    result.barycentric = vec3f(f32max, 0, 0);
 
     // Mäller-Trumbore algorithm
     // https://en.wikipedia.org/wiki/Möller–Trumbore_intersection_algorithm
@@ -114,6 +108,43 @@ export default /* wgsl */ `
     result.hit = true;
     
     return result;
+  }
+  
+  @must_use
+  fn rayIntersectFaceAnyHit(ray: Ray, face: Face, interval: Interval) -> bool {
+    // Mäller-Trumbore algorithm
+    // https://en.wikipedia.org/wiki/Möller–Trumbore_intersection_algorithm
+    // https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection.html
+    
+    let p0 = face.points[0].pos;
+    let e1 = face.points[1].pos;
+    let e2 = face.points[2].pos;
+
+    let h = cross(ray.dir, e2);
+    let det = dot(e1, h);
+    
+    // near zero determinant will detect parallel rays
+    if det < EPSILON * EPSILON {
+      return false;
+    }
+
+    let s = ray.pos - p0;
+    let u = dot(s, h);
+
+    if u < 0.0f || u > det {
+      return false;
+    }
+
+    let q = cross(s, e1);
+    let v = dot(ray.dir, q);
+
+    if v < 0.0f || u + v > det {
+      return false;
+    }
+
+    let t = dot(e2, q) / det;
+
+    return intervalSurrounds(interval, t);
   }
   
   struct BVIntersectionResult {

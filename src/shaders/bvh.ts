@@ -100,8 +100,8 @@ export default () => /* wgsl */ `
           let offset = bvhFaces[i];
           let faceIdx = model.faces.offset + offset;
           let face = faces[faceIdx];
-          let hit = rayIntersectFace(ray, face, Interval(min_dist, maxDist));
-          if (!hit.hit) {
+          let hit = rayIntersectFaceAnyHit(ray, face, Interval(min_dist, maxDist));
+          if !hit {
             continue;
           }
           return true;
