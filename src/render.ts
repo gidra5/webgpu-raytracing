@@ -53,6 +53,7 @@ import utils from './shaders/utils';
 import constants from './shaders/constants';
 import raygen from './shaders/raygen';
 import structs from './shaders/structs';
+import face from './shaders/face';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const context = canvas.getContext('webgpu');
@@ -323,13 +324,6 @@ createEffect(() => {
 });
 
 const scene = () => /* wgsl */ `
-  const flatShading = ${store.normalsType};
-    
-  const ambience = ${store.ambience};
-  const sun_color = vec3f(1);
-  const sun_dir = normalize(vec3f(1, 1, 1));
-  const sphere_center = vec3f(0, 0, 4);
-
   fn sceneAnyHit(ray: Ray, maxDist: f32) -> bool {
     return rayIntersectBVHAnyHit(ray, maxDist);
   }
@@ -416,78 +410,7 @@ const scene = () => /* wgsl */ `
     let randomFaceIdx = random_1u() % model.faces.count;
     let face = faces[model.faces.offset + randomFaceIdx];
     var sample = sampleFace(face);
-    sample.p *= f32(model.faces.count);
-    return sample;
-  }
-
-  fn sampleFace(face: Face) -> SceneSample {
-    let uv = sample_intriangle(random_2());
-    let point = facePointOffset(face, uv);
-    let normal = faceNormal(face, uv);
-    let texUV = faceTexCoords(face, uv);
-    let p = cross(face.points[1].pos, face.points[2].pos); // TODO: precompute area
-    return SceneSample(length(p)/2, point, normal, texUV, face.materialIdx);
-  }
-
-  // https://www.realtimerendering.com/raytracinggems/unofficial_RayTracingGems_v1.9.pdf
-  // p. 83
-  // computing from uv and offsetting the point 
-  // makes sure there are no self-intersections 
-  // due to floating point errors
-  fn facePoint(face: Face, uv: vec2f) -> vec3f {
-    let p1 = face.points[0].pos;
-    let e1 = face.points[1].pos;
-    let e2 = face.points[2].pos;
-    let p = p1 + mat2x3f(e1, e2) * uv;
-    return p;
-  }
-  fn facePointOffset(face: Face, uv: vec2f) -> vec3f {
-    let p1 = face.points[0].pos;
-    let e1 = face.points[1].pos;
-    let e2 = face.points[2].pos;
-    let p = p1 + mat2x3f(e1, e2) * uv;
-    return offsetRay(p, face.normal.xyz);
-  }
-
-  fn faceNormal(face: Face, uv: vec2f) -> vec3f {
-    if (flatShading == ${NormalsType.Interpolated}) {
-      let n1 = face.points[0].normal;
-      let n2 = face.points[1].normal;
-      let n3 = face.points[2].normal;
-      return normalize(mat3x3f(n1, n2, n3) * uv2toUV3(uv));
-    } else {
-      return face.normal.xyz;
-    }
-  }
-
-  const origin = 1.0 / 32.0;
-  const floatScale = 1.0 / 65536.0;
-  const intScale = 256.0;
-  fn offsetRay(p: vec3f, n: vec3f) -> vec3f {
-    let ofI = vec3i(intScale * n);
-    let pI = vec3f(
-      bitcast<f32>(bitcast<i32>(p.x) + select(-ofI.x, ofI.x, p.x < 0)),
-      bitcast<f32>(bitcast<i32>(p.y) + select(-ofI.y, ofI.y, p.y < 0)),
-      bitcast<f32>(bitcast<i32>(p.z) + select(-ofI.z, ofI.z, p.z < 0))
-    );
-    return vec3f(
-      select(p.x + floatScale * n.x, pI.x, abs(p.x) < origin),
-      select(p.y + floatScale * n.y, pI.y, abs(p.y) < origin),
-      select(p.z + floatScale * n.z, pI.z, abs(p.z) < origin)
-    );
-  }
-
-  // TODO: correct uv texture coords
-  fn faceTexCoords(face: Face, uv: vec2f) -> vec2f {
-    // let p1 = face.points[0].uv;
-    // let e1 = face.points[1].uv;
-    // let e2 = face.points[2].uv;
-    // return mat3x2f(p1, e1, e2) * uv2toUV3(uv);
-    return uv;
-  }
-
-  fn uv2toUV3(uv: vec2f) -> vec3f {
-    return vec3f(1-uv.x-uv.y, uv.x, uv.y);
+    return SceneSample(sample.inv_pdf * f32(model.faces.count), sample.point, sample.normal, sample.texture, sample.materialIdx);
   }
 `;
 
@@ -1230,6 +1153,7 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${structs}
     ${rayIntersect}
     ${scene()}
+    ${face()}
     ${raygen()}
     ${reproject()}
     ${computeColor()}

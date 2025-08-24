@@ -13,9 +13,9 @@ export default /* wgsl */ `
     result.hit = false;
     result.barycentric = vec3f(f32max, 0, 0);
 
-    let p0 = face.points[0].pos;
-    let e1 = face.points[1].pos;
-    let e2 = face.points[2].pos;
+    let p0 = faceVertex(face, 0);
+    let e1 = face.e1.dir;
+    let e2 = -face.e3.dir;
 
     let dir = -ray.dir;
 
@@ -133,9 +133,9 @@ export default /* wgsl */ `
     result.hit = false;
     result.barycentric = vec3f(f32max, 0, 0);
 
-    let p0 = face.points[0].pos;
-    let e1 = face.points[1].pos;
-    let e2 = face.points[2].pos;
+    let p0 = faceVertex(face, 0);
+    let e1 = face.e1.dir;
+    let e2 = -face.e3.dir;
 
     let h = cross(ray.dir, e2);
     let det = dot(e1, h);
@@ -199,9 +199,9 @@ export default /* wgsl */ `
   
   @must_use
   fn rayIntersectFaceAnyHit(l: OrientedLine, ray: Ray, face: Face, interval: Interval) -> bool {
-    let p0 = face.points[0].pos;
-    let e1 = face.points[1].pos;
-    let e2 = face.points[2].pos;
+    let p0 = faceVertex(face, 0);
+    let e1 = face.e1.dir;
+    let e2 = -face.e3.dir;
 
     let h = cross(ray.dir, e2);
     let det = dot(e1, h);
