@@ -23,13 +23,14 @@ type OrientedLine = {
 };
 export type Face = {
   points: [Point, Point, Point];
-  normal: vec4;
-  uNormal: vec4;
-  vNormal: vec4;
+  plane: vec4;
+  uPlane: vec4;
+  vPlane: vec4;
   e1: OrientedLine;
   e2: OrientedLine;
   e3: OrientedLine;
   materialIdx: number;
+  area: number;
   idx: number;
 };
 export type Model = {
@@ -78,6 +79,59 @@ const totalAllocationSize = (allocations: Allocation[]) => {
   return lastAllocation ? lastAllocation.offset + lastAllocation.count : 0;
 };
 
+export const createFace = (desc: {
+  idx: number;
+  materialIdx: number;
+  p0: vec3;
+  p1: vec3;
+  p2: vec3;
+  points: [Point, Point, Point];
+}): Face => {
+  const { points, materialIdx, idx, p0, p1, p2 } = desc;
+
+  const l1 = {
+    dir: vec3.sub(vec3.create(), p1, p0),
+    cross: vec3.cross(vec3.create(), p1, p0),
+  };
+  const l2 = {
+    dir: vec3.sub(vec3.create(), p2, p1),
+    cross: vec3.cross(vec3.create(), p2, p1),
+  };
+  const l3 = {
+    dir: vec3.sub(vec3.create(), p0, p2),
+    cross: vec3.cross(vec3.create(), p0, p2),
+  };
+
+  const e1 = l1.dir;
+  const e2 = vec3.negate(vec3.create(), l3.dir);
+
+  const normal = vec3.cross(vec3.create(), e2, e1);
+  const area = vec3.length(normal) / 2;
+  vec3.normalize(normal, normal);
+  const normalD = vec3.dot(p0, normal);
+
+  const uNormal = vec3.cross(vec3.create(), e2, normal);
+  vec3.normalize(uNormal, uNormal);
+  const uNormalD = -vec3.dot(p0, uNormal);
+
+  const vNormal = vec3.cross(vec3.create(), normal, e1);
+  vec3.normalize(vNormal, vNormal);
+  const vNormalD = -vec3.dot(p0, vNormal);
+
+  return {
+    points,
+    plane: vec4.fromValues(normal[0], normal[1], normal[2], normalD),
+    uPlane: vec4.fromValues(uNormal[0], uNormal[1], uNormal[2], uNormalD),
+    vPlane: vec4.fromValues(vNormal[0], vNormal[1], vNormal[2], vNormalD),
+    e1: l1,
+    e2: l2,
+    e3: l3,
+    materialIdx,
+    area,
+    idx,
+  };
+};
+
 export const loadModels = async () => {
   const objFile = await import('@assets/raytraced-scene.obj?raw');
   const objParser = new wavefrontObjParser(objFile.default);
@@ -113,8 +167,8 @@ export const loadModels = async () => {
   let uvArray: vec3[] = [];
   const models: Model[] = [];
 
-  models.push(unitCubeModel);
-  models.push(triangleModel);
+  models.push(unitCubeModel());
+  models.push(triangleModel());
 
   // return modelsCache.map((_, i) => i);
 
@@ -131,75 +185,37 @@ export const loadModels = async () => {
           const i0 = f.vertices[0].vertexIndex - 1;
           const i1 = f.vertices[1].vertexIndex - 1;
           const i2 = f.vertices[2].vertexIndex - 1;
-          const p0 = posArray[i0];
-          const p1 = posArray[i1];
-          const p2 = posArray[i2];
 
           const j0 = f.vertices[0].vertexNormalIndex - 1;
           const j1 = f.vertices[1].vertexNormalIndex - 1;
           const j2 = f.vertices[2].vertexNormalIndex - 1;
-          const k1 = f.vertices[0].textureCoordsIndex - 1;
-          const k2 = f.vertices[1].textureCoordsIndex - 1;
-          const k3 = f.vertices[2].textureCoordsIndex - 1;
+          const k0 = f.vertices[0].textureCoordsIndex - 1;
+          const k1 = f.vertices[1].textureCoordsIndex - 1;
+          const k2 = f.vertices[2].textureCoordsIndex - 1;
+
+          const p0 = posArray[i0];
+          const p1 = posArray[i1];
+          const p2 = posArray[i2];
 
           const e1 = vec3.sub(vec3.create(), p1, p0);
           const e2 = vec3.sub(vec3.create(), p2, p0);
-
-          const normal = vec3.cross(vec3.create(), e2, e1);
-          vec3.normalize(normal, normal);
-          const normalD = vec3.dot(p0, normal);
-
-          const uNormal = vec3.cross(vec3.create(), e2, normal);
-          vec3.normalize(uNormal, uNormal);
-          const uNormalD = -vec3.dot(p0, uNormal);
-
-          const vNormal = vec3.cross(vec3.create(), normal, e1);
-          vec3.normalize(vNormal, vNormal);
-          const vNormalD = -vec3.dot(p0, vNormal);
-
-          const l1 = {
-            dir: vec3.sub(vec3.create(), p1, p0),
-            cross: vec3.cross(vec3.create(), p1, p0),
-          };
-          const l2 = {
-            dir: vec3.sub(vec3.create(), p2, p1),
-            cross: vec3.cross(vec3.create(), p2, p1),
-          };
-          const l3 = {
-            dir: vec3.sub(vec3.create(), p0, p2),
-            cross: vec3.cross(vec3.create(), p0, p2),
-          };
 
           const materialIdx = materials.findIndex(
             ({ name }) => name === f.material
           );
 
-          const face: Face = {
+          return createFace({
+            idx: i,
             materialIdx,
-            normal: vec4.fromValues(normal[0], normal[1], normal[2], normalD),
-            uNormal: vec4.fromValues(
-              uNormal[0],
-              uNormal[1],
-              uNormal[2],
-              uNormalD
-            ),
-            vNormal: vec4.fromValues(
-              vNormal[0],
-              vNormal[1],
-              vNormal[2],
-              vNormalD
-            ),
-            e1: l1,
-            e2: l2,
-            e3: l3,
-            idx: 0,
+            p0,
+            p1,
+            p2,
             points: [
-              { position: p0, normal: nrmArray[j0], texture: uvArray[k1] },
-              { position: e1, normal: nrmArray[j1], texture: uvArray[k2] },
-              { position: e2, normal: nrmArray[j2], texture: uvArray[k3] },
+              { position: p0, normal: nrmArray[j0], texture: uvArray[k0] },
+              { position: p1, normal: nrmArray[j1], texture: uvArray[k1] },
+              { position: p2, normal: nrmArray[j2], texture: uvArray[k2] },
             ],
-          };
-          return face;
+          });
         })
         .map((face, i) => ({ ...face, idx: i }));
 

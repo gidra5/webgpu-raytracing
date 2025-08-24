@@ -48,13 +48,14 @@ const structs = /* wgsl */ `
   }
 
   struct Face {
-    normal: vec4f,
-    uNormal: vec4f,
-    vNormal: vec4f,
+    plane: vec4f,
+    uPlane: vec4f,
+    vPlane: vec4f,
     e1: OrientedLine,
     e2: OrientedLine,
     e3: OrientedLine,
     materialIdx: u32,
+    area: f32,
     points: array<FacePoint, 3>
   }
 

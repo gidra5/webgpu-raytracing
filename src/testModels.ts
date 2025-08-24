@@ -1,6 +1,6 @@
 import { mat4, vec3 } from 'gl-matrix';
 import { facesBVH } from './bv';
-import { Face, Model } from './scene';
+import { createFace, Face, Model } from './scene';
 
 const makeModel = (
   name: string,
@@ -23,16 +23,18 @@ const makeModel = (
     const normal = vec3.create();
     vec3.cross(normal, e1, e2);
     vec3.normalize(normal, normal);
-    return {
+    return createFace({
+      idx: i,
+      materialIdx: 0,
+      p0,
+      p1,
+      p2,
       points: [
         { position: p0, normal, texture: vec3.create() },
-        { position: e1, normal, texture: vec3.create() },
-        { position: e2, normal, texture: vec3.create() },
+        { position: p1, normal, texture: vec3.create() },
+        { position: p2, normal, texture: vec3.create() },
       ],
-      normal,
-      materialIdx: 0,
-      idx: i,
-    };
+    });
   });
 
   return { name, faces, bvh: facesBVH(faces) };
@@ -68,12 +70,8 @@ const unitCubeIndices: [number, number, number][] = [
   [7, 4, 0],
 ];
 
-export const unitCubeModel = makeModel(
-  'unitCube',
-  unitCubeVertices,
-  unitCubeIndices,
-  cubeModelMatrix
-);
+export const unitCubeModel = () =>
+  makeModel('unitCube', unitCubeVertices, unitCubeIndices, cubeModelMatrix);
 
 const triangleModelMatrix = mat4.create();
 mat4.translate(
@@ -82,13 +80,14 @@ mat4.translate(
   vec3.fromValues(-0.5, -0.5, -2)
 );
 
-export const triangleModel = makeModel(
-  'triangle',
-  [
-    vec3.fromValues(0, 0, 0),
-    vec3.fromValues(1, 0, 0),
-    vec3.fromValues(0, 1, 0),
-  ],
-  [[0, 1, 2]],
-  triangleModelMatrix
-);
+export const triangleModel = () =>
+  makeModel(
+    'triangle',
+    [
+      vec3.fromValues(0, 0, 0),
+      vec3.fromValues(1, 0, 0),
+      vec3.fromValues(0, 1, 0),
+    ],
+    [[0, 1, 2]],
+    triangleModelMatrix
+  );

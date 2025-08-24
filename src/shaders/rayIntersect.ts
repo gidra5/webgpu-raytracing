@@ -60,9 +60,9 @@ export default /* wgsl */ `
       result.hit = false;
       result.barycentric = vec3f(interval.max, 0, 0);
 
-      let n = face.normal;
-      let u = face.uNormal;
-      let v = face.vNormal;
+      let n = face.plane;
+      let u = face.uPlane;
+      let v = face.vPlane;
 
       let det = dot(n.xyz, ray.dir);
 
@@ -178,7 +178,7 @@ export default /* wgsl */ `
   
   @must_use
   fn _rayIntersectFaceAnyHit(l: OrientedLine, ray: Ray, face: Face, interval: Interval) -> bool {
-    let n = face.normal;
+    let n = face.plane;
     let det = dot(n.xyz, ray.dir);
 
     if det < EPSILON {

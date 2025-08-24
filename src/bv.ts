@@ -42,8 +42,8 @@ export const facesBV = (faces: Face[]): BoundingVolume => {
   for (const face of faces) {
     const points = Array.from({ length: 3 }, () => vec3.create());
     vec3.copy(points[0], face.points[0].position);
-    vec3.add(points[1], points[0], face.points[1].position);
-    vec3.add(points[2], points[0], face.points[2].position);
+    vec3.copy(points[1], face.points[1].position);
+    vec3.copy(points[2], face.points[2].position);
 
     // calculate min/max for root AABB bounding volume
     for (const p of points) {

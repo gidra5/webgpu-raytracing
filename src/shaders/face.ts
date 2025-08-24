@@ -15,8 +15,7 @@ export default () => /* wgsl */ `
     let point = facePointOffset(face, uv);
     let normal = faceNormal(face, uv);
     let texture = faceTexture(face, uv);
-    let p = cross(face.points[1].pos, face.points[2].pos);
-    return FaceSample(length(p)/2, point, normal, texture, uv, face.materialIdx);
+    return FaceSample(face.area, point, normal, texture, uv, face.materialIdx);
   }
 
   fn faceVertex(face: Face, i: u32) -> vec3f {
@@ -43,7 +42,7 @@ export default () => /* wgsl */ `
     return p1 + mat2x3f(e1, e2) * uv;
   }
   fn facePointOffset(face: Face, uv: vec2f) -> vec3f {
-    return offsetRay(facePoint(face, uv), face.normal.xyz);
+    return offsetRay(facePoint(face, uv), face.plane.xyz);
   }
 
   const origin = 1.0 / 32.0;
@@ -70,7 +69,7 @@ export default () => /* wgsl */ `
       let n3 = faceVertexNormal(face, 2);
       return normalize(mat3x3f(n1, n2, n3) * toBarycentric(uv));
     } else {
-      return face.normal.xyz;
+      return face.plane.xyz;
     }
   }
 

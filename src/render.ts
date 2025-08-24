@@ -109,17 +109,18 @@ const { materialsBuffer } = await loadMaterialsToBuffers(materials);
 console.log('loading scene');
 const { facesBuffer, bvhBuffer, bvhFacesBuffer, bvhCount, modelsBuffer } =
   // await loadModelsToBuffers(models);
-  await loadModelsToBuffers([
-    models[10],
-    models[2],
-    models[6],
-    models[11],
-    models[8],
-    models[5],
-    models[3],
-    models[4],
-  ]);
-// await loadModelsToBuffers([models[1]]);
+  // await loadModelsToBuffers([
+  //   models[10],
+  //   models[2],
+  //   models[6],
+  //   models[11],
+  //   models[8],
+  //   models[5],
+  //   models[3],
+  //   models[4],
+  // ]);
+  // await loadModelsToBuffers([models[1]]);
+  await loadModelsToBuffers([models[0]]);
 
 console.log('loading skybox');
 type SkyboxData = {
