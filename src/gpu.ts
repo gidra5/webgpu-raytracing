@@ -301,6 +301,7 @@ type RenderPipelineDescriptor = {
   vertexShader: (builder: PipelineBuilder) => string;
   fragmentShader?: (builder: PipelineBuilder) => string;
   fragmentPresentationFormatTarget?: Omit<GPUColorTargetState, 'format'>;
+  vertex?: Omit<GPUVertexState, 'module'>;
 } & Omit<GPURenderPipelineDescriptor, 'fragment' | 'vertex' | 'layout'>;
 type RenderPipelineBuilderResult = {
   pipeline: GPURenderPipeline;
@@ -549,7 +550,10 @@ export const renderPipeline = (
     layout: device.createPipelineLayout({
       bindGroupLayouts: bindingGroupLayouts(),
     }),
-    vertex: { module: vertexShaderModule },
+    vertex: {
+      module: vertexShaderModule,
+      ...x.vertex,
+    },
     ...x,
   };
 
