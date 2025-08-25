@@ -106,7 +106,16 @@ console.log('loading materials');
 const { materialsBuffer } = await loadMaterialsToBuffers(materials);
 
 console.log('loading scene');
-const { facesBuffer, bvhBuffer, bvhFacesBuffer, bvhCount, modelsBuffer } =
+const {
+  facesBuffer,
+  bvhBuffer,
+  bvhFacesBuffer,
+  bvhCount,
+  modelsBuffer,
+  verticesBuffer,
+  normalsBuffer,
+  uvsBuffer,
+} =
   // await loadModelsToBuffers(models);
   // await loadModelsToBuffers([
   //   models[10],
@@ -1132,6 +1141,9 @@ const [computePipeline, computeBindGroups] = reactiveComputePipeline({
     ${x.bindVarBuffer('uniform', 'reprojectionFrustrumLo: mat3x4f', reprojectionFrustrumBufferLo)}
 
     ${x.bindVarBuffer('read-only-storage', 'faces: array<Face>', facesBuffer)}
+    ${x.bindVarBuffer('read-only-storage', 'vertices: array<vec3f>', verticesBuffer)}
+    ${x.bindVarBuffer('read-only-storage', 'normals: array<vec3f>', normalsBuffer)}
+    ${x.bindVarBuffer('read-only-storage', 'uvs: array<vec2f>', uvsBuffer)}
     ${x.bindVarBuffer('read-only-storage', 'materials: array<Material>', materialsBuffer)}
     ${x.bindVarBuffer('read-only-storage', 'models: array<Model>', modelsBuffer)}
     ${x.bindVarBuffer('read-only-storage', 'bvh: array<BoundingVolume>', bvhBuffer)}
@@ -1378,7 +1390,51 @@ createEffect(() => {
 // const geometryPass = reactiveRenderPipeline({
 //   vertexShader: (x) => /* wgsl */ `
 //     ${structs}
+
+//     struct Vertex {
+//       @location(0) position: vec3f,
+//     }
+
+//     struct VertexOutput {
+//       @builtin(position) Position: vec4f,
+//       @location(0) uv: vec2f,
+//     }
+
+//     @vertex
+//     fn main(
+//       vertex: Vertex,
+//       @builtin(instance_index) instanceId: u32
+//     ) -> VertexOutput {
+//       var output: VertexOutput;
+//       output.Position = vec4<f32>(FULLSCREEN_TRIANGLE[VertexIndex].xy, 0.0, 1.0);
+//       output.uv = FULLSCREEN_TRIANGLE[VertexIndex].zw;
+//       return output;
+//     }
 //   `,
+//   fragmentShader: (x) => /* wgsl */ `
+//     @fragment
+//     fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+//       let pos = uv * viewportf;
+//       let upos = vec2u(pos);
+//       let idx = upos.y * viewport.x + upos.x;
+//       return vec4f(getColor(idx, pos),1);
+//     }
+//   `,
+
+//   vertex: {
+//     buffers: [
+//       {
+//         arrayStride: 3 * Float32Array.BYTES_PER_ELEMENT, // 3 floats
+//         attributes: [
+//           { shaderLocation: 0, offset: 0, format: 'float32x3' }, // position
+//         ],
+//       },
+//     ],
+//   },
+//   primitive: {
+//     topology: 'triangle-list',
+//     cullMode: 'back',
+//   },
 // });
 
 const rpd: GPURenderPassDescriptor = {

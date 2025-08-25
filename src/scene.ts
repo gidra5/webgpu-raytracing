@@ -247,16 +247,16 @@ const loadModelToBuffers = async (
   const uvOffset = allocateUVs(model.uvs.length);
 
   new Float32Array(verticesMapped).set(
-    model.vertices.map((v) => [...v]).flat(),
-    vertexOffset * 3
+    model.vertices.map((v) => [...v, 0]).flat(),
+    vertexOffset * 4
   );
   new Float32Array(normalsMapped).set(
-    model.normals.map((v) => [...v]).flat(),
-    normalOffset * 3
+    model.normals.map((v) => [...v, 0]).flat(),
+    normalOffset * 4
   );
   new Float32Array(uvsMapped).set(
-    model.uvs.map((v) => [...v]).flat(),
-    uvOffset * 2
+    model.uvs.map((v) => [...v, 0]).flat(),
+    uvOffset * 4
   );
 
   for (const [face, i] of Iterator.iter(model.faces).enumerate()) {
@@ -272,11 +272,9 @@ const loadModelToBuffers = async (
 
       points: Iterator.iter(face.points)
         .map((p) => ({
-          // position: p.position + vertexOffset,
-          // normal: p.normal + normalOffset,
-          // texture: p.texture + uvOffset,
-          pos: model.vertices[p.position],
-          normal: model.normals[p.normal],
+          position: p.position + vertexOffset,
+          normal: p.normal + normalOffset,
+          texture: p.texture + uvOffset,
         }))
         .toArray(),
     };
@@ -372,7 +370,7 @@ export const loadModelsToBuffers = async (models: Model[]) => {
 
   const verticesCount = Iterator.iter(models).sum((m) => m.vertices.length);
   const verticesBuffer = createStorageBuffer(
-    verticesCount * 3 * Float32Array.BYTES_PER_ELEMENT,
+    verticesCount * 4 * Float32Array.BYTES_PER_ELEMENT,
     'Vertices Buffer',
     GPUBufferUsage.VERTEX,
     true
@@ -381,7 +379,7 @@ export const loadModelsToBuffers = async (models: Model[]) => {
 
   const normalsCount = Iterator.iter(models).sum((m) => m.normals.length);
   const normalsBuffer = createStorageBuffer(
-    normalsCount * 3 * Float32Array.BYTES_PER_ELEMENT,
+    normalsCount * 4 * Float32Array.BYTES_PER_ELEMENT,
     'Normals Buffer',
     0,
     true
@@ -390,7 +388,7 @@ export const loadModelsToBuffers = async (models: Model[]) => {
 
   const uvsCount = Iterator.iter(models).sum((m) => m.uvs.length);
   const uvsBuffer = createStorageBuffer(
-    uvsCount * 3 * Float32Array.BYTES_PER_ELEMENT,
+    uvsCount * 4 * Float32Array.BYTES_PER_ELEMENT,
     'UVs Buffer',
     0,
     true

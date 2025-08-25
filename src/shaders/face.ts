@@ -19,15 +19,15 @@ export default () => /* wgsl */ `
   }
 
   fn faceVertex(face: Face, i: u32) -> vec3f {
-    return face.points[i].pos;
+    return vertices[face.points[i].position];
   }
 
   fn faceVertexNormal(face: Face, i: u32) -> vec3f {
-    return face.points[i].normal;
+    return normals[face.points[i].normal];
   }
 
   fn faceVertexTexture(face: Face, i: u32) -> vec2f {
-    return vec2f(0, 0);
+    return uvs[face.points[i].texture];
   }
 
   // https://www.realtimerendering.com/raytracinggems/unofficial_RayTracingGems_v1.9.pdf

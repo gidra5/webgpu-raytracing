@@ -38,8 +38,9 @@ const structs = /* wgsl */ `
   }
 
   struct FacePoint {
-    pos: vec3f,
-    normal: vec3f,
+    position: u32,
+    normal: u32,
+    texture: u32,
   }
 
   struct OrientedLine {

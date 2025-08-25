@@ -233,6 +233,19 @@ const bufferBuilder = (d: GPUBufferDescriptor = { size: 0, usage: 0 }) => {
   };
 };
 
+export const createVertexBuffer = (
+  size: number,
+  label?: string,
+  usage: GPUBufferUsageFlags = 0,
+  mapped = false
+) =>
+  device.createBuffer({
+    size,
+    usage: GPUBufferUsage.VERTEX | usage,
+    label,
+    mappedAtCreation: mapped,
+  });
+
 export const createStorageBuffer = (
   size: number,
   label?: string,
