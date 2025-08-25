@@ -1,5 +1,5 @@
 import { Accessor, createEffect, createSignal } from 'solid-js';
-import { assert } from './utils';
+import { assert, omit } from './utils';
 import { vec2, vec3 } from 'gl-matrix';
 import { CreateTextureOptions } from 'webgpu-utils';
 
@@ -24,6 +24,8 @@ export const getDevice = async (context: GPUCanvasContext) => {
     features['subgroups'] = true;
     requiredFeatures.push('subgroups');
   }
+
+  console.log([...adapter.features]);
 
   device = await adapter.requestDevice({
     requiredFeatures,
@@ -256,30 +258,38 @@ export const createUniformBuffer = (
   });
 
 type CreateTextureSource = {
-  data: Float32Array;
+  data?: Float32Array;
   width: number;
   height: number;
+  depthOrArrayLayers?: number;
 };
 export const createTexture = (
   source: CreateTextureSource,
   options?: CreateTextureOptions
 ) => {
+  const depth = source.depthOrArrayLayers ?? 1;
   const texture = device.createTexture({
-    size: [source.width, source.height, 1],
+    size: [source.width, source.height, depth],
     format: 'rgba32float',
-    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    usage:
+      GPUTextureUsage.TEXTURE_BINDING |
+      GPUTextureUsage.COPY_DST |
+      (options.usage ?? 0),
+    ...omit(options, ['usage']),
   });
 
-  // Upload the pixel data to the texture
-  device.queue.writeTexture(
-    { texture },
-    source.data,
-    {
-      bytesPerRow: source.width * 4 * Float32Array.BYTES_PER_ELEMENT, // 4 channels * 4 bytes/float
-      rowsPerImage: source.height,
-    },
-    { width: source.width, height: source.height, depthOrArrayLayers: 1 }
-  );
+  if (source.data) {
+    // Upload the pixel data to the texture
+    device.queue.writeTexture(
+      { texture },
+      source.data,
+      {
+        bytesPerRow: source.width * 4 * Float32Array.BYTES_PER_ELEMENT, // 4 channels * 4 bytes/float
+        rowsPerImage: source.height,
+      },
+      { width: source.width, height: source.height, depthOrArrayLayers: depth }
+    );
+  }
 
   return texture;
 };
@@ -313,6 +323,12 @@ export type PipelineBuilder = {
     type: GPUSamplerBindingType,
     sampler: GPUSampler
   ): string;
+  bindStorageTexture(
+    name: string,
+    access: GPUStorageTextureAccess,
+    texture: GPUTexture,
+    isArray?: boolean
+  ): string;
 };
 type Binding =
   | {
@@ -326,6 +342,14 @@ type Binding =
       visibility: GPUShaderStage;
       type: GPUTextureSampleType;
       texture: GPUTexture;
+      multisampled?: boolean;
+      dimension?: GPUTextureViewDimension;
+    }
+  | {
+      kind: 'storageTexture';
+      visibility: GPUShaderStage;
+      texture: GPUTexture;
+      access: GPUStorageTextureAccess;
       multisampled?: boolean;
       dimension?: GPUTextureViewDimension;
     }
@@ -376,6 +400,38 @@ const createBindingBuilder = () => {
         texture.dimension === '2d' ? 'texture_2d' : 'texture_3d';
       return `@group(${group}) @binding(${binding}) var ${name}: ${containerType}<${valueType}>;`;
     },
+    bindStorageTexture(
+      name: string,
+      access: GPUStorageTextureAccess,
+      texture: GPUTexture,
+      isArray = false
+    ) {
+      const group = bindings.length - 1;
+      const binding = bindings[group].length;
+      bindings[group].push({
+        kind: 'storageTexture',
+        texture,
+        visibility,
+        access,
+      });
+
+      const containerType =
+        texture.dimension === '1d'
+          ? 'texture_storage_1d'
+          : texture.dimension === '2d'
+            ? isArray
+              ? 'texture_storage_2d_array'
+              : 'texture_storage_2d'
+            : 'texture_storage_3d';
+
+      const accessType =
+        access === 'read-only'
+          ? 'read'
+          : access === 'write-only'
+            ? 'write'
+            : 'read_write';
+      return `@group(${group}) @binding(${binding}) var ${name}: ${containerType}<${texture.format}, ${accessType}>;`;
+    },
 
     bindSampler(
       name: string,
@@ -408,6 +464,18 @@ const createBindingBuilder = () => {
                 },
               };
             }
+            if (binding.kind === 'storageTexture') {
+              const { visibility, dimension, access, texture } = binding;
+              return {
+                binding: i,
+                visibility: visibility as unknown as number,
+                storageTexture: {
+                  viewDimension: '2d-array',
+                  access,
+                  format: texture.format,
+                },
+              };
+            }
             if (binding.kind === 'sampler') {
               const { visibility, type } = binding;
               return {
@@ -434,6 +502,13 @@ const createBindingBuilder = () => {
             if (binding.kind === 'texture') {
               const { texture } = binding;
               return { binding: i, resource: texture.createView() };
+            }
+            if (binding.kind === 'storageTexture') {
+              const { texture } = binding;
+              return {
+                binding: i,
+                resource: texture.createView({ dimension: '2d-array' }),
+              };
             }
 
             if (binding.kind === 'sampler') {

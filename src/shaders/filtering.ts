@@ -43,7 +43,7 @@ export default () => /* wgsl */ `
         for (var l = 0u; l < ${store.imageLayers}; l = l + 1) {
           layer = l;
           let _uv = uv + vec2f(f32(i), f32(j)) * s;
-          let _color = sampleImage4(_uv, &prevImageBuffer, &prevGeometryBuffer);
+          let _color = sampleImage4(_uv, &prevGeometryBuffer);
           if _color.w <= 0 {
             continue;
           }
