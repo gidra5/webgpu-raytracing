@@ -370,19 +370,20 @@ const scene = () => /* wgsl */ `
   }
 
   fn objectFaceAnyHit(faceIdx: u32, objectIdx: u32, ray: Ray, maxDist: f32) -> bool {
+    let l = OrientedLine(ray.dir, cross(ray.dir + ray.pos, ray.pos));
     {
       let model = models[objectIdx];
       let face = faces[model.faces.offset + faceIdx];
-      let _hit = rayIntersectFace(ray, face, Interval(min_dist, maxDist));
-      if _hit.hit {
+      let _hit = rayIntersectFaceAnyHit(l, ray, face, Interval(min_dist, maxDist));
+      if _hit {
         return true;
       }
     }
 
     {
       let model = models[objectIdx];
-      let _hit = rayIntersectObjectBVH(ray, objectIdx, Interval(min_dist, maxDist));
-      if _hit.hit {
+      let _hit = rayIntersectObjectBVHAnyHit(l, ray, objectIdx, maxDist);
+      if _hit {
         return true;
       }
     }
