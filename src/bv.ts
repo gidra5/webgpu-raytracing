@@ -26,7 +26,7 @@ const bv = (min: vec3, max: vec3): BoundingVolume => {
   return { min, max, rightIdx: -1, faces: [] };
 };
 
-export const facesBV = (faces: Face[]): BoundingVolume => {
+export const facesBV = (faces: Face[], vertices: vec3[]): BoundingVolume => {
   // find root BV dimensions
   const min = vec3.fromValues(
     Number.MAX_SAFE_INTEGER,
@@ -41,9 +41,9 @@ export const facesBV = (faces: Face[]): BoundingVolume => {
 
   for (const face of faces) {
     const points = Array.from({ length: 3 }, () => vec3.create());
-    vec3.copy(points[0], face.points[0].position);
-    vec3.copy(points[1], face.points[1].position);
-    vec3.copy(points[2], face.points[2].position);
+    vec3.copy(points[0], vertices[face.points[0].position]);
+    vec3.copy(points[1], vertices[face.points[1].position]);
+    vec3.copy(points[2], vertices[face.points[2].position]);
 
     // calculate min/max for root AABB bounding volume
     for (const p of points) {
@@ -66,15 +66,16 @@ export const facesBV = (faces: Face[]): BoundingVolume => {
 
 export const facesBVH = (
   faces: Face[],
+  vertices: vec3[],
   bvh: BoundingVolumeHierarchy = [],
   depth = 0
 ): BoundingVolumeHierarchy => {
   if (faces.length === 0) return bvh;
 
-  const bv = facesBV(faces);
+  const bv = facesBV(faces, vertices);
   bvh.push(bv);
 
-  subdivide(faces, bvh, depth);
+  subdivide(faces, vertices, bvh, depth);
   return bvh;
 };
 
@@ -89,6 +90,7 @@ const axisMidpoint = (axis: Axis, f: Face): number => {
 const splitAcross = (
   axis: Axis,
   faces: Face[],
+  vertices: vec3[],
   bvh: BoundingVolumeHierarchy,
   depth: number
 ): BoundingVolume[] => {
@@ -101,11 +103,11 @@ const splitAcross = (
   const right = sorted.slice(mid);
 
   if (left.length > 0) {
-    facesBVH(left, bvh, depth);
+    facesBVH(left, vertices, bvh, depth);
   }
   if (right.length > 0) {
     parent.rightIdx = bvh.length;
-    facesBVH(right, bvh, depth);
+    facesBVH(right, vertices, bvh, depth);
   }
 
   return bvh;
@@ -113,6 +115,7 @@ const splitAcross = (
 
 export const subdivide = (
   faces: Face[],
+  vertices: vec3[],
   bvh: BoundingVolumeHierarchy,
   depth: number
 ) => {
@@ -133,10 +136,10 @@ export const subdivide = (
   vec3.sub(d, parent.max, parent.min);
   const largestDelta = Math.max(...d);
   if (largestDelta === d[0]) {
-    return splitAcross(Axis.X, faces, bvh, depth);
+    return splitAcross(Axis.X, faces, vertices, bvh, depth);
   } else if (largestDelta === d[1]) {
-    return splitAcross(Axis.Y, faces, bvh, depth);
+    return splitAcross(Axis.Y, faces, vertices, bvh, depth);
   } else {
-    return splitAcross(Axis.Z, faces, bvh, depth);
+    return splitAcross(Axis.Z, faces, vertices, bvh, depth);
   }
 };

@@ -10,6 +10,9 @@ const makeModel = (
 ): Model => {
   vertices = vertices.map((v) => vec3.transformMat4(v, v, modelMatrix));
 
+  const normals = [];
+  const uvs = [];
+
   const faces: Face[] = indices.map(([a, b, c], i): Face => {
     const p0 = vertices[a];
     const p1 = vertices[b];
@@ -20,9 +23,12 @@ const makeModel = (
     vec3.sub(e1, p1, p0);
     vec3.sub(e2, p2, p0);
 
-    const normal = vec3.create();
-    vec3.cross(normal, e1, e2);
+    const normal = vec3.cross(vec3.create(), e1, e2);
     vec3.normalize(normal, normal);
+    const normalsIdx = normals.push(normal) - 1;
+
+    const textureIdx = uvs.push(vec3.create()) - 1;
+
     return createFace({
       idx: i,
       materialIdx: 0,
@@ -30,14 +36,21 @@ const makeModel = (
       p1,
       p2,
       points: [
-        { position: p0, normal, texture: vec3.create() },
-        { position: p1, normal, texture: vec3.create() },
-        { position: p2, normal, texture: vec3.create() },
+        { position: a, normal: normalsIdx, texture: textureIdx },
+        { position: b, normal: normalsIdx, texture: textureIdx },
+        { position: c, normal: normalsIdx, texture: textureIdx },
       ],
     });
   });
 
-  return { name, faces, bvh: facesBVH(faces) };
+  return {
+    name,
+    faces,
+    bvh: facesBVH(faces, vertices),
+    normals,
+    vertices,
+    uvs,
+  };
 };
 
 const cubeModelMatrix = mat4.create();

@@ -12,17 +12,17 @@ import { preprocess as preprocessSkybox } from './skybox';
 import { store } from './store';
 import { defs } from './shaders/structs';
 
-type Point = {
-  position: vec3;
-  normal: vec3;
-  texture: vec3;
+type Vertex = {
+  position: number;
+  normal: number;
+  texture: number;
 };
 type OrientedLine = {
   dir: vec3;
   cross: vec3;
 };
 export type Face = {
-  points: [Point, Point, Point];
+  points: [Vertex, Vertex, Vertex];
   plane: vec4;
   uPlane: vec4;
   vPlane: vec4;
@@ -33,8 +33,12 @@ export type Face = {
   area: number;
   idx: number;
 };
+
 export type Model = {
   name: string;
+  vertices: vec3[];
+  normals: vec3[];
+  uvs: vec3[];
   faces: Face[];
   bvh: BoundingVolumeHierarchy;
 };
@@ -50,7 +54,6 @@ const objVertToVec3 = (v: ObjVertex) => vec3.fromValues(v.x, v.y, v.z);
 const objTexToVec3 = (v: ObjTexture) => vec3.fromValues(v.u, v.v, v.w);
 
 type Allocation = { offset: number; count: number };
-const faceSize = defs.structs.Face.size / Float32Array.BYTES_PER_ELEMENT;
 const bvSize =
   defs.structs.BoundingVolume.size / Float32Array.BYTES_PER_ELEMENT;
 const modelSize = defs.structs.Model.size / Float32Array.BYTES_PER_ELEMENT;
@@ -61,6 +64,9 @@ const facesAllocations: Allocation[] = [];
 // bvh offsets and counts are in bvSize units
 const bvhAllocations: Allocation[] = [];
 const bvhFacesAllocations: Allocation[] = [];
+const verticesAllocations: Allocation[] = [];
+const normalsAllocations: Allocation[] = [];
+const uvsAllocations: Allocation[] = [];
 
 const allocate = (allocations: Allocation[], count: number) => {
   const lastAllocation = allocations[allocations.length - 1];
@@ -70,14 +76,18 @@ const allocate = (allocations: Allocation[], count: number) => {
   allocations.push({ offset, count });
   return offset;
 };
-
-const allocateFace = (count: number) => allocate(facesAllocations, count);
-const allocateBVH = (count: number) => allocate(bvhAllocations, count);
-const allocateBVHFace = (count: number) => allocate(bvhFacesAllocations, count);
 const totalAllocationSize = (allocations: Allocation[]) => {
   const lastAllocation = allocations[allocations.length - 1];
   return lastAllocation ? lastAllocation.offset + lastAllocation.count : 0;
 };
+
+const allocateFace = (count: number) => allocate(facesAllocations, count);
+const allocateBVH = (count: number) => allocate(bvhAllocations, count);
+const allocateBVHFace = (count: number) => allocate(bvhFacesAllocations, count);
+const allocateVertices = (count: number) =>
+  allocate(verticesAllocations, count);
+const allocateNormals = (count: number) => allocate(normalsAllocations, count);
+const allocateUVs = (count: number) => allocate(uvsAllocations, count);
 
 export const createFace = (desc: {
   idx: number;
@@ -85,7 +95,7 @@ export const createFace = (desc: {
   p0: vec3;
   p1: vec3;
   p2: vec3;
-  points: [Point, Point, Point];
+  points: [Vertex, Vertex, Vertex];
 }): Face => {
   const { points, materialIdx, idx, p0, p1, p2 } = desc;
 
@@ -162,91 +172,116 @@ export const loadModels = async () => {
     };
   });
 
-  let posArray: vec3[] = [];
-  let nrmArray: vec3[] = [];
-  let uvArray: vec3[] = [];
+  let verticesOffset = 0;
+  let normalsOffset = 0;
+  let uvsOffset = 0;
   const models: Model[] = [];
 
   models.push(unitCubeModel());
   models.push(triangleModel());
 
-  // return modelsCache.map((_, i) => i);
+  objParsed.models.forEach((data, i) => {
+    const { faces, name } = data;
+    console.log(name, i, faces[0].material);
 
-  objParsed.models.forEach(
-    ({ vertices, vertexNormals, textureCoords, faces, name }, i) => {
-      console.log(name, i, faces[0].material);
+    const vertices = data.vertices.map(objVertToVec3);
+    const normals = data.vertexNormals.map(objVertToVec3);
+    const uvs = data.textureCoords.map(objTexToVec3);
 
-      posArray = posArray.concat(vertices.map(objVertToVec3));
-      nrmArray = nrmArray.concat(vertexNormals.map(objVertToVec3));
-      uvArray = uvArray.concat(textureCoords.map(objTexToVec3));
+    const _faces = faces
+      .map((f): Face => {
+        const i0 = f.vertices[0].vertexIndex - 1 - verticesOffset;
+        const i1 = f.vertices[1].vertexIndex - 1 - verticesOffset;
+        const i2 = f.vertices[2].vertexIndex - 1 - verticesOffset;
+        const j0 = f.vertices[0].vertexNormalIndex - 1 - normalsOffset;
+        const j1 = f.vertices[1].vertexNormalIndex - 1 - normalsOffset;
+        const j2 = f.vertices[2].vertexNormalIndex - 1 - normalsOffset;
+        const k0 = f.vertices[0].textureCoordsIndex - 1 - uvsOffset;
+        const k1 = f.vertices[1].textureCoordsIndex - 1 - uvsOffset;
+        const k2 = f.vertices[2].textureCoordsIndex - 1 - uvsOffset;
 
-      const _faces = faces
-        .map((f): Face => {
-          const i0 = f.vertices[0].vertexIndex - 1;
-          const i1 = f.vertices[1].vertexIndex - 1;
-          const i2 = f.vertices[2].vertexIndex - 1;
+        const p0 = vertices[i0];
+        const p1 = vertices[i1];
+        const p2 = vertices[i2];
 
-          const j0 = f.vertices[0].vertexNormalIndex - 1;
-          const j1 = f.vertices[1].vertexNormalIndex - 1;
-          const j2 = f.vertices[2].vertexNormalIndex - 1;
-          const k0 = f.vertices[0].textureCoordsIndex - 1;
-          const k1 = f.vertices[1].textureCoordsIndex - 1;
-          const k2 = f.vertices[2].textureCoordsIndex - 1;
+        const materialIdx = materials.findIndex(
+          ({ name }) => name === f.material
+        );
 
-          const p0 = posArray[i0];
-          const p1 = posArray[i1];
-          const p2 = posArray[i2];
+        return createFace({
+          idx: i,
+          materialIdx,
+          p0,
+          p1,
+          p2,
+          points: [
+            { position: i0, normal: j0, texture: k0 },
+            { position: i1, normal: j1, texture: k1 },
+            { position: i2, normal: j2, texture: k2 },
+          ],
+        });
+      })
+      .map((face, i) => ({ ...face, idx: i }));
 
-          const e1 = vec3.sub(vec3.create(), p1, p0);
-          const e2 = vec3.sub(vec3.create(), p2, p0);
+    const bvh = facesBVH(_faces, vertices);
 
-          const materialIdx = materials.findIndex(
-            ({ name }) => name === f.material
-          );
-
-          return createFace({
-            idx: i,
-            materialIdx,
-            p0,
-            p1,
-            p2,
-            points: [
-              { position: p0, normal: nrmArray[j0], texture: uvArray[k0] },
-              { position: p1, normal: nrmArray[j1], texture: uvArray[k1] },
-              { position: p2, normal: nrmArray[j2], texture: uvArray[k2] },
-            ],
-          });
-        })
-        .map((face, i) => ({ ...face, idx: i }));
-
-      const bvh = facesBVH(_faces);
-
-      models.push({ name, faces: _faces, bvh });
-    }
-  );
+    models.push({ name, faces: _faces, bvh, normals, vertices, uvs });
+    verticesOffset += vertices.length;
+    normalsOffset += normals.length;
+    uvsOffset += uvs.length;
+  });
 
   return { models, materials };
 };
 
-const loadModelFacesToBuffer = async (
-  _mapped: ArrayBuffer,
+const loadModelToBuffers = async (
   model: Model,
-  offset: number
+  facesMapped: ArrayBuffer,
+  verticesMapped: ArrayBuffer,
+  normalsMapped: ArrayBuffer,
+  uvsMapped: ArrayBuffer
 ) => {
-  for (const [face, i] of Iterator.iter(model.faces).enumerate()) {
-    const f32Offset =
-      offset * Float32Array.BYTES_PER_ELEMENT + i * defs.structs.Face.size;
-    const values = makeStructuredView(defs.structs.Face, _mapped, f32Offset);
+  const offset = allocateFace(model.faces.length);
+  const vertexOffset = allocateVertices(model.vertices.length);
+  const normalOffset = allocateNormals(model.normals.length);
+  const uvOffset = allocateUVs(model.uvs.length);
 
-    values.set({
+  new Float32Array(verticesMapped).set(
+    model.vertices.map((v) => [...v]).flat(),
+    vertexOffset * 3
+  );
+  new Float32Array(normalsMapped).set(
+    model.normals.map((v) => [...v]).flat(),
+    normalOffset * 3
+  );
+  new Float32Array(uvsMapped).set(
+    model.uvs.map((v) => [...v]).flat(),
+    uvOffset * 2
+  );
+
+  for (const [face, i] of Iterator.iter(model.faces).enumerate()) {
+    const faceOffset = offset + i;
+    const values = makeStructuredView(
+      defs.structs.Face,
+      facesMapped,
+      faceOffset * defs.structs.Face.size
+    );
+
+    const x = {
       ...face,
+
       points: Iterator.iter(face.points)
         .map((p) => ({
-          pos: p.position,
-          normal: p.normal,
+          // position: p.position + vertexOffset,
+          // normal: p.normal + normalOffset,
+          // texture: p.texture + uvOffset,
+          pos: model.vertices[p.position],
+          normal: model.normals[p.normal],
         }))
         .toArray(),
-    });
+    };
+    // console.log(x);
+    values.set(x);
   }
 };
 
@@ -328,19 +363,54 @@ export const loadMaterialsToBuffers = async (materials: Material[]) => {
 export const loadModelsToBuffers = async (models: Model[]) => {
   const facesCount = Iterator.iter(models).sum((m) => m.faces.length);
   const facesBuffer = createStorageBuffer(
-    facesCount * faceSize * Float32Array.BYTES_PER_ELEMENT,
+    facesCount * defs.structs.Face.size,
     'Faces Buffer',
     0,
     true
   );
   const facesMapped = facesBuffer.getMappedRange();
 
+  const verticesCount = Iterator.iter(models).sum((m) => m.vertices.length);
+  const verticesBuffer = createStorageBuffer(
+    verticesCount * 3 * Float32Array.BYTES_PER_ELEMENT,
+    'Vertices Buffer',
+    GPUBufferUsage.VERTEX,
+    true
+  );
+  const verticesMapped = verticesBuffer.getMappedRange();
+
+  const normalsCount = Iterator.iter(models).sum((m) => m.normals.length);
+  const normalsBuffer = createStorageBuffer(
+    normalsCount * 3 * Float32Array.BYTES_PER_ELEMENT,
+    'Normals Buffer',
+    0,
+    true
+  );
+  const normalsMapped = normalsBuffer.getMappedRange();
+
+  const uvsCount = Iterator.iter(models).sum((m) => m.uvs.length);
+  const uvsBuffer = createStorageBuffer(
+    uvsCount * 3 * Float32Array.BYTES_PER_ELEMENT,
+    'UVs Buffer',
+    0,
+    true
+  );
+  const uvsMapped = uvsBuffer.getMappedRange();
+
   for (const model of models) {
-    const offset = allocateFace(model.faces.length);
-    await loadModelFacesToBuffer(facesMapped, model, offset * faceSize);
+    await loadModelToBuffers(
+      model,
+      facesMapped,
+      verticesMapped,
+      normalsMapped,
+      uvsMapped
+    );
   }
 
   facesBuffer.unmap();
+  verticesBuffer.unmap();
+  normalsBuffer.unmap();
+  uvsBuffer.unmap();
 
   const bvhCount = Iterator.iter(models).sum((m) => m.bvh.length);
   const bvhBuffer = createStorageBuffer(
@@ -387,7 +457,16 @@ export const loadModelsToBuffers = async (models: Model[]) => {
 
   modelsBuffer.unmap();
 
-  return { facesBuffer, bvhBuffer, bvhFacesBuffer, bvhCount, modelsBuffer };
+  return {
+    facesBuffer,
+    bvhBuffer,
+    bvhFacesBuffer,
+    bvhCount,
+    modelsBuffer,
+    verticesBuffer,
+    normalsBuffer,
+    uvsBuffer,
+  };
 };
 
 const loadExr = async (url: string) => {
