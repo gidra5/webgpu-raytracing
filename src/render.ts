@@ -8,6 +8,7 @@ import {
   getTimestampHandler,
   PipelineBuilder,
   reactiveComputePipeline,
+  reactiveRenderPipeline,
   reactiveUniformBuffer,
   renderBundlePass,
   renderPass,
@@ -61,6 +62,7 @@ const [prevImageTextureArray, setPrevImageTextureArray] =
   createSignal<GPUTexture>();
 const [geometryBuffer, setGeometryBuffer] = createSignal<GPUBuffer>();
 const [prevGeometryBuffer, setPrevGeometryBuffer] = createSignal<GPUBuffer>();
+const [depthTexture, setDepthTexture] = createSignal<GPUTexture>();
 const [blitRenderBundle, setBlitRenderBundle] = createSignal<GPURenderBundle>();
 const [debugBVHRenderBundle, setDebugBVHRenderBundle] =
   createSignal<GPURenderBundle>();
@@ -112,23 +114,25 @@ const {
   bvhFacesBuffer,
   bvhCount,
   modelsBuffer,
+  facesCount,
   verticesBuffer,
   normalsBuffer,
   uvsBuffer,
+  indicesBuffer,
 } =
   // await loadModelsToBuffers(models);
-  // await loadModelsToBuffers([
-  //   models[10],
-  //   models[2],
-  //   models[6],
-  //   models[11],
-  //   models[8],
-  //   models[5],
-  //   models[3],
-  //   models[4],
-  // ]);
-  // await loadModelsToBuffers([models[1]]);
-  await loadModelsToBuffers([models[0]]);
+  await loadModelsToBuffers([
+    models[10],
+    models[2],
+    models[6],
+    models[11],
+    models[8],
+    models[5],
+    models[3],
+    models[4],
+  ]);
+// await loadModelsToBuffers([models[1]]);
+// await loadModelsToBuffers([models[0]]);
 
 console.log('loading skybox');
 type SkyboxData = {
@@ -210,7 +214,21 @@ createEffect<{ destroy: () => void }[]>((prevBuffers) => {
   );
   setPrevGeometryBuffer(prevGeometry);
 
-  return [currentGeometry, prevGeometry, texture, prevTexture];
+  const depthTexture = createTexture(
+    {
+      width: width,
+      height: height,
+      depthOrArrayLayers: 1,
+    },
+    {
+      format: 'depth24plus',
+      dimension: '2d',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    }
+  );
+  setDepthTexture(depthTexture);
+
+  return [currentGeometry, prevGeometry, texture, prevTexture, depthTexture];
 });
 
 createEffect(() => {
@@ -1387,57 +1405,66 @@ createEffect(() => {
   );
 });
 
-// const geometryPass = reactiveRenderPipeline({
-//   vertexShader: (x) => /* wgsl */ `
-//     ${structs}
+const geometryPass = reactiveRenderPipeline({
+  vertexShader: (x) => /* wgsl */ `
+    ${structs}
 
-//     struct Vertex {
-//       @location(0) position: vec3f,
-//     }
+    ${x.bindVarBuffer('uniform', 'viewProjMatrix: mat4x4f', viewProjBuffer)}
 
-//     struct VertexOutput {
-//       @builtin(position) Position: vec4f,
-//       @location(0) uv: vec2f,
-//     }
+    struct Vertex {
+      @location(0) p: vec3f,
+    }
 
-//     @vertex
-//     fn main(
-//       vertex: Vertex,
-//       @builtin(instance_index) instanceId: u32
-//     ) -> VertexOutput {
-//       var output: VertexOutput;
-//       output.Position = vec4<f32>(FULLSCREEN_TRIANGLE[VertexIndex].xy, 0.0, 1.0);
-//       output.uv = FULLSCREEN_TRIANGLE[VertexIndex].zw;
-//       return output;
-//     }
-//   `,
-//   fragmentShader: (x) => /* wgsl */ `
-//     @fragment
-//     fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
-//       let pos = uv * viewportf;
-//       let upos = vec2u(pos);
-//       let idx = upos.y * viewport.x + upos.x;
-//       return vec4f(getColor(idx, pos),1);
-//     }
-//   `,
+    struct VertexOutput {
+      @builtin(position) screenPosition: vec4f,
+      @location(0) worldPosition: vec3f,
+    }
 
-//   vertex: {
-//     buffers: [
-//       {
-//         arrayStride: 3 * Float32Array.BYTES_PER_ELEMENT, // 3 floats
-//         attributes: [
-//           { shaderLocation: 0, offset: 0, format: 'float32x3' }, // position
-//         ],
-//       },
-//     ],
-//   },
-//   primitive: {
-//     topology: 'triangle-list',
-//     cullMode: 'back',
-//   },
-// });
+    @vertex
+    fn main(
+      vertex: Vertex,
+      @builtin(instance_index) instanceId: u32
+    ) -> VertexOutput {
+      let screenPosition = viewProjMatrix * vec4(vertex.p, 1);
+      return VertexOutput(
+        screenPosition,
+        vertex.p
+      );
+    }
+  `,
+  fragmentShader: (x) => /* wgsl */ `
+    @fragment
+    fn main(
+      @builtin(position) screenPosition: vec4f,
+      @location(0) worldPosition: vec3f,
+    ) -> @location(0) vec4f {
+      return vec4f(worldPosition *2, 1);
+      // return vec4f(0, 0, 0, 1);
+    }
+  `,
 
-const rpd: GPURenderPassDescriptor = {
+  vertex: {
+    buffers: [
+      {
+        arrayStride: 4 * Float32Array.BYTES_PER_ELEMENT, // 3 floats
+        attributes: [
+          { shaderLocation: 0, offset: 0, format: 'float32x4' }, // position
+        ],
+      },
+    ],
+  },
+  primitive: {
+    topology: 'triangle-list',
+    cullMode: 'back',
+  },
+  depthStencil: {
+    depthWriteEnabled: true,
+    depthCompare: 'less',
+    format: 'depth24plus',
+  },
+});
+
+const rpd = (): GPURenderPassDescriptor => ({
   colorAttachments: [
     {
       view: context.getCurrentTexture().createView(),
@@ -1446,6 +1473,13 @@ const rpd: GPURenderPassDescriptor = {
       storeOp: 'store',
     },
   ],
+  depthStencilAttachment: {
+    view: depthTexture().createView(),
+
+    depthClearValue: 1.0,
+    depthLoadOp: 'clear',
+    depthStoreOp: 'store',
+  },
   ...(canTimestamp && {
     timestampWrites: {
       querySet,
@@ -1453,7 +1487,7 @@ const rpd: GPURenderPassDescriptor = {
       endOfPassWriteIndex: 1,
     },
   }),
-};
+});
 
 let frameCounter = 0;
 export async function renderFrame(now: number) {
@@ -1475,28 +1509,36 @@ export async function renderFrame(now: number) {
   const view = viewMatrix();
 
   const encoder = device.createCommandEncoder();
-  rpd.colorAttachments[0].view = context.getCurrentTexture().createView();
 
   // raytrace
-  computePass(encoder, {}, (computePass) => {
-    computePass.setPipeline(computePipeline());
-    computeBindGroups().forEach((bindGroup, i) =>
-      computePass.setBindGroup(i, bindGroup)
-    );
-    computePass.dispatchWorkgroups(
-      Math.ceil(canvas.width / COMPUTE_WORKGROUP_SIZE_X),
-      Math.ceil(canvas.height / COMPUTE_WORKGROUP_SIZE_Y),
-      store.imageLayers
-    );
-  });
+  // computePass(encoder, {}, (computePass) => {
+  //   computePass.setPipeline(computePipeline());
+  //   computeBindGroups().forEach((bindGroup, i) =>
+  //     computePass.setBindGroup(i, bindGroup)
+  //   );
+  //   computePass.dispatchWorkgroups(
+  //     Math.ceil(canvas.width / COMPUTE_WORKGROUP_SIZE_X),
+  //     Math.ceil(canvas.height / COMPUTE_WORKGROUP_SIZE_Y),
+  //     store.imageLayers
+  //   );
+  // });
 
-  renderPass(encoder, rpd, (renderPass) => {
-    renderPass.executeBundles([blitRenderBundle()]);
+  renderPass(encoder, rpd(), (renderPass) => {
+    const [geometryPipeline, geometryBindGroups] = geometryPass;
+    renderPass.setPipeline(geometryPipeline());
+    geometryBindGroups().forEach((bindGroup, i) =>
+      renderPass.setBindGroup(i, bindGroup)
+    );
+    renderPass.setVertexBuffer(0, verticesBuffer);
+    renderPass.setIndexBuffer(indicesBuffer, 'uint32');
+    renderPass.drawIndexed(facesCount * 3);
 
-    // debug BVH
-    if (store.debugBVH) {
-      renderPass.executeBundles([debugBVHRenderBundle()]);
-    }
+    // renderPass.executeBundles([blitRenderBundle()]);
+
+    // // debug BVH
+    // if (store.debugBVH) {
+    //   renderPass.executeBundles([debugBVHRenderBundle()]);
+    // }
   });
 
   if (updatePrev) {

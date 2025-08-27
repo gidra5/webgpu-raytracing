@@ -239,7 +239,8 @@ const loadModelToBuffers = async (
   facesMapped: ArrayBuffer,
   verticesMapped: ArrayBuffer,
   normalsMapped: ArrayBuffer,
-  uvsMapped: ArrayBuffer
+  uvsMapped: ArrayBuffer,
+  indicesMapped: ArrayBuffer
 ) => {
   const offset = allocateFace(model.faces.length);
   const vertexOffset = allocateVertices(model.vertices.length);
@@ -267,7 +268,7 @@ const loadModelToBuffers = async (
       faceOffset * defs.structs.Face.size
     );
 
-    const x = {
+    const faceData = {
       ...face,
 
       points: Iterator.iter(face.points)
@@ -278,8 +279,10 @@ const loadModelToBuffers = async (
         }))
         .toArray(),
     };
+    const indices = faceData.points.map((p) => p.position);
+    new Uint32Array(indicesMapped).set(indices, faceOffset * 3);
     // console.log(x);
-    values.set(x);
+    values.set(faceData);
   }
 };
 
@@ -395,16 +398,27 @@ export const loadModelsToBuffers = async (models: Model[]) => {
   );
   const uvsMapped = uvsBuffer.getMappedRange();
 
+  const indicesCount = facesCount * 3;
+  const indicesBuffer = createStorageBuffer(
+    indicesCount * Uint32Array.BYTES_PER_ELEMENT,
+    'Indices Buffer',
+    GPUBufferUsage.INDEX,
+    true
+  );
+  const indicesMapped = indicesBuffer.getMappedRange();
+
   for (const model of models) {
     await loadModelToBuffers(
       model,
       facesMapped,
       verticesMapped,
       normalsMapped,
-      uvsMapped
+      uvsMapped,
+      indicesMapped
     );
   }
 
+  indicesBuffer.unmap();
   facesBuffer.unmap();
   verticesBuffer.unmap();
   normalsBuffer.unmap();
@@ -461,9 +475,12 @@ export const loadModelsToBuffers = async (models: Model[]) => {
     bvhFacesBuffer,
     bvhCount,
     modelsBuffer,
+    verticesCount,
     verticesBuffer,
     normalsBuffer,
     uvsBuffer,
+    facesCount,
+    indicesBuffer,
   };
 };
 

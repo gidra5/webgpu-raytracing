@@ -567,7 +567,7 @@ export const renderPipeline = (
       module: vertexShaderModule,
       ...x.vertex,
     },
-    ...x,
+    ...omit(x, ['vertex']),
   };
 
   if (fragmentShaderModule) {
