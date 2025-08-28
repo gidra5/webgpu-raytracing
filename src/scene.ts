@@ -56,7 +56,6 @@ const objTexToVec3 = (v: ObjTexture) => vec3.fromValues(v.u, v.v, v.w);
 type Allocation = { offset: number; count: number };
 const bvSize =
   defs.structs.BoundingVolume.size / Float32Array.BYTES_PER_ELEMENT;
-const modelSize = defs.structs.Model.size / Float32Array.BYTES_PER_ELEMENT;
 const materialSize =
   defs.structs.Material.size / Float32Array.BYTES_PER_ELEMENT;
 // face offsets and counts are in faceSize units
@@ -290,7 +289,7 @@ const loadModelData = async (mapped: ArrayBuffer) => {
   for (const [[faces, bvh], i] of Iterator.iter(facesAllocations)
     .zip(bvhAllocations)
     .enumerate()) {
-    const f32Offset = modelSize * i * Float32Array.BYTES_PER_ELEMENT;
+    const f32Offset = defs.structs.Model.size * i;
     const values = makeStructuredView(defs.structs.Model, mapped, f32Offset);
     values.set({ faces, bvh });
   }
@@ -345,7 +344,7 @@ const loadMaterialToBuffer = (
 
 export const loadMaterialsToBuffers = async (materials: Material[]) => {
   const materialsBuffer = createStorageBuffer(
-    materials.length * materialSize * Float32Array.BYTES_PER_ELEMENT,
+    materials.length * defs.structs.Material.size,
     'Materials Buffer',
     0,
     true
@@ -362,7 +361,10 @@ export const loadMaterialsToBuffers = async (materials: Material[]) => {
 };
 
 export const loadModelsToBuffers = async (models: Model[]) => {
-  const facesCount = Iterator.iter(models).sum((m) => m.faces.length);
+  const facesCount = Math.max(
+    1,
+    Iterator.iter(models).sum((m) => m.faces.length)
+  );
   const facesBuffer = createStorageBuffer(
     facesCount * defs.structs.Face.size,
     'Faces Buffer',
@@ -371,7 +373,10 @@ export const loadModelsToBuffers = async (models: Model[]) => {
   );
   const facesMapped = facesBuffer.getMappedRange();
 
-  const verticesCount = Iterator.iter(models).sum((m) => m.vertices.length);
+  const verticesCount = Math.max(
+    1,
+    Iterator.iter(models).sum((m) => m.vertices.length)
+  );
   const verticesBuffer = createStorageBuffer(
     verticesCount * 4 * Float32Array.BYTES_PER_ELEMENT,
     'Vertices Buffer',
@@ -380,7 +385,10 @@ export const loadModelsToBuffers = async (models: Model[]) => {
   );
   const verticesMapped = verticesBuffer.getMappedRange();
 
-  const normalsCount = Iterator.iter(models).sum((m) => m.normals.length);
+  const normalsCount = Math.max(
+    1,
+    Iterator.iter(models).sum((m) => m.normals.length)
+  );
   const normalsBuffer = createStorageBuffer(
     normalsCount * 4 * Float32Array.BYTES_PER_ELEMENT,
     'Normals Buffer',
@@ -389,7 +397,10 @@ export const loadModelsToBuffers = async (models: Model[]) => {
   );
   const normalsMapped = normalsBuffer.getMappedRange();
 
-  const uvsCount = Iterator.iter(models).sum((m) => m.uvs.length);
+  const uvsCount = Math.max(
+    1,
+    Iterator.iter(models).sum((m) => m.uvs.length)
+  );
   const uvsBuffer = createStorageBuffer(
     uvsCount * 4 * Float32Array.BYTES_PER_ELEMENT,
     'UVs Buffer',
@@ -424,9 +435,12 @@ export const loadModelsToBuffers = async (models: Model[]) => {
   normalsBuffer.unmap();
   uvsBuffer.unmap();
 
-  const bvhCount = Iterator.iter(models).sum((m) => m.bvh.length);
+  const bvhCount = Math.max(
+    1,
+    Iterator.iter(models).sum((m) => m.bvh.length)
+  );
   const bvhBuffer = createStorageBuffer(
-    bvhCount * bvSize * Float32Array.BYTES_PER_ELEMENT,
+    bvhCount * defs.structs.BoundingVolume.size,
     'BVH Buffer',
     0,
     true
@@ -442,7 +456,7 @@ export const loadModelsToBuffers = async (models: Model[]) => {
 
   bvhBuffer.unmap();
 
-  const bvhFacesCount = totalAllocationSize(bvhFacesAllocations);
+  const bvhFacesCount = Math.max(1, totalAllocationSize(bvhFacesAllocations));
   const bvhFacesBuffer = createStorageBuffer(
     bvhFacesCount * Uint32Array.BYTES_PER_ELEMENT,
     'BVH Faces Buffer',
@@ -459,7 +473,7 @@ export const loadModelsToBuffers = async (models: Model[]) => {
   bvhFacesBuffer.unmap();
 
   const modelsBuffer = createStorageBuffer(
-    models.length * modelSize * Uint32Array.BYTES_PER_ELEMENT,
+    Math.max(1, models.length) * defs.structs.Model.size,
     'Models Buffer',
     0,
     true

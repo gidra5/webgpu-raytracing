@@ -1411,35 +1411,60 @@ const geometryPass = reactiveRenderPipeline({
 
     ${x.bindVarBuffer('uniform', 'viewProjMatrix: mat4x4f', viewProjBuffer)}
 
-    struct Vertex {
+    struct VertexInput {
       @location(0) p: vec3f,
+      @builtin(instance_index) instanceId: u32,
+      @builtin(vertex_index) vertexId: u32,
     }
 
     struct VertexOutput {
-      @builtin(position) screenPosition: vec4f,
+      @builtin(position) out: vec4f,
       @location(0) worldPosition: vec3f,
+      @location(1) clipCoordinates: vec4f,
     }
 
     @vertex
-    fn main(
-      vertex: Vertex,
-      @builtin(instance_index) instanceId: u32
-    ) -> VertexOutput {
-      let screenPosition = viewProjMatrix * vec4(vertex.p, 1);
+    fn main(vertex: VertexInput) -> VertexOutput {
+      var clipCoordinates = viewProjMatrix * vec4(vertex.p, 1);
+      let ndc = clipCoordinates.xyz / clipCoordinates.w;
+      if ${store.blitView == BlitView.Image} {
+        return VertexOutput(
+          clipCoordinates,    
+          vertex.p,
+          clipCoordinates
+        );
+      }
       return VertexOutput(
-        screenPosition,
-        vertex.p
+        vec4f(ndc.z * 2 - 1, ndc.y, 1-(ndc.x + 1) / 2, 1)*clipCoordinates.w,    
+        vertex.p,
+        clipCoordinates
       );
     }
   `,
   fragmentShader: (x) => /* wgsl */ `
-    @fragment
-    fn main(
-      @builtin(position) screenPosition: vec4f,
+    const viewport = vec2u(${store.view[0]}, ${store.view[1]});
+    const viewportf = vec2f(viewport);
+    const far = ${store.far};
+    const near = ${store.near};
+
+    struct FragmentInput {
+      @builtin(front_facing) is_front: bool,
+      @builtin(position) fragmentPosition: vec4f,
       @location(0) worldPosition: vec3f,
-    ) -> @location(0) vec4f {
-      return vec4f(worldPosition *2, 1);
-      // return vec4f(0, 0, 0, 1);
+      @location(1) clipCoordinates: vec4f, // normalized device coordinates
+    }
+
+    struct FragmentOutput {
+      @builtin(frag_depth) depth: f32,
+      @location(0) color: vec4f,
+    }
+
+    @fragment
+    fn main(input: FragmentInput) -> FragmentOutput {
+      return FragmentOutput(
+        input.fragmentPosition.z,
+        vec4f(input.worldPosition*2, 1)
+      );
     }
   `,
 
@@ -1448,14 +1473,13 @@ const geometryPass = reactiveRenderPipeline({
       {
         arrayStride: 4 * Float32Array.BYTES_PER_ELEMENT, // 3 floats
         attributes: [
-          { shaderLocation: 0, offset: 0, format: 'float32x4' }, // position
+          { shaderLocation: 0, offset: 0, format: 'float32x3' }, // position
         ],
       },
     ],
   },
   primitive: {
     topology: 'triangle-list',
-    cullMode: 'back',
   },
   depthStencil: {
     depthWriteEnabled: true,
@@ -1540,6 +1564,15 @@ export async function renderFrame(now: number) {
     //   renderPass.executeBundles([debugBVHRenderBundle()]);
     // }
   });
+
+  // renderPass(encoder, rpd(), (renderPass) => {
+  //   renderPass.executeBundles([blitRenderBundle()]);
+
+  //   // debug BVH
+  //   if (store.debugBVH) {
+  //     renderPass.executeBundles([debugBVHRenderBundle()]);
+  //   }
+  // });
 
   if (updatePrev) {
     encoder.copyBufferToBuffer(jitterBuffer, prevJitterBuffer);

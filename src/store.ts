@@ -76,6 +76,8 @@ export const [store, setStore] = createStore({
   samplesPerBounce: 1,
 
   fov: (Math.PI * 1) / 2,
+  far: 1000,
+  near: 1,
   fovOrientation: FovOrientation.Horizontal,
   focusDistance: 4,
   circleOfConfusion: 0,
@@ -154,7 +156,13 @@ export const viewProjectionMatrix = createMemo(() => {
   const projectionMatrix = mat4.create();
   const r = store.view[0] / store.view[1];
   const d = Math.tan(store.fov / 2);
-  mat4.perspectiveZO(projectionMatrix, 2 * Math.atan(d / r), r, 0.1, 1000);
+  mat4.perspectiveZO(
+    projectionMatrix,
+    2 * Math.atan(d / r),
+    r,
+    store.near,
+    store.far
+  );
   mat4.multiply(m, projectionMatrix, _viewMatrix);
   return m;
 });
