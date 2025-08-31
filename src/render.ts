@@ -30,6 +30,7 @@ import {
   ReprojectionFiltering,
   SkyboxType,
   BlitView,
+  viewInvMatrix,
 } from './store';
 import { createEffect, createSignal } from 'solid-js';
 import rng from './shaders/rng';
@@ -70,13 +71,11 @@ const [prevView, setPrevView] = createSignal<mat4>(mat4.create(), {
   equals: (a, b) => a && mat4.exactEquals(a, b),
 });
 const _prevViewInv = invMat(prevView);
-const _viewInv = invMat(viewMatrix);
 const [prevViewInvBufferHi, prevViewInvBufferLo] = reactiveUniformBuffer(
   16,
   _prevViewInv
 );
-const [viewInvBufferHi, viewInvBufferLo] = reactiveUniformBuffer(16, _viewInv);
-const _reprojectionFrustrum = reprojectionFrustrum(prevView);
+const [viewInvBufferHi, viewInvBufferLo] = reactiveUniformBuffer(16, viewInvMatrix);
 const [viewBuffer] = reactiveUniformBuffer(
   16,
   viewMatrix,
@@ -89,7 +88,7 @@ const [prevViewBuffer] = reactiveUniformBuffer(
 );
 const [viewProjBuffer] = reactiveUniformBuffer(16, viewProjectionMatrix);
 const [reprojectionFrustrumBufferHi, reprojectionFrustrumBufferLo] =
-  reactiveUniformBuffer(12, _reprojectionFrustrum, GPUBufferUsage.COPY_SRC);
+  reactiveUniformBuffer(12, reprojectionFrustrum, GPUBufferUsage.COPY_SRC);
 const jitterBuffer = createUniformBuffer(
   16,
   'Jitter Buffer',

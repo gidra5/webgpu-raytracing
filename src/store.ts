@@ -154,54 +154,65 @@ export const viewMatrix = createMemo(() => {
   return viewMatrix;
 });
 
-export const viewProjectionMatrix = createMemo(() => {
-  const m = mat4.create();
+export const viewInvMatrix = createMemo(() => {
+  return mat4.invert(mat4.create(), viewMatrix());
+});
 
-  const _viewMatrix = mat4.create();
-  mat4.invert(_viewMatrix, viewMatrix());
+export const aspectRatio = createMemo(() => {
+  return store.view[0] / store.view[1];
+});
 
-  const projectionMatrix = mat4.create();
-  const r = store.view[0] / store.view[1];
-  const d = Math.tan(store.fov / 2);
-  mat4.perspectiveZO(
-    projectionMatrix,
-    2 * Math.atan(d / r),
-    r,
+export const hFovX = createMemo(() => {
+  return store.fov / 2;
+});
+
+export const hFovY = createMemo(() => {
+  return Math.atan(Math.tan(hFovX()) / aspectRatio());
+});
+
+export const projectionMatrix = createMemo(() => {
+  return mat4.perspectiveZO(
+    mat4.create(),
+    2 * hFovY(),
+    aspectRatio(),
     store.near,
     store.far
   );
-  mat4.multiply(m, projectionMatrix, _viewMatrix);
-  return m;
 });
 
-export const reprojectionFrustrum = (prevView: Accessor<mat4 | undefined>) =>
-  createMemo(() => {
-    const view = prevView();
-    if (!view) {
-      return Iterator.repeat(0).take(12).toArray();
-    }
+export const reprojectionFrustrum = createMemo(() => {
+  // TODO: use hFovX and hFovY
+  const hfov = hFovX(); // horizontal field of view
+  const vfov = Math.atan(Math.tan(hfov) * aspectRatio()); // vertical field of view
 
-    const aspectRatio = store.view[1] / store.view[0];
-    const hfov = store.fov / 2; // horizontal field of view
-    const tanHFov = Math.tan(hfov);
-    const vfov = Math.atan(tanHFov / aspectRatio); // vertical field of view
-    const forward = vec3.fromValues(0, 0, 1);
+  // TODO: simplify the trigs
+  // (x * cos - z * sin) / (-2 * z * cos) =
+  // 0.5 * (tan - x / z)
+  // (y * sin - z * cos) / (-2 * z * cos) =
+  // 0.5 * (1 - tan * y / z)
+  // 0.5 * [tan, -1] * [1, x / z]
+  //       [1, -tan] * [1, y / z]
+  const left = vec3.fromValues(Math.cos(hfov), 0, -Math.sin(hfov));
+  const top = vec3.fromValues(0, Math.sin(vfov), -Math.cos(vfov));
+  const c = vec3.fromValues(0, 0, -2 * Math.cos(hfov));
+  const d = vec3.fromValues(0, 0, -2 * Math.cos(vfov));
 
-    const left = vec3.fromValues(Math.cos(hfov), 0, -Math.sin(hfov));
-    const top = vec3.fromValues(0, Math.sin(vfov), -Math.cos(vfov));
-    const c = vec3.scale(vec3.create(), forward, -2 * Math.cos(hfov));
-    const d = vec3.scale(vec3.create(), forward, -2 * Math.cos(vfov));
+  vec3.scale(left, left, store.view[0]);
+  vec3.scale(top, top, store.view[1]);
 
-    vec3.scale(left, left, store.view[0]);
-    vec3.scale(top, top, store.view[1]);
+  // for reprojection we need to compute d1 / (d1 + d2)
+  // where d1 = dot(n1, p-p0), d2 = dot(n2, p-p0), p0 - view origin,
+  // n1 - left side plane normal, n2 - right side plane normal
+  // taken from https://jacco.ompf2.com/2024/01/18/reprojection-in-a-ray-tracer/
+  // we can collect normals into a 4x3 matrix
+  return Iterator.zip(left, top, c, d).flat().toArray();
+});
 
-    // for reprojection we need to compute d1 / (d1 + d2)
-    // where d1 = dot(n1, p-p0), d2 = dot(n2, p-p0), p0 - view origin,
-    // n1 - left side plane normal, n2 - right side plane normal
-    // taken from https://jacco.ompf2.com/2024/01/18/reprojection-in-a-ray-tracer/
-    // we can collect normals into a 4x3 matrix
-    return Iterator.zip(left, top, c, d).flat().toArray();
-  });
+export const viewProjectionMatrix = createMemo(() => {
+  const _viewMatrix = mat4.invert(mat4.create(), viewMatrix());
+
+  return mat4.multiply(mat4.create(), projectionMatrix(), _viewMatrix);
+});
 
 export const invMat = (mat: Accessor<mat4 | undefined>) =>
   createMemo(() => {
