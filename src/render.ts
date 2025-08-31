@@ -108,15 +108,12 @@ const geometryData = createMemo<GeometryData[]>((prev) => {
           },
           {
             dimension: '2d',
-            usage:
-              GPUTextureUsage.STORAGE_BINDING |
-              (i < 1 ? GPUTextureUsage.COPY_SRC : GPUTextureUsage.COPY_DST),
+            usage: GPUTextureUsage.STORAGE_BINDING,
           }
         ),
         geometryBuffer: createStorageBuffer(
           geometryBufferSize,
-          'Geometry Buffer',
-          i < 1 ? GPUBufferUsage.COPY_SRC : GPUBufferUsage.COPY_DST
+          'Geometry Buffer'
         ),
         depthTexture: createTexture(
           {
@@ -136,12 +133,13 @@ const geometryData = createMemo<GeometryData[]>((prev) => {
     .toArray();
 });
 
-let historyIndex = 0;
-const currentGeometryData = () => geometryData()[historyIndex];
-const prevGeometryData = () =>
-  geometryData()[
-    (store.gBuffer.frames + historyIndex - 1) % store.gBuffer.frames
-  ];
+const [historyIndex, setHistoryIndex] = createSignal(0);
+const prevHistoryIndex = () =>
+  (store.gBuffer.frames + historyIndex() - 1) % store.gBuffer.frames;
+const incrementHistoryIndex = () =>
+  setHistoryIndex((historyIndex() + 1) % store.gBuffer.frames);
+const currentGeometryData = () => geometryData()[historyIndex()];
+const prevGeometryData = () => geometryData()[prevHistoryIndex()];
 const imageTextureArray = () => currentGeometryData().imageTexture;
 const geometryBuffer = () => currentGeometryData().geometryBuffer;
 const depthTexture = () => currentGeometryData().depthTexture;
@@ -1583,7 +1581,7 @@ export async function renderFrame(now: number) {
 
   if (updatePrev) {
     encoder.copyBufferToBuffer(jitterBuffer, prevJitterBuffer);
-    historyIndex = (historyIndex + 1) % store.gBuffer.frames;
+    incrementHistoryIndex();
   }
 
   await submit(encoder, () => {
