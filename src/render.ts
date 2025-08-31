@@ -32,7 +32,7 @@ import {
   BlitView,
   viewInvMatrix,
 } from './store';
-import { createEffect, createSignal } from 'solid-js';
+import { createEffect, createMemo, createSignal } from 'solid-js';
 import rng from './shaders/rng';
 import tonemapping from './shaders/tonemapping';
 import {
@@ -58,12 +58,102 @@ const context = canvas.getContext('webgpu');
 const device = await getDevice(context as GPUCanvasContext);
 const sampler = device.createSampler();
 
-const [imageTextureArray, setImageTextureArray] = createSignal<GPUTexture>();
-const [prevImageTextureArray, setPrevImageTextureArray] =
-  createSignal<GPUTexture>();
-const [geometryBuffer, setGeometryBuffer] = createSignal<GPUBuffer>();
-const [prevGeometryBuffer, setPrevGeometryBuffer] = createSignal<GPUBuffer>();
-const [depthTexture, setDepthTexture] = createSignal<GPUTexture>();
+const imageTextureArray = createMemo<GPUTexture>((prev) => {
+  if (prev) {
+    prev.destroy();
+  }
+
+  const width = store.view[0];
+  const height = store.view[1];
+  return createTexture(
+    {
+      width: width,
+      height: height,
+      depthOrArrayLayers: store.gBuffer.layers,
+    },
+    {
+      dimension: '2d',
+      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
+    }
+  );
+});
+const prevImageTextureArray = createMemo<GPUTexture>((prev) => {
+  if (prev) {
+    prev.destroy();
+  }
+
+  const width = store.view[0];
+  const height = store.view[1];
+  return createTexture(
+    {
+      width: width,
+      height: height,
+      depthOrArrayLayers: store.gBuffer.layers,
+    },
+    {
+      dimension: '2d',
+      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
+    }
+  );
+});
+const geometryBuffer = createMemo<GPUBuffer>((prev) => {
+  if (prev) {
+    prev.destroy();
+  }
+
+  const width = store.view[0];
+  const height = store.view[1];
+  const gBufferWidth = store.gBuffer.width ?? width;
+  const gBufferHeight = store.gBuffer.height ?? height;
+  const geometryBufferItemSize = Float32Array.BYTES_PER_ELEMENT * 32;
+  const geometryBufferSize =
+    geometryBufferItemSize * gBufferWidth * gBufferHeight;
+
+  return createStorageBuffer(
+    geometryBufferSize,
+    'Geometry Buffer',
+    GPUBufferUsage.COPY_SRC
+  );
+});
+const prevGeometryBuffer = createMemo<GPUBuffer>((prev) => {
+  if (prev) {
+    prev.destroy();
+  }
+
+  const width = store.view[0];
+  const height = store.view[1];
+  const gBufferWidth = store.gBuffer.width ?? width;
+  const gBufferHeight = store.gBuffer.height ?? height;
+  const geometryBufferItemSize = Float32Array.BYTES_PER_ELEMENT * 32;
+  const geometryBufferSize =
+    geometryBufferItemSize * gBufferWidth * gBufferHeight;
+
+  return createStorageBuffer(
+    geometryBufferSize,
+    'Geometry Buffer',
+    GPUBufferUsage.COPY_DST
+  );
+});
+const depthTexture = createMemo<GPUTexture>((prev) => {
+  if (prev) {
+    prev.destroy();
+  }
+
+  const width = store.view[0];
+  const height = store.view[1];
+  return createTexture(
+    {
+      width: width,
+      height: height,
+      depthOrArrayLayers: 1,
+    },
+    {
+      format: 'depth24plus',
+      dimension: '2d',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    }
+  );
+});
 const [blitRenderBundle, setBlitRenderBundle] = createSignal<GPURenderBundle>();
 const [debugBVHRenderBundle, setDebugBVHRenderBundle] =
   createSignal<GPURenderBundle>();
@@ -75,7 +165,10 @@ const [prevViewInvBufferHi, prevViewInvBufferLo] = reactiveUniformBuffer(
   16,
   _prevViewInv
 );
-const [viewInvBufferHi, viewInvBufferLo] = reactiveUniformBuffer(16, viewInvMatrix);
+const [viewInvBufferHi, viewInvBufferLo] = reactiveUniformBuffer(
+  16,
+  viewInvMatrix
+);
 const [viewBuffer] = reactiveUniformBuffer(
   16,
   viewMatrix,
@@ -163,73 +256,6 @@ createEffect<() => void>((destroy) => {
   resize();
   window.addEventListener('resize', resize);
   return () => window.removeEventListener('resize', resize);
-});
-
-createEffect<{ destroy: () => void }[]>((prevBuffers) => {
-  if (prevBuffers) prevBuffers.forEach((b) => b.destroy());
-  const width = store.view[0];
-  const height = store.view[1];
-
-  const texture = createTexture(
-    {
-      width: width,
-      height: height,
-      depthOrArrayLayers: store.gBuffer.layers,
-    },
-    {
-      dimension: '2d',
-      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
-    }
-  );
-  setImageTextureArray(texture);
-
-  const prevTexture = createTexture(
-    {
-      width: width,
-      height: height,
-      depthOrArrayLayers: store.gBuffer.layers,
-    },
-    {
-      dimension: '2d',
-      usage: GPUTextureUsage.STORAGE_BINDING,
-    }
-  );
-  setPrevImageTextureArray(prevTexture);
-
-  const gBufferWidth = store.gBuffer.width ?? width;
-  const gBufferHeight = store.gBuffer.height ?? height;
-  const geometryBufferItemSize = Float32Array.BYTES_PER_ELEMENT * 32;
-  const geometryBufferSize =
-    geometryBufferItemSize * gBufferWidth * gBufferHeight;
-
-  const currentGeometry = createStorageBuffer(
-    geometryBufferSize,
-    'Geometry Buffer',
-    GPUBufferUsage.COPY_SRC
-  );
-  setGeometryBuffer(currentGeometry);
-  const prevGeometry = createStorageBuffer(
-    geometryBufferSize,
-    'Prev Geometry Buffer',
-    GPUBufferUsage.COPY_DST
-  );
-  setPrevGeometryBuffer(prevGeometry);
-
-  const depthTexture = createTexture(
-    {
-      width: width,
-      height: height,
-      depthOrArrayLayers: 1,
-    },
-    {
-      format: 'depth24plus',
-      dimension: '2d',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT,
-    }
-  );
-  setDepthTexture(depthTexture);
-
-  return [currentGeometry, prevGeometry, texture, prevTexture, depthTexture];
 });
 
 createEffect(() => {
