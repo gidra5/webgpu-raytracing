@@ -112,7 +112,7 @@ export const [store, setStore] = createStore({
     width: null,
     height: null,
     layers: 1, // depth peeling layers
-    frames: 1, // how many last frames to buffer
+    frames: 2, // how many frames to buffer
     frustrum: 0b100000, // bitfield of [+Z, -Z, +X, -X, +Y, -Y] for each view direction
     frustrumSides: 0b100000, // bitfield of [+Z, -Z, +X, -X, +Y, -Y] for clip space cube sides
   },

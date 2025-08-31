@@ -1,4 +1,4 @@
-import { Accessor, createEffect, createSignal } from 'solid-js';
+import { Accessor, createEffect, createMemo, createSignal } from 'solid-js';
 import { assert, omit } from './utils';
 import { vec2, vec3 } from 'gl-matrix';
 import { CreateTextureOptions } from 'webgpu-utils';
@@ -615,18 +615,35 @@ export const computePipeline = (
 };
 
 export const reactiveComputePipeline = (x: ComputePipelineDescriptor) => {
-  const [_computePipeline, setComputePipeline] =
-    createSignal<GPUComputePipeline>();
-  const [computeBindGroups, setComputeBindGroups] =
-    createSignal<GPUBindGroup[]>();
+  
+  return createMemo<[GPUComputePipeline, GPUBindGroup[]]>((prev) => {
+    const { createPipelineBuilder, bindingGroupLayouts, bindingGroups } =
+      createBindingBuilder();
 
-  createEffect(() => {
-    const { pipeline, bindGroups } = computePipeline(x);
-    setComputePipeline(pipeline);
-    setComputeBindGroups(bindGroups);
+    // TODO: TYPESCRIPT BULLSHIT
+    const code = x.shader(
+      createPipelineBuilder(GPUShaderStage.COMPUTE as unknown as GPUShaderStage)
+    );
+
+    // create module and pipeline on creation
+    // then just update bind groups
+    if (!prev) {
+      const module = device.createShaderModule({ code });
+
+      const pipeline = device.createComputePipeline({
+        layout: device.createPipelineLayout({
+          bindGroupLayouts: bindingGroupLayouts(),
+        }),
+        compute: { module, ...x },
+      });
+      const bindGroups = bindingGroups(pipeline);
+      return [pipeline, bindGroups] as const;
+    } else {
+      const pipeline = prev[0];
+      const bindGroups = bindingGroups(pipeline);
+      return [pipeline, bindGroups] as const;
+    }
   });
-
-  return [_computePipeline, computeBindGroups] as const;
 };
 
 export const reactiveRenderPipeline = (x: RenderPipelineDescriptor) => {

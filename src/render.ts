@@ -52,108 +52,86 @@ import constants from './shaders/constants';
 import raygen from './shaders/raygen';
 import structs from './shaders/structs';
 import face from './shaders/face';
+import { Iterator } from 'iterator-js';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 const context = canvas.getContext('webgpu');
 const device = await getDevice(context as GPUCanvasContext);
 const sampler = device.createSampler();
 
-const imageTextureArray = createMemo<GPUTexture>((prev) => {
-  if (prev) {
-    prev.destroy();
-  }
+type GeometryData = {
+  imageTexture: GPUTexture;
+  geometryBuffer: GPUBuffer;
+  depthTexture: GPUTexture;
+};
 
-  const width = store.view[0];
-  const height = store.view[1];
-  return createTexture(
-    {
-      width: width,
-      height: height,
-      depthOrArrayLayers: store.gBuffer.layers,
-    },
-    {
-      dimension: '2d',
-      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
+const geometryData = createMemo<GeometryData[]>((prev) => {
+  if (prev) {
+    for (const data of prev) {
+      data.imageTexture.destroy();
+      data.geometryBuffer.destroy();
+      data.depthTexture.destroy();
     }
-  );
-});
-const prevImageTextureArray = createMemo<GPUTexture>((prev) => {
-  if (prev) {
-    prev.destroy();
   }
 
   const width = store.view[0];
   const height = store.view[1];
-  return createTexture(
-    {
-      width: width,
-      height: height,
-      depthOrArrayLayers: store.gBuffer.layers,
-    },
-    {
-      dimension: '2d',
-      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
-    }
-  );
-});
-const geometryBuffer = createMemo<GPUBuffer>((prev) => {
-  if (prev) {
-    prev.destroy();
-  }
 
-  const width = store.view[0];
-  const height = store.view[1];
   const gBufferWidth = store.gBuffer.width ?? width;
   const gBufferHeight = store.gBuffer.height ?? height;
   const geometryBufferItemSize = Float32Array.BYTES_PER_ELEMENT * 32;
   const geometryBufferSize =
     geometryBufferItemSize * gBufferWidth * gBufferHeight;
 
-  return createStorageBuffer(
-    geometryBufferSize,
-    'Geometry Buffer',
-    GPUBufferUsage.COPY_SRC
-  );
+  return Iterator.natural(store.gBuffer.frames)
+    .map((i) => {
+      return {
+        imageTexture: createTexture(
+          {
+            width: width,
+            height: height,
+            depthOrArrayLayers: store.gBuffer.layers,
+          },
+          {
+            dimension: '2d',
+            usage:
+              GPUTextureUsage.STORAGE_BINDING |
+              (i < 1 ? GPUTextureUsage.COPY_SRC : GPUTextureUsage.COPY_DST),
+          }
+        ),
+        geometryBuffer: createStorageBuffer(
+          geometryBufferSize,
+          'Geometry Buffer',
+          i < 1 ? GPUBufferUsage.COPY_SRC : GPUBufferUsage.COPY_DST
+        ),
+        depthTexture: createTexture(
+          {
+            width: width,
+            height: height,
+            depthOrArrayLayers: 1,
+          },
+          {
+            format: 'depth24plus',
+            dimension: '2d',
+            usage: GPUTextureUsage.RENDER_ATTACHMENT,
+          }
+        ),
+      };
+    })
+    .toArray();
 });
-const prevGeometryBuffer = createMemo<GPUBuffer>((prev) => {
-  if (prev) {
-    prev.destroy();
-  }
 
-  const width = store.view[0];
-  const height = store.view[1];
-  const gBufferWidth = store.gBuffer.width ?? width;
-  const gBufferHeight = store.gBuffer.height ?? height;
-  const geometryBufferItemSize = Float32Array.BYTES_PER_ELEMENT * 32;
-  const geometryBufferSize =
-    geometryBufferItemSize * gBufferWidth * gBufferHeight;
-
-  return createStorageBuffer(
-    geometryBufferSize,
-    'Geometry Buffer',
-    GPUBufferUsage.COPY_DST
-  );
-});
-const depthTexture = createMemo<GPUTexture>((prev) => {
-  if (prev) {
-    prev.destroy();
-  }
-
-  const width = store.view[0];
-  const height = store.view[1];
-  return createTexture(
-    {
-      width: width,
-      height: height,
-      depthOrArrayLayers: 1,
-    },
-    {
-      format: 'depth24plus',
-      dimension: '2d',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT,
-    }
-  );
-});
+let historyIndex = 0;
+const currentGeometryData = () => geometryData()[historyIndex];
+const prevGeometryData = () =>
+  geometryData()[
+    (store.gBuffer.frames + historyIndex - 1) % store.gBuffer.frames
+  ];
+const imageTextureArray = () => currentGeometryData().imageTexture;
+const geometryBuffer = () => currentGeometryData().geometryBuffer;
+const depthTexture = () => currentGeometryData().depthTexture;
+const prevImageTextureArray = () => prevGeometryData().imageTexture;
+const prevGeometryBuffer = () => prevGeometryData().geometryBuffer;
 const [blitRenderBundle, setBlitRenderBundle] = createSignal<GPURenderBundle>();
 const [debugBVHRenderBundle, setDebugBVHRenderBundle] =
   createSignal<GPURenderBundle>();
@@ -1168,7 +1146,7 @@ const matInv = /* wgsl */ `
 
 const COMPUTE_WORKGROUP_SIZE_X = 16;
 const COMPUTE_WORKGROUP_SIZE_Y = 16;
-const [computePipeline, computeBindGroups] = reactiveComputePipeline({
+const computePipeline = reactiveComputePipeline({
   shader: (x) => /* wgsl */ `
     enable subgroups;
 
@@ -1524,13 +1502,13 @@ const rpd = (): GPURenderPassDescriptor => ({
       storeOp: 'store',
     },
   ],
-  depthStencilAttachment: {
-    view: depthTexture().createView(),
+  // depthStencilAttachment: {
+  //   view: depthTexture().createView(),
 
-    depthClearValue: 1.0,
-    depthLoadOp: 'clear',
-    depthStoreOp: 'store',
-  },
+  //   depthClearValue: 1.0,
+  //   depthLoadOp: 'clear',
+  //   depthStoreOp: 'store',
+  // },
   ...(canTimestamp && {
     timestampWrites: {
       querySet,
@@ -1562,57 +1540,49 @@ export async function renderFrame(now: number) {
   const encoder = device.createCommandEncoder();
 
   // raytrace
-  // computePass(encoder, {}, (computePass) => {
-  //   computePass.setPipeline(computePipeline());
-  //   computeBindGroups().forEach((bindGroup, i) =>
-  //     computePass.setBindGroup(i, bindGroup)
-  //   );
-  //   computePass.dispatchWorkgroups(
-  //     Math.ceil(canvas.width / COMPUTE_WORKGROUP_SIZE_X),
-  //     Math.ceil(canvas.height / COMPUTE_WORKGROUP_SIZE_Y),
-  //     store.imageLayers
-  //   );
-  // });
-
-  renderPass(encoder, rpd(), (renderPass) => {
-    const [geometryPipeline, geometryBindGroups] = geometryPass;
-    renderPass.setPipeline(geometryPipeline());
-    geometryBindGroups().forEach((bindGroup, i) =>
-      renderPass.setBindGroup(i, bindGroup)
+  computePass(encoder, {}, (computePass) => {
+    const [_computePipeline, computeBindGroups] = computePipeline();
+    computePass.setPipeline(_computePipeline);
+    computeBindGroups.forEach((bindGroup, i) =>
+      computePass.setBindGroup(i, bindGroup)
     );
-    renderPass.setVertexBuffer(0, verticesBuffer);
-    renderPass.setIndexBuffer(indicesBuffer, 'uint32');
-    renderPass.drawIndexed(facesCount * 3);
-
-    // renderPass.executeBundles([blitRenderBundle()]);
-
-    // // debug BVH
-    // if (store.debugBVH) {
-    //   renderPass.executeBundles([debugBVHRenderBundle()]);
-    // }
+    computePass.dispatchWorkgroups(
+      Math.ceil(canvas.width / COMPUTE_WORKGROUP_SIZE_X),
+      Math.ceil(canvas.height / COMPUTE_WORKGROUP_SIZE_Y),
+      store.gBuffer.layers
+    );
   });
 
-  // renderPass(encoder, rpd(), (renderPass) => {
-  //   renderPass.executeBundles([blitRenderBundle()]);
+  renderPass(encoder, rpd(), (renderPass) => {
+    // const [geometryPipeline, geometryBindGroups] = geometryPass;
+    // renderPass.setPipeline(geometryPipeline());
+    // geometryBindGroups().forEach((bindGroup, i) =>
+    //   renderPass.setBindGroup(i, bindGroup)
+    // );
+    // renderPass.setVertexBuffer(0, verticesBuffer);
+    // renderPass.setIndexBuffer(indicesBuffer, 'uint32');
+    // renderPass.drawIndexed(facesCount * 3);
 
-  //   // debug BVH
-  //   if (store.debugBVH) {
-  //     renderPass.executeBundles([debugBVHRenderBundle()]);
-  //   }
-  // });
+    renderPass.executeBundles([blitRenderBundle()]);
+
+    // debug BVH
+    if (store.debugBVH) {
+      renderPass.executeBundles([debugBVHRenderBundle()]);
+    }
+  });
+
+  renderPass(encoder, rpd(), (renderPass) => {
+    renderPass.executeBundles([blitRenderBundle()]);
+
+    // debug BVH
+    if (store.debugBVH) {
+      renderPass.executeBundles([debugBVHRenderBundle()]);
+    }
+  });
 
   if (updatePrev) {
     encoder.copyBufferToBuffer(jitterBuffer, prevJitterBuffer);
-    encoder.copyBufferToBuffer(geometryBuffer(), prevGeometryBuffer());
-    encoder.copyTextureToTexture(
-      { texture: imageTextureArray() },
-      { texture: prevImageTextureArray() },
-      {
-        width: imageTextureArray().width,
-        height: imageTextureArray().height,
-        depthOrArrayLayers: imageTextureArray().depthOrArrayLayers,
-      }
-    );
+    historyIndex = (historyIndex + 1) % store.gBuffer.frames;
   }
 
   await submit(encoder, () => {
