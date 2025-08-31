@@ -134,6 +134,12 @@ The pipeline is as follows:
 2. Run a render pass for each side of each frustrum with input from compute shader. So 36 render passes. It will collect fragment depths into buckets via multiple framebuffer targets and will interpolate all attributes of the surfaces.
 3. Run sorting pass in compute shader. Build an acceleration structure for screen space raytracing.
 
+total data:
+6 frustrums * 6 sides * n depth layers * m frames = 95681.25 * 1024 * 1024 = 100329062400 bytes (m=4, n=8)
+frame = 6 attributes (9*4+4+2) * width * height
+42 * 1920 * 1080 = 83.056640625 * 1024 * 1024 = 87091200 bytes 
+
+
 Per each sample compute n values - coverage by a face being hit at a subsample i from 0 to n. 1-that is coverage by other faces.
 Use that during interpolation. Given face id, take corresponding coverage values in neighbourhood of sample, bilinear interpolate that, and use as a weight for the sampled value.
 ## Lighting
@@ -149,6 +155,9 @@ Also accuracy of reprojection greatly affects the quality.
 
 We can filter out bad samples with exponential average, or based on some "quality" heuristic, like distance from the sample to target point.
 
+conservative rendering:
+https://developer.nvidia.com/gpugems/gpugems2/part-v-image-oriented-computing/chapter-42-conservative-rasterization
+https://github.com/andrewlowndes/perfect-antialiasing/tree/main
 
 https://www.reddit.com/r/GraphicsProgramming/s/h1GI7rb6nq
 

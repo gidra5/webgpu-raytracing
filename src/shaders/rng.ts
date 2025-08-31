@@ -49,22 +49,6 @@ export default /* wgsl */ `
   ${randUtils(3)}
   
   ${randUtils(4)}
-  
-  fn cbrt(x: f32) -> f32 {
-    var y = sign(x) * bitcast<f32>( bitcast<u32>( abs(x) ) / 3u + 0x2a514067u );
-
-    for (var i = 0; i < 2; i = i + 1) { 
-      y = (2. * y + x / (y * y)) * .333333333; 
-    }
-
-    for (var i = 0; i < 1; i = i + 1)
-    {
-      let y3 = y * y * y;
-      y *= (y3 + 2. * x) / (2. * y3 + x);
-    }
-    
-    return y;
-  }
 
   fn sample_circle(t: f32) -> vec2f {
     let phi = t * TWO_PI;

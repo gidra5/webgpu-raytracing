@@ -271,7 +271,7 @@ export const createUniformBuffer = (
   });
 
 type CreateTextureSource = {
-  data?: Float32Array;
+  data?: ArrayBuffer;
   width: number;
   height: number;
   depthOrArrayLayers?: number;
