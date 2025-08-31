@@ -175,7 +175,7 @@ createEffect<{ destroy: () => void }[]>((prevBuffers) => {
     {
       width: width,
       height: height,
-      depthOrArrayLayers: store.imageLayers,
+      depthOrArrayLayers: store.gBuffer.layers,
     },
     {
       dimension: '2d',
@@ -188,7 +188,7 @@ createEffect<{ destroy: () => void }[]>((prevBuffers) => {
     {
       width: width,
       height: height,
-      depthOrArrayLayers: store.imageLayers,
+      depthOrArrayLayers: store.gBuffer.layers,
     },
     {
       dimension: '2d',
@@ -197,10 +197,12 @@ createEffect<{ destroy: () => void }[]>((prevBuffers) => {
   );
   setPrevImageTextureArray(prevTexture);
 
-  const geometryBufferItemSize =
-    store.imageLayers * Float32Array.BYTES_PER_ELEMENT * 32;
+  const gBufferWidth = store.gBuffer.width ?? width;
+  const gBufferHeight = store.gBuffer.height ?? height;
+  const geometryBufferItemSize = Float32Array.BYTES_PER_ELEMENT * 32;
   const geometryBufferSize =
-    store.geometryBufferScale * geometryBufferItemSize * width * height;
+    geometryBufferItemSize * gBufferWidth * gBufferHeight;
+
   const currentGeometry = createStorageBuffer(
     geometryBufferSize,
     'Geometry Buffer',
@@ -640,7 +642,7 @@ const reproject = () => /* wgsl */ `
     layer = 0;
     let uv_error = ${store.reprojection.identityErrorCorrection ? 'unprojectPoint(p) - cuv' : 'vec2f(0)'};
     var reproj = reprojectPrecise(uv_error, p);
-    for (var i = 1u; i < ${store.imageLayers}; i = i + 1u) {
+    for (var i = 1u; i < ${store.gBuffer.layers}; i = i + 1u) {
       layer = i;
       let uv_error = ${store.reprojection.identityErrorCorrection ? 'unprojectPoint(p) - cuv' : 'vec2f(0)'};
       let result = reprojectPrecise(uv_error, p);
@@ -656,7 +658,7 @@ const reproject = () => /* wgsl */ `
   fn reproject(p: vec3f, c: vec3f) -> Reprojection {
     layer = 0;
     var reproj = reprojectPrecise(vec2f(0), p);
-    for (var i = 1u; i < ${store.imageLayers}; i = i + 1u) {
+    for (var i = 1u; i < ${store.gBuffer.layers}; i = i + 1u) {
       layer = i;
       let result = reprojectPrecise(vec2f(0), p);
       if result.d < reproj.d {

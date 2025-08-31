@@ -92,7 +92,6 @@ export const [store, setStore] = createStore({
   lensShape: LensShape.Circle,
   tonemapping: Tonemapping.Aces,
   skybox: SkyboxType.Plain,
-  imageLayers: 1,
 
   reprojection: {
     rate: 1,
@@ -109,9 +108,17 @@ export const [store, setStore] = createStore({
     debug: false,
   },
 
+  gBuffer: {
+    width: null,
+    height: null,
+    layers: 1, // depth peeling layers
+    frames: 1, // how many last frames to buffer
+    frustrum: 0b100000, // bitfield of [+Z, -Z, +X, -X, +Y, -Y] for each view direction
+    frustrumSides: 0b100000, // bitfield of [+Z, -Z, +X, -X, +Y, -Y] for clip space cube sides
+  },
+
   jitterStrength: 0,
   resolutionScale: 1,
-  geometryBufferScale: 1,
   scale: 1,
   sensitivity: 0.03,
   speed: 2,

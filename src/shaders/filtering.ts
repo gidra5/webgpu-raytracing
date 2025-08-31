@@ -40,7 +40,7 @@ export default () => /* wgsl */ `
 
     for (var i = -r; i <= r; i = i + 1) {
       for (var j = -r; j <= r; j = j + 1) {
-        for (var l = 0u; l < ${store.imageLayers}; l = l + 1) {
+        for (var l = 0u; l < ${store.gBuffer.layers}; l = l + 1) {
           layer = l;
           let _uv = uv + vec2f(f32(i), f32(j)) * s;
           let _color = sampleImage4(_uv, &prevGeometryBuffer);
