@@ -1,38 +1,46 @@
 import constants from './constants';
 
-// const phi = (d: number) => {
-//   const k = 1 / (d + 1);
-//   let x = (d + 2) * k;
-//   for (let i = 0; i < 10; i++) x = Math.pow(1 + x, k);
-//   return x;
-// };
-// const alpha = (d: number) => {
-//   const g = phi(d);
-//   const a = Array.from({ length: d }, (_, i) => 0);
-//   for (let i = 0; i < d; i++) a[i] = Math.pow(1 / g, i + 1);
-//   return a;
-// };
-
-const randUtils = (outCount: number) => {
-  return `
-    @must_use
-    fn random_${outCount}u() -> vec${outCount}<u32> {
-      return vec${outCount}(${Array.from({ length: outCount }, () => `random_1u()`).join(', ')});
-    }
-
-    @must_use
-    fn random_${outCount}() -> vec${outCount}<f32> {
-      return vec${outCount}(${Array.from({ length: outCount }, () => `random_1()`).join(', ')});
-    }
-  `;
+const phi = (d: number) => {
+  const k = 1 / (d + 1);
+  let x = (d + 2) * k;
+  for (let i = 0; i < 10; i++) x = Math.pow(1 + x, k);
+  return x;
+};
+const alpha = (d: number) => {
+  const g = phi(d);
+  const a = Array.from({ length: d }, (_, i) => 0);
+  for (let i = 0; i < d; i++) a[i] = Math.pow(1 / g, i + 1);
+  return a;
 };
 
-export default /* wgsl */ `
-  ${constants}
+const randVectors = ['vec2', 'vec3', 'vec4']
+  .map((t, i) => {
+    const outCount = i + 2;
+    const values = Array.from({ length: outCount }, () => 'random_1u()').join(
+      ', '
+    );
+    const valuesFloat = Array.from(
+      { length: outCount },
+      () => 'random_1()'
+    ).join(', ');
+    return /* wgsl */ `
+      @must_use
+      fn random_${outCount}u() -> ${t}<u32> {
+        return ${t}(${values});
+      }
+
+      @must_use
+      fn random_${outCount}() -> ${t}<f32> {
+        return ${t}(${valuesFloat});
+      }
+    `;
+  })
+  .join('\n\n');
+
+const randUtils = /* wgsl */ `
   var<private> rng_state: u32 = 0;
   @must_use
   fn random_1u() -> u32 {
-    // rng_state = rng_state * 277803737u;
     let oldState = rng_state + 747796405u + 2891336453u;
     let word = ((oldState >> ((oldState >> 28u) + 4u)) ^ oldState) * 277803737u;
     rng_state = (word >> 22u) ^ word;
@@ -44,11 +52,28 @@ export default /* wgsl */ `
     return f32(random_1u()) / f32(0xffffffffu);
   }
 
-  ${randUtils(2)}
+  ${randVectors}
+`;
 
-  ${randUtils(3)}
-  
-  ${randUtils(4)}
+const randUtilsLowDiscrepancy = ['f32', 'vec2f', 'vec3f', 'vec4f']
+  .map((t, i) => {
+    let _i = i + 1;
+    return /* wgsl */ `
+      const rng_state_ld_${_i}_a = ${t}(${alpha(_i).join(', ')});
+      var<private> rng_state_ld_${_i} = ${t}(0);
+      @must_use
+      fn random_ld_${_i}() -> ${t} {
+        rng_state_ld_${_i} = fract(rng_state_ld_${_i} + rng_state_ld_${_i}_a);
+        return rng_state_ld_${_i};
+      }
+    `;
+  })
+  .join('\n\n');
+
+export default /* wgsl */ `
+  ${constants}
+  ${randUtils}
+  ${randUtilsLowDiscrepancy}
 
   fn sample_circle(t: f32) -> vec2f {
     let phi = t * TWO_PI;
