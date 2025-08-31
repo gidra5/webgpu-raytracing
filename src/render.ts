@@ -59,6 +59,20 @@ const context = canvas.getContext('webgpu');
 const device = await getDevice(context as GPUCanvasContext);
 const sampler = device.createSampler();
 
+const resize = () => {
+  const scale = devicePixelRatio * store.resolutionScale;
+  canvas.width = canvas.clientWidth * scale;
+  canvas.height = canvas.clientHeight * scale;
+  setView(vec2.fromValues(canvas.width, canvas.height));
+};
+
+createEffect<() => void>((destroy) => {
+  destroy?.();
+  resize();
+  window.addEventListener('resize', resize);
+  return () => window.removeEventListener('resize', resize);
+});
+
 type GeometryData = {
   imageTexture: GPUTexture;
   geometryBuffer: GPUBuffer;
@@ -118,6 +132,7 @@ const geometryData = createMemo<GeometryData[]>((prev) => {
         ),
       };
     })
+    .inspect(console.log)
     .toArray();
 });
 
@@ -221,20 +236,6 @@ createEffect(() => {
 
 const seedUniformBuffer = createUniformBuffer(4);
 const counterUniformBuffer = createUniformBuffer(4);
-
-const resize = () => {
-  const scale = devicePixelRatio * store.resolutionScale;
-  canvas.width = canvas.clientWidth * scale;
-  canvas.height = canvas.clientHeight * scale;
-  setView(vec2.fromValues(canvas.width, canvas.height));
-};
-
-createEffect<() => void>((destroy) => {
-  destroy?.();
-  resize();
-  window.addEventListener('resize', resize);
-  return () => window.removeEventListener('resize', resize);
-});
 
 createEffect(() => {
   const { pipeline, bindGroups } = renderPipeline({
@@ -1502,13 +1503,13 @@ const rpd = (): GPURenderPassDescriptor => ({
       storeOp: 'store',
     },
   ],
-  // depthStencilAttachment: {
-  //   view: depthTexture().createView(),
+  depthStencilAttachment: {
+    view: depthTexture().createView(),
 
-  //   depthClearValue: 1.0,
-  //   depthLoadOp: 'clear',
-  //   depthStoreOp: 'store',
-  // },
+    depthClearValue: 1.0,
+    depthLoadOp: 'clear',
+    depthStoreOp: 'store',
+  },
   ...(canTimestamp && {
     timestampWrites: {
       querySet,
@@ -1539,46 +1540,46 @@ export async function renderFrame(now: number) {
 
   const encoder = device.createCommandEncoder();
 
-  // raytrace
-  computePass(encoder, {}, (computePass) => {
-    const [_computePipeline, computeBindGroups] = computePipeline();
-    computePass.setPipeline(_computePipeline);
-    computeBindGroups.forEach((bindGroup, i) =>
-      computePass.setBindGroup(i, bindGroup)
-    );
-    computePass.dispatchWorkgroups(
-      Math.ceil(canvas.width / COMPUTE_WORKGROUP_SIZE_X),
-      Math.ceil(canvas.height / COMPUTE_WORKGROUP_SIZE_Y),
-      store.gBuffer.layers
-    );
-  });
+  // // raytrace
+  // computePass(encoder, {}, (computePass) => {
+  //   const [_computePipeline, computeBindGroups] = computePipeline();
+  //   computePass.setPipeline(_computePipeline);
+  //   computeBindGroups.forEach((bindGroup, i) =>
+  //     computePass.setBindGroup(i, bindGroup)
+  //   );
+  //   computePass.dispatchWorkgroups(
+  //     Math.ceil(canvas.width / COMPUTE_WORKGROUP_SIZE_X),
+  //     Math.ceil(canvas.height / COMPUTE_WORKGROUP_SIZE_Y),
+  //     store.gBuffer.layers
+  //   );
+  // });
 
   renderPass(encoder, rpd(), (renderPass) => {
-    // const [geometryPipeline, geometryBindGroups] = geometryPass;
-    // renderPass.setPipeline(geometryPipeline());
-    // geometryBindGroups().forEach((bindGroup, i) =>
-    //   renderPass.setBindGroup(i, bindGroup)
-    // );
-    // renderPass.setVertexBuffer(0, verticesBuffer);
-    // renderPass.setIndexBuffer(indicesBuffer, 'uint32');
-    // renderPass.drawIndexed(facesCount * 3);
+    const [geometryPipeline, geometryBindGroups] = geometryPass;
+    renderPass.setPipeline(geometryPipeline());
+    geometryBindGroups().forEach((bindGroup, i) =>
+      renderPass.setBindGroup(i, bindGroup)
+    );
+    renderPass.setVertexBuffer(0, verticesBuffer);
+    renderPass.setIndexBuffer(indicesBuffer, 'uint32');
+    renderPass.drawIndexed(facesCount * 3);
 
-    renderPass.executeBundles([blitRenderBundle()]);
+    // renderPass.executeBundles([blitRenderBundle()]);
 
-    // debug BVH
-    if (store.debugBVH) {
-      renderPass.executeBundles([debugBVHRenderBundle()]);
-    }
+    // // debug BVH
+    // if (store.debugBVH) {
+    //   renderPass.executeBundles([debugBVHRenderBundle()]);
+    // }
   });
 
-  renderPass(encoder, rpd(), (renderPass) => {
-    renderPass.executeBundles([blitRenderBundle()]);
+  // renderPass(encoder, rpd(), (renderPass) => {
+  //   renderPass.executeBundles([blitRenderBundle()]);
 
-    // debug BVH
-    if (store.debugBVH) {
-      renderPass.executeBundles([debugBVHRenderBundle()]);
-    }
-  });
+  //   // debug BVH
+  //   if (store.debugBVH) {
+  //     renderPass.executeBundles([debugBVHRenderBundle()]);
+  //   }
+  // });
 
   if (updatePrev) {
     encoder.copyBufferToBuffer(jitterBuffer, prevJitterBuffer);
