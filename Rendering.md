@@ -118,6 +118,17 @@ https://highperformancegraphics.org/previous/www_2009/presentations/liu-bucket.p
 https://gitea.yiem.net/QianMo/Real-Time-Rendering-4th-Bibliography-Collection/raw/commit/c4d6730d56a0d16f3baf7e588242c608fc72e379/Chapter%201-24/[1056]%20[HPG%202009]%20Efficient%20Depth%20Peeling%20via%20Bucket%20Sort.pdf
 https://developer.download.nvidia.com/assets/gamedev/docs/OrderIndependentTransparency.pdf
 
+depth peeling pipeline:
+1. inputs
+   1. clip space vertices
+   2. depth min/max texture
+   3. fragments depth stats texture array
+   4. depth plane buckets texture array
+2. Gather stats into depth min/max and stats array
+3. Compute buckets from stats, such that equal amount of fragments is in each, clamped to min/max. Try computing bucket planes such that top n layers are guaranteed to be recognized.
+4. run render pipeline on vertices, sort fragments into buckets
+5. Resolve depth layers from buckets
+
 https://selgrad.org/publications/2017_hpg_HBSS.pdf
 https://research.nvidia.com/sites/default/files/pubs/2016-06_Deep-G-Buffers-for/Mara2016DeepGBuffer-extended-bright.pdf
 https://research.nvidia.com/sites/default/files/pubs/2015-08_An-Adaptive-Acceleration/AcceleratedSSRT_HPG15.pdf
@@ -158,6 +169,10 @@ We can filter out bad samples with exponential average, or based on some "qualit
 conservative rendering:
 https://developer.nvidia.com/gpugems/gpugems2/part-v-image-oriented-computing/chapter-42-conservative-rasterization
 https://github.com/andrewlowndes/perfect-antialiasing/tree/main
+
+we can render multiple faces of the clip space cube, to fix low sample rate at grazing angles. Expensive memory-wise.
+We could also fix edge sampling error, if we use the face coverage for a square we are sampling inside.
+By computing the face coverage for a particular pixel square, we could improve our texture sampling accuracy, when pixel covers multiple faces, like on edges.
 
 https://www.reddit.com/r/GraphicsProgramming/s/h1GI7rb6nq
 

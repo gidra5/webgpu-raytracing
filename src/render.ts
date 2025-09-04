@@ -77,6 +77,7 @@ type GeometryData = {
   imageTexture: GPUTexture;
   geometryBuffer: GPUBuffer;
   depthTexture: GPUTexture;
+  objectIdTexture: GPUTexture;
 };
 
 const geometryData = createMemo<GeometryData[]>((prev) => {
@@ -90,6 +91,12 @@ const geometryData = createMemo<GeometryData[]>((prev) => {
 
   const width = store.view[0];
   const height = store.view[1];
+  const depthOrArrayLayers = store.gBuffer.layers;
+  const options = {
+    width,
+    height,
+    depthOrArrayLayers,
+  };
 
   const gBufferWidth = store.gBuffer.width ?? width;
   const gBufferHeight = store.gBuffer.height ?? height;
@@ -98,38 +105,28 @@ const geometryData = createMemo<GeometryData[]>((prev) => {
     geometryBufferItemSize * gBufferWidth * gBufferHeight;
 
   return Iterator.natural(store.gBuffer.frames)
-    .map((i) => {
+    .map(() => {
       return {
-        imageTexture: createTexture(
-          {
-            width: width,
-            height: height,
-            depthOrArrayLayers: store.gBuffer.layers,
-          },
-          {
-            dimension: '2d',
-            usage: GPUTextureUsage.STORAGE_BINDING,
-          }
-        ),
+        imageTexture: createTexture(options, {
+          dimension: '2d',
+          usage: GPUTextureUsage.STORAGE_BINDING,
+        }),
         geometryBuffer: createStorageBuffer(
           geometryBufferSize,
           'Geometry Buffer'
         ),
-        depthTexture: createTexture(
-          {
-            width: width,
-            height: height,
-            depthOrArrayLayers: 1,
-          },
-          {
-            format: 'depth24plus',
-            dimension: '2d',
-            usage: GPUTextureUsage.RENDER_ATTACHMENT,
-          }
-        ),
+        objectIdTexture: createTexture(options, {
+          format: 'rgba16uint',
+          dimension: '2d',
+          usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        }),
+        depthTexture: createTexture(options, {
+          format: 'depth32float',
+          dimension: '2d',
+          usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        }),
       };
     })
-    .inspect(console.log)
     .toArray();
 });
 
@@ -1414,6 +1411,23 @@ const geometryPass = reactiveRenderPipeline({
     ${structs}
 
     ${x.bindVarBuffer('uniform', 'viewProjMatrix: mat4x4f', viewProjBuffer)}
+    ${x.bindVarBuffer('read-only-storage', 'models: array<Model>', modelsBuffer)}
+
+    fn getModelIdx(faceIdx: u32) -> u32 {
+      // binary search
+      var left: u32 = 0;
+      var right: u32 = arrayLength(&models);
+      while (left < right) {
+        let mid = (left + right) / 2u;
+        let midFaceIdx = models[mid].faces.offset;
+        if (faceIdx < midFaceIdx) {
+          right = mid;
+        } else {
+          left = mid;
+        }
+      }
+      return left;
+    }
 
     struct VertexInput {
       @location(0) p: vec3f,
@@ -1425,23 +1439,43 @@ const geometryPass = reactiveRenderPipeline({
       @builtin(position) out: vec4f,
       @location(0) worldPosition: vec3f,
       @location(1) clipCoordinates: vec4f,
+      @location(2) barycintric: vec2f,
+      // @interpolate(flat) @location(2) id: vec3u, // instanceIdx, modelIdx, faceIdx
+      @interpolate(flat) @location(3) faceIdx: u32, 
+      // @location(3) normal: vec3f,
     }
+
+    const vertexBarycentrics = array<vec2f, 3>(
+      vec2f(0, 0),
+      vec2f(1, 0),
+      vec2f(0, 1),
+    );
 
     @vertex
     fn main(vertex: VertexInput) -> VertexOutput {
-      var clipCoordinates = viewProjMatrix * vec4(vertex.p, 1);
+      let clipCoordinates = viewProjMatrix * vec4(vertex.p, 1);
       let ndc = clipCoordinates.xyz / clipCoordinates.w;
-      if ${store.blitView == BlitView.Image} {
-        return VertexOutput(
-          clipCoordinates,    
-          vertex.p,
-          clipCoordinates
-        );
+      let faceIdx = vertex.vertexId / 3;
+      let barycentric = vertexBarycentrics[vertex.vertexId % 3];
+      // let id = vec3u(vertex.instanceId, getModelIdx(faceIdx), faceIdx);
+      var coordinates = vec4f(ndc, 1);
+
+      if ${store.blitView != BlitView.Image} {
+        let z = ndc.z * 2 - 1;
+        let zxy = (ndc.xy + 1) / 2;
+        coordinates = vec4f(z, ndc.y, 1 - zxy.x, 1);
+        coordinates = vec4f(-z, ndc.y, zxy.x, 1);
+        coordinates = vec4f(ndc.x, z, 1 - zxy.y, 1);
+        coordinates = vec4f(ndc.x, -z, zxy.y, 1);
       }
+
       return VertexOutput(
-        vec4f(ndc.z * 2 - 1, ndc.y, 1-(ndc.x + 1) / 2, 1)*clipCoordinates.w,    
+        coordinates * clipCoordinates.w,
         vertex.p,
-        clipCoordinates
+        clipCoordinates,
+        barycentric,
+        // id
+        faceIdx
       );
     }
   `,
@@ -1455,23 +1489,35 @@ const geometryPass = reactiveRenderPipeline({
       @builtin(front_facing) is_front: bool,
       @builtin(position) fragmentPosition: vec4f,
       @location(0) worldPosition: vec3f,
-      @location(1) clipCoordinates: vec4f, // normalized device coordinates
+      // @location(1) clipCoordinates: vec4f, // normalized device coordinates
+      // @interpolate(flat) @location(2) id: vec3u, // instanceIdx, modelIdx, faceIdx
+      @interpolate(flat) @location(3) faceIdx: u32,
     }
 
     struct FragmentOutput {
       @builtin(frag_depth) depth: f32,
       @location(0) color: vec4f,
+      // @location(1) id: vec3u, // instanceIdx, modelIdx, faceIdx
+      @location(1) faceIdx: vec4u,
     }
 
     @fragment
     fn main(input: FragmentInput) -> FragmentOutput {
       return FragmentOutput(
         input.fragmentPosition.z,
-        vec4f(input.worldPosition*2, 1)
+        vec4f(input.worldPosition*2, 1),
+        // input.id
+        vec4u(input.faceIdx)
       );
     }
   `,
 
+  fragment: {
+    targets: [
+      { format: context.getCurrentTexture().format },
+      { format: currentGeometryData().objectIdTexture.format },
+    ],
+  },
   vertex: {
     buffers: [
       {
@@ -1488,15 +1534,22 @@ const geometryPass = reactiveRenderPipeline({
   depthStencil: {
     depthWriteEnabled: true,
     depthCompare: 'less',
-    format: 'depth24plus',
+    format: depthTexture().format,
   },
 });
 
+// TODO: generate this together with the render pass
 const rpd = (): GPURenderPassDescriptor => ({
   colorAttachments: [
     {
       view: context.getCurrentTexture().createView(),
-      clearValue: [0, 0, 0, 0], // Clear to transparent
+      clearValue: [0, 0, 0, 0],
+      loadOp: 'clear',
+      storeOp: 'store',
+    },
+    {
+      view: currentGeometryData().objectIdTexture.createView(),
+      clearValue: [0, 0, 0, 0],
       loadOp: 'clear',
       storeOp: 'store',
     },
@@ -1552,6 +1605,7 @@ export async function renderFrame(now: number) {
   //   );
   // });
 
+  // TODO: instanced
   renderPass(encoder, rpd(), (renderPass) => {
     const [geometryPipeline, geometryBindGroups] = geometryPass;
     renderPass.setPipeline(geometryPipeline());

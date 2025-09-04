@@ -315,6 +315,7 @@ type RenderPipelineDescriptor = {
   fragmentShader?: (builder: PipelineBuilder) => string;
   fragmentPresentationFormatTarget?: Omit<GPUColorTargetState, 'format'>;
   vertex?: Omit<GPUVertexState, 'module'>;
+  fragment?: Omit<GPUFragmentState, 'module'>;
 } & Omit<GPURenderPipelineDescriptor, 'fragment' | 'vertex' | 'layout'>;
 type RenderPipelineBuilderResult = {
   pipeline: GPURenderPipeline;
@@ -573,7 +574,7 @@ export const renderPipeline = (
   if (fragmentShaderModule) {
     d.fragment = {
       module: fragmentShaderModule,
-      targets: [
+      targets: x.fragment?.targets ?? [
         { format: presentationFormat, ...x.fragmentPresentationFormatTarget },
       ],
     };
