@@ -119,15 +119,9 @@ https://gitea.yiem.net/QianMo/Real-Time-Rendering-4th-Bibliography-Collection/ra
 https://developer.download.nvidia.com/assets/gamedev/docs/OrderIndependentTransparency.pdf
 
 depth peeling pipeline:
-1. inputs
-   1. clip space vertices
-   2. depth min/max texture
-   3. fragments depth stats texture array
-   4. depth plane buckets texture array
-2. Gather stats into depth min/max and stats array
-3. Compute buckets from stats, such that equal amount of fragments is in each, clamped to min/max. Try computing bucket planes such that top n layers are guaranteed to be recognized.
-4. run render pipeline on vertices, sort fragments into buckets
-5. Resolve depth layers from buckets
+1. Gather stats into depth min/max
+2. split into L equal sections the depth span. Or split by prev depth layers/iteration. For each section find closest fragment and fragment count in each bin.
+3. Repeat until found enough closest fragments.
 
 https://selgrad.org/publications/2017_hpg_HBSS.pdf
 https://research.nvidia.com/sites/default/files/pubs/2016-06_Deep-G-Buffers-for/Mara2016DeepGBuffer-extended-bright.pdf

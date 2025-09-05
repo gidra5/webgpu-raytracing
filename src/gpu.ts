@@ -25,6 +25,11 @@ export const getDevice = async (context: GPUCanvasContext) => {
     requiredFeatures.push('subgroups');
   }
 
+  // if (adapter.features.has('primitive-index')) {
+  //   features['primitive-index'] = true;
+  //   requiredFeatures.push('primitive-index');
+  // }
+
   console.log([...adapter.features]);
 
   device = await adapter.requestDevice({
@@ -540,7 +545,8 @@ const createBindingBuilder = () => {
 };
 
 export const renderPipeline = (
-  x: RenderPipelineDescriptor
+  x: RenderPipelineDescriptor,
+  prev?: GPURenderPipeline
 ): RenderPipelineBuilderResult => {
   const { createPipelineBuilder, bindingGroupLayouts, bindingGroups } =
     createBindingBuilder();
@@ -560,30 +566,34 @@ export const renderPipeline = (
       createPipelineBuilder(GPUShaderStage.VERTEX as unknown as GPUShaderStage)
     ),
   });
-  const d: any = {
-    layout: device.createPipelineLayout({
-      bindGroupLayouts: bindingGroupLayouts(),
-    }),
-    vertex: {
-      module: vertexShaderModule,
-      ...x.vertex,
-    },
-    ...omit(x, ['vertex']),
-  };
-
-  if (fragmentShaderModule) {
-    d.fragment = {
-      module: fragmentShaderModule,
-      targets: x.fragment?.targets ?? [
-        { format: presentationFormat, ...x.fragmentPresentationFormatTarget },
-      ],
+  if (!prev) {
+    const d: any = {
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: bindingGroupLayouts(),
+      }),
+      vertex: {
+        module: vertexShaderModule,
+        ...x.vertex,
+      },
+      ...omit(x, ['vertex']),
     };
-  }
 
-  const pipeline = device.createRenderPipeline(
-    d as GPURenderPipelineDescriptor
-  );
-  return { pipeline, bindGroups: bindingGroups(pipeline) };
+    if (fragmentShaderModule) {
+      d.fragment = {
+        module: fragmentShaderModule,
+        targets: x.fragment?.targets ?? [
+          { format: presentationFormat, ...x.fragmentPresentationFormatTarget },
+        ],
+      };
+    }
+
+    const pipeline = device.createRenderPipeline(
+      d as GPURenderPipelineDescriptor
+    );
+    return { pipeline, bindGroups: bindingGroups(pipeline) };
+  } else {
+    return { pipeline: prev, bindGroups: bindingGroups(prev) };
+  }
 };
 
 export type ComputePipelineDescriptor = {
@@ -594,7 +604,8 @@ type ComputePipelineBuilderResult = {
   bindGroups: GPUBindGroup[];
 };
 export const computePipeline = (
-  x: ComputePipelineDescriptor
+  x: ComputePipelineDescriptor,
+  prev?: GPUComputePipeline
 ): ComputePipelineBuilderResult => {
   const { createPipelineBuilder, bindingGroupLayouts, bindingGroups } =
     createBindingBuilder();
@@ -606,58 +617,76 @@ export const computePipeline = (
     ),
   });
 
-  const pipeline = device.createComputePipeline({
-    layout: device.createPipelineLayout({
-      bindGroupLayouts: bindingGroupLayouts(),
-    }),
-    compute: { module, ...x },
-  });
-  return { pipeline, bindGroups: bindingGroups(pipeline) };
+  // create module and pipeline on creation
+  // then just update bind groups
+  if (!prev) {
+    const pipeline = device.createComputePipeline({
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: bindingGroupLayouts(),
+      }),
+      compute: { module, ...x },
+    });
+    return { pipeline, bindGroups: bindingGroups(pipeline) };
+  } else {
+    return { pipeline: prev, bindGroups: bindingGroups(prev) } as const;
+  }
 };
 
 export const reactiveComputePipeline = (x: ComputePipelineDescriptor) => {
-  
   return createMemo<[GPUComputePipeline, GPUBindGroup[]]>((prev) => {
-    const { createPipelineBuilder, bindingGroupLayouts, bindingGroups } =
-      createBindingBuilder();
-
-    // TODO: TYPESCRIPT BULLSHIT
-    const code = x.shader(
-      createPipelineBuilder(GPUShaderStage.COMPUTE as unknown as GPUShaderStage)
-    );
-
-    // create module and pipeline on creation
-    // then just update bind groups
-    if (!prev) {
-      const module = device.createShaderModule({ code });
-
-      const pipeline = device.createComputePipeline({
-        layout: device.createPipelineLayout({
-          bindGroupLayouts: bindingGroupLayouts(),
-        }),
-        compute: { module, ...x },
-      });
-      const bindGroups = bindingGroups(pipeline);
-      return [pipeline, bindGroups] as const;
-    } else {
-      const pipeline = prev[0];
-      const bindGroups = bindingGroups(pipeline);
-      return [pipeline, bindGroups] as const;
-    }
+    const { pipeline, bindGroups } = computePipeline(x, prev[0]);
+    return [pipeline, bindGroups] as const;
   });
+};
+
+type ComputeRunnerParams = {
+  workgroups: [number, number, number];
+} & GPUComputePassDescriptor;
+export const computePipelineRunner = (
+  x: ComputePipelineDescriptor & { params: ComputeRunnerParams }
+) => {
+  const computePipeline = reactiveComputePipeline(x);
+  return (
+    encoder: GPUCommandEncoder,
+    runParams?: Partial<ComputeRunnerParams>
+  ) => {
+    const params = { ...x.params, ...runParams };
+    return computePass(encoder, params, (computePass) => {
+      const [_computePipeline, computeBindGroups] = computePipeline();
+      computePass.setPipeline(_computePipeline);
+      computeBindGroups.forEach((bindGroup, i) =>
+        computePass.setBindGroup(i, bindGroup)
+      );
+      computePass.dispatchWorkgroups(...params.workgroups);
+    });
+  };
 };
 
 export const reactiveRenderPipeline = (x: RenderPipelineDescriptor) => {
-  const [_computePipeline, setComputePipeline] =
-    createSignal<GPURenderPipeline>();
-  const [computeBindGroups, setComputeBindGroups] =
-    createSignal<GPUBindGroup[]>();
-
-  createEffect(() => {
-    const { pipeline, bindGroups } = renderPipeline(x);
-    setComputePipeline(pipeline);
-    setComputeBindGroups(bindGroups);
+  return createMemo<[GPURenderPipeline, GPUBindGroup[]]>((prev) => {
+    const { pipeline, bindGroups } = renderPipeline(x, prev[0]);
+    return [pipeline, bindGroups] as const;
   });
-
-  return [_computePipeline, computeBindGroups] as const;
 };
+
+// type RenderRunnerParams = {};
+// export const renderPipelineRunner = (
+//   x: RenderPipelineDescriptor & { params: RenderRunnerParams }
+// ) => {
+//   const computePipeline = reactiveComputePipeline(x);
+//   return (
+//     encoder: GPUCommandEncoder,
+//     runParams?: Partial<ComputeRunnerParams>
+//   ) => {
+//     const params = { ...x.params, ...runParams };
+//     return computePass(encoder, params, (computePass) => {
+//       const [_computePipeline, computeBindGroups] = computePipeline();
+//       computePass.setPipeline(_computePipeline);
+//       computeBindGroups.forEach((bindGroup, i) =>
+//         computePass.setBindGroup(i, bindGroup)
+//       );
+//       computePass.dispatchWorkgroups(...params.workgroups);
+//     });
+//   };
+// };
+

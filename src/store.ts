@@ -111,7 +111,7 @@ export const [store, setStore] = createStore({
   gBuffer: {
     width: null,
     height: null,
-    layers: 1, // depth peeling layers
+    layers: 2, // depth peeling layers
     frames: 2, // how many frames to buffer
     frustrum: 0b100000, // bitfield of [+Z, -Z, +X, -X, +Y, -Y] for each view direction
     frustrumSides: 0b100000, // bitfield of [+Z, -Z, +X, -X, +Y, -Y] for clip space cube sides

@@ -120,6 +120,16 @@ const geometryData = createMemo<GeometryData[]>((prev) => {
           dimension: '2d',
           usage: GPUTextureUsage.RENDER_ATTACHMENT,
         }),
+        faceIdTexture: createTexture(options, {
+          format: 'r32uint',
+          dimension: '2d',
+          usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        }),
+        barycentricsTexture: createTexture(options, {
+          format: 'rg32float',
+          dimension: '2d',
+          usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        }),
         depthTexture: createTexture(options, {
           format: 'depth32float',
           dimension: '2d',
@@ -128,6 +138,44 @@ const geometryData = createMemo<GeometryData[]>((prev) => {
       };
     })
     .toArray();
+});
+
+type DepthPeelingData = {
+  depthMin: GPUTexture;
+  depthMax: GPUTexture;
+  fragmentCount: GPUTexture;
+  depthHistogram: GPUBuffer;
+};
+const depthPeelingData = createMemo<DepthPeelingData>((prev) => {
+  if (prev) {
+    prev.depthMin.destroy();
+    prev.depthMax.destroy();
+  }
+
+  const width = store.gBuffer.width ?? store.view[0];
+  const height = store.gBuffer.height ?? store.view[1];
+  const options = {
+    width,
+    height,
+    depthOrArrayLayers: 1,
+  };
+  return {
+    depthMin: createTexture(options, {
+      format: 'r32float',
+      dimension: '2d',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    }),
+    depthMax: createTexture(options, {
+      format: 'r32float',
+      dimension: '2d',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    }),
+    fragmentCount: createTexture(options, {
+      format: 'r32uint',
+      dimension: '2d',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    }),
+  };
 });
 
 const [historyIndex, setHistoryIndex] = createSignal(0);
@@ -1480,6 +1528,7 @@ const geometryPass = reactiveRenderPipeline({
     }
   `,
   fragmentShader: (x) => /* wgsl */ `
+    // enable primitive_index;
     const viewport = vec2u(${store.view[0]}, ${store.view[1]});
     const viewportf = vec2f(viewport);
     const far = ${store.far};
@@ -1492,6 +1541,7 @@ const geometryPass = reactiveRenderPipeline({
       // @location(1) clipCoordinates: vec4f, // normalized device coordinates
       // @interpolate(flat) @location(2) id: vec3u, // instanceIdx, modelIdx, faceIdx
       @interpolate(flat) @location(3) faceIdx: u32,
+      // @builtin(primitive_index) faceIdx: u32;
     }
 
     struct FragmentOutput {
@@ -1535,6 +1585,149 @@ const geometryPass = reactiveRenderPipeline({
     depthWriteEnabled: true,
     depthCompare: 'less',
     format: depthTexture().format,
+  },
+});
+
+const outVerticesBuffer = createStorageBuffer(
+  verticesBuffer.size,
+  'Out Vertices Buffer'
+);
+const projectGeometryComputePipeline = reactiveComputePipeline({
+  shader: (x) => /* wgsl */ `
+    ${x.bindVarBuffer('read-only-storage', 'vertices: array<vec3f>', verticesBuffer)}
+    ${x.bindVarBuffer('storage', 'outVertices: array<vec3f>', outVerticesBuffer)}
+    ${x.bindVarBuffer('uniform', 'viewProjMatrix: mat4x4f', viewProjBuffer)}
+
+    @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
+    fn main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>) {
+      let vertexIndex = globalInvocationId.x;
+      if (vertexIndex >= arrayLength(&vertices)) {
+        return;
+      }
+
+      let vertex = vertices[vertexIndex];
+      outVertices[vertexIndex] = viewProjMatrix * vec4(vertex, 1);
+    }
+  `,
+});
+
+const depthSpanPass = reactiveRenderPipeline({
+  vertexShader: () => /* wgsl */ `
+    @vertex
+    fn main(@location(0) p: vec4f) -> @builtin(position) vec3f {
+      return p;
+    }
+  `,
+  fragmentShader: () => /* wgsl */ `
+    struct FragmentInput {
+      @builtin(position) fragmentPosition: vec4f,
+    }
+
+    struct FragmentOutput {
+      @location(0) depthMin: f32,
+      @location(1) depthMax: f32,
+      @location(2) fragmentCount: u32,
+    }
+
+    @fragment
+    fn main(input: FragmentInput) -> FragmentOutput {
+      return FragmentOutput(input.fragmentPosition.z, input.fragmentPosition.z, 1);
+    }
+  `,
+
+  fragment: {
+    targets: [
+      {
+        format: depthPeelingData().depthMin.format,
+        blend: {
+          color: { operation: 'min' },
+          alpha: { operation: 'min' },
+        },
+      },
+      {
+        format: depthPeelingData().depthMax.format,
+        blend: {
+          color: { operation: 'max' },
+          alpha: { operation: 'max' },
+        },
+      },
+      {
+        format: depthPeelingData().fragmentCount.format,
+        blend: {
+          color: { operation: 'add', dstFactor: 'one' },
+          alpha: { operation: 'add', dstFactor: 'one' },
+        },
+      },
+    ],
+  },
+  vertex: {
+    buffers: [
+      {
+        arrayStride: 4 * Float32Array.BYTES_PER_ELEMENT, // 3 floats
+        attributes: [
+          { shaderLocation: 0, offset: 0, format: 'float32x4' }, // position
+        ],
+      },
+    ],
+  },
+  primitive: {
+    topology: 'triangle-list',
+  },
+});
+
+const depthBinPass = reactiveRenderPipeline({
+  vertexShader: () => /* wgsl */ `
+    @vertex
+    fn main(@location(0) p: vec4f) -> @builtin(position) vec3f {
+      return p;
+    }
+  `,
+  fragmentShader: () => /* wgsl */ `
+    struct FragmentInput {
+      @builtin(position) fragmentPosition: vec4f,
+    }
+
+    struct FragmentOutput {
+      @location(0) depthMin: f32,
+      @location(1) depthMax: f32,
+    }
+
+    @fragment
+    fn main(input: FragmentInput) -> FragmentOutput {
+      return FragmentOutput(input.fragmentPosition.z, input.fragmentPosition.z);
+    }
+  `,
+
+  fragment: {
+    targets: [
+      {
+        format: depthPeelingData().depthMin.format,
+        blend: {
+          color: { operation: 'min' },
+          alpha: { operation: 'min' },
+        },
+      },
+      {
+        format: depthPeelingData().depthMax.format,
+        blend: {
+          color: { operation: 'max' },
+          alpha: { operation: 'max' },
+        },
+      },
+    ],
+  },
+  vertex: {
+    buffers: [
+      {
+        arrayStride: 4 * Float32Array.BYTES_PER_ELEMENT, // 3 floats
+        attributes: [
+          { shaderLocation: 0, offset: 0, format: 'float32x4' }, // position
+        ],
+      },
+    ],
+  },
+  primitive: {
+    topology: 'triangle-list',
   },
 });
 
@@ -1605,24 +1798,24 @@ export async function renderFrame(now: number) {
   //   );
   // });
 
-  // TODO: instanced
-  renderPass(encoder, rpd(), (renderPass) => {
-    const [geometryPipeline, geometryBindGroups] = geometryPass;
-    renderPass.setPipeline(geometryPipeline());
-    geometryBindGroups().forEach((bindGroup, i) =>
-      renderPass.setBindGroup(i, bindGroup)
-    );
-    renderPass.setVertexBuffer(0, verticesBuffer);
-    renderPass.setIndexBuffer(indicesBuffer, 'uint32');
-    renderPass.drawIndexed(facesCount * 3);
+  // // TODO: instanced
+  // renderPass(encoder, rpd(), (renderPass) => {
+  //   // const [geometryPipeline, geometryBindGroups] = geometryPass;
+  //   // renderPass.setPipeline(geometryPipeline());
+  //   // geometryBindGroups().forEach((bindGroup, i) =>
+  //   //   renderPass.setBindGroup(i, bindGroup)
+  //   // );
+  //   // renderPass.setVertexBuffer(0, verticesBuffer);
+  //   // renderPass.setIndexBuffer(indicesBuffer, 'uint32');
+  //   // renderPass.drawIndexed(facesCount * 3);
 
-    // renderPass.executeBundles([blitRenderBundle()]);
+  //   // renderPass.executeBundles([blitRenderBundle()]);
 
-    // // debug BVH
-    // if (store.debugBVH) {
-    //   renderPass.executeBundles([debugBVHRenderBundle()]);
-    // }
-  });
+  //   // // debug BVH
+  //   // if (store.debugBVH) {
+  //   //   renderPass.executeBundles([debugBVHRenderBundle()]);
+  //   // }
+  // });
 
   // renderPass(encoder, rpd(), (renderPass) => {
   //   renderPass.executeBundles([blitRenderBundle()]);
