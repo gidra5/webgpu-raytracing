@@ -336,7 +336,8 @@ export type PipelineBuilder = {
   bindTexture(
     name: string,
     type: GPUTextureSampleType,
-    texture: GPUTexture
+    texture: GPUTexture,
+    isArray?: boolean
   ): string;
   bindSampler(
     name: string,
@@ -410,14 +411,25 @@ const createBindingBuilder = () => {
             : 'uniform';
       return `@group(${group}) @binding(${binding}) var<${qualifier}> ${type};`;
     },
-    bindTexture(name: string, type: GPUTextureSampleType, texture: GPUTexture) {
+    bindTexture(
+      name: string,
+      type: GPUTextureSampleType,
+      texture: GPUTexture,
+      isArray = false
+    ) {
       const group = bindings.length - 1;
       const binding = bindings[group].length;
       bindings[group].push({ kind: 'texture', texture, visibility, type });
       const valueType =
         type === 'float' || type === 'unfilterable-float' ? 'f32' : type;
       const containerType =
-        texture.dimension === '2d' ? 'texture_2d' : 'texture_3d';
+        texture.dimension === '1d'
+          ? 'texture_1d'
+          : texture.dimension === '2d'
+            ? isArray
+              ? 'texture_2d_array'
+              : 'texture_2d'
+            : 'texture_3d';
       return `@group(${group}) @binding(${binding}) var ${name}: ${containerType}<${valueType}>;`;
     },
     bindStorageTexture(
@@ -689,4 +701,3 @@ export const reactiveRenderPipeline = (x: RenderPipelineDescriptor) => {
 //     });
 //   };
 // };
-

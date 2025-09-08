@@ -140,42 +140,68 @@ const geometryData = createMemo<GeometryData[]>((prev) => {
     .toArray();
 });
 
-type DepthPeelingData = {
-  depthMin: GPUTexture;
-  depthMax: GPUTexture;
-  fragmentCount: GPUTexture;
-  depthHistogram: GPUBuffer;
-};
+type DepthPeelingData = [
+  prev: {
+    depthMin: GPUTexture;
+    depthMax: GPUTexture;
+    fragmentCount: GPUTexture;
+  },
+  curr: {
+    depthMin: GPUTexture;
+    depthMax: GPUTexture;
+    fragmentCount: GPUTexture;
+  },
+];
 const depthPeelingData = createMemo<DepthPeelingData>((prev) => {
   if (prev) {
-    prev.depthMin.destroy();
-    prev.depthMax.destroy();
+    for (const data of prev) {
+      data.depthMin.destroy();
+      data.depthMax.destroy();
+      data.fragmentCount.destroy();
+    }
   }
 
   const width = store.gBuffer.width ?? store.view[0];
   const height = store.gBuffer.height ?? store.view[1];
-  const options = {
-    width,
-    height,
-    depthOrArrayLayers: 1,
-  };
-  return {
-    depthMin: createTexture(options, {
-      format: 'r32float',
-      dimension: '2d',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT,
-    }),
-    depthMax: createTexture(options, {
-      format: 'r32float',
-      dimension: '2d',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT,
-    }),
-    fragmentCount: createTexture(options, {
-      format: 'r32uint',
-      dimension: '2d',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT,
-    }),
-  };
+  const depthOrArrayLayers = store.gBuffer.layers;
+  const options = { width, height, depthOrArrayLayers };
+
+  return [
+    {
+      depthMin: createTexture(options, {
+        format: 'r32float',
+        dimension: '2d',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+      }),
+      depthMax: createTexture(options, {
+        format: 'r32float',
+        dimension: '2d',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+      }),
+      fragmentCount: createTexture(options, {
+        format: 'r8uint',
+        dimension: '2d',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+      }),
+    },
+    {
+      depthMin: createTexture(options, {
+        format: 'r32float',
+        dimension: '2d',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+      }),
+      depthMax: createTexture(options, {
+        format: 'r32float',
+        dimension: '2d',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+      }),
+      fragmentCount: createTexture(options, {
+        format: 'r8uint',
+        dimension: '2d',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+      }),
+    },
+  ];
 });
 
 const [historyIndex, setHistoryIndex] = createSignal(0);
@@ -244,6 +270,7 @@ const {
   modelsBuffer,
   facesCount,
   verticesBuffer,
+  verticesCount,
   normalsBuffer,
   uvsBuffer,
   indicesBuffer,
@@ -1588,6 +1615,7 @@ const geometryPass = reactiveRenderPipeline({
   },
 });
 
+// TODO: culling?
 const outVerticesBuffer = createStorageBuffer(
   verticesBuffer.size,
   'Out Vertices Buffer'
@@ -1611,54 +1639,213 @@ const projectGeometryComputePipeline = reactiveComputePipeline({
   `,
 });
 
-const depthSpanPass = reactiveRenderPipeline({
+const depthBinPass = reactiveRenderPipeline({
   vertexShader: () => /* wgsl */ `
     @vertex
     fn main(@location(0) p: vec4f) -> @builtin(position) vec3f {
       return p;
     }
   `,
-  fragmentShader: () => /* wgsl */ `
+  fragmentShader: (x) => /* wgsl */ `
+    ${x.bindTexture('depthMinTexture', 'float', depthPeelingData()[0].depthMin, true)}
+    ${x.bindTexture('depthMaxTexture', 'float', depthPeelingData()[0].depthMax, true)}
+    ${x.bindTexture(
+      'fragmentCountTexture',
+      'uint',
+      depthPeelingData()[0].fragmentCount,
+      true
+    )}
+
     struct FragmentInput {
       @builtin(position) fragmentPosition: vec4f,
     }
 
     struct FragmentOutput {
-      @location(0) depthMin: f32,
-      @location(1) depthMax: f32,
-      @location(2) fragmentCount: u32,
+      ${Iterator.natural(store.gBuffer.layers)
+        .map(
+          (i) => /* wgsl */ `
+            @location(${3 * i + 0}) depthMin${i}: f32,
+            @location(${3 * i + 1}) depthMax${i}: f32,
+            @location(${3 * i + 2}) fragmentCount${i}: u32,
+          `
+        )
+        .join('\n')}
     }
+
+    struct Bin {
+      min: f32,
+      max: f32,
+    }
+
+    var<private> bins: array<Bin, ${store.gBuffer.layers}>;
+    const O = 1e-8;
 
     @fragment
     fn main(input: FragmentInput) -> FragmentOutput {
-      return FragmentOutput(input.fragmentPosition.z, input.fragmentPosition.z, 1);
+      let upos = vec2u(input.fragmentPosition.xy);
+      let depth = input.fragmentPosition.z;
+
+      var totalFragmentCount: u32 = 0u;
+      for (var i = 0u; i < ${store.gBuffer.layers}; i = i + 1u) {
+        totalFragmentCount += textureLoad(fragmentCountTexture, upos, i).r;
+      }
+
+      var i = 0u;
+      var j = 0u;
+      var total = 0u;
+      while (i < ${store.gBuffer.layers}) {
+        if totalFragmentCount == 0 {
+          bins[i] = Bin(min, max);
+          i++;
+          continue;
+        }
+
+        var depthMin = textureLoad(depthMinTexture, upos, j).r;
+        var depthMax = textureLoad(depthMaxTexture, upos, j).r;
+        var count = textureLoad(fragmentCountTexture, upos, j).r;
+        if count == 0 {
+          j++;
+          continue;
+        }
+
+        if (count > ${store.gBuffer.layers}) {
+          let residue = ${store.gBuffer.layers} - i;
+          let step = (depthMax - depthMin) / residue;
+
+          while (i < ${store.gBuffer.layers}) {
+            let bin = bins[i];
+            let offset = step * (i - residue);
+            bin.min = depthMin + offset;
+            bin.max = depthMin + offset + step;
+            i++;
+          }
+          break;
+        }
+
+        if j > 0 {
+          let prevCount = textureLoad(fragmentCountTexture, upos, j - 1u).r;
+          if prevCount == 1 {
+            depthMin += O;
+            count--;
+          }
+        }
+
+        if count == 0 {
+          while textureLoad(fragmentCountTexture, upos, j).r == 0 {
+            j++;
+          }
+          depthMin = textureLoad(depthMinTexture, upos, j).r;
+          depthMax = textureLoad(depthMaxTexture, upos, j).r;
+          count = textureLoad(fragmentCountTexture, upos, j).r;
+        }
+
+        if count == 1 {
+          if j < ${store.gBuffer.layers} - 1 {
+            let nextDepthMin = textureLoad(depthMinTexture, upos, j + 1u).r;
+            bins[i] = Bin(depthMin, nextDepthMin);
+            total += 2;
+          } else {
+            bins[i] = Bin(depthMin, 1);
+            total += 1;
+          }
+          i++;
+          j++;
+          continue;
+        }
+
+        if count == 2 {
+          bins[i] = Bin(depthMin, depthMax);
+          total += 2;
+          i++;
+          j++;
+          continue;
+        }
+
+        if count <= ${store.gBuffer.layers} - total {
+          let step = (depthMax - depthMin) / count;
+
+          for (var k = 0u; k < count; k = k + 1u) {
+            let bin = bins[i];
+            let offset = step * k;
+            bin.min = depthMin + offset;
+            bin.max = depthMin + offset + step;
+            i++;
+          }
+          
+          j++;
+          total += count;
+          continue;
+        } else {
+          let count = ${store.gBuffer.layers} - total;
+          let step = (depthMax - depthMin) / count;
+
+          for (var k = 0u; k < count; k = k + 1u) {
+            let bin = bins[i];
+            let offset = step * k;
+            bin.min = depthMin + offset;
+            bin.max = depthMin + offset + step;
+            i++;
+          }
+          
+          j++;
+          total += count;
+          continue;
+        }
+      }
+
+      bins[${store.gBuffer.layers} - 1].max = 1;
+
+      var output: FragmentOutput;
+      
+      // sort into bins
+      ${Iterator.natural(store.gBuffer.layers)
+        .map(
+          (i) => /* wgsl */ `{
+
+            // let inRange = 
+            if (bins[i].min <= depth && depth <= bins[i].max) {
+              output.depthMin${i} = input.fragmentPosition.z;
+              output.depthMax${i} = input.fragmentPosition.z;
+              output.fragmentCount${i} = 1;
+            } else {
+              output.depthMin${i} = 1;
+              output.depthMax${i} = 0;
+              output.fragmentCount${i} = 0;
+            }
+          }`
+        )
+        .join('\n')}
+
+      return output;
     }
   `,
 
   fragment: {
-    targets: [
-      {
-        format: depthPeelingData().depthMin.format,
-        blend: {
-          color: { operation: 'min' },
-          alpha: { operation: 'min' },
+    targets: Iterator.natural(store.gBuffer.layers)
+      .map<GPUColorTargetState[]>(() => [
+        {
+          format: depthPeelingData().depthMin.format,
+          blend: {
+            color: { operation: 'min' },
+            alpha: { operation: 'min' },
+          },
         },
-      },
-      {
-        format: depthPeelingData().depthMax.format,
-        blend: {
-          color: { operation: 'max' },
-          alpha: { operation: 'max' },
+        {
+          format: depthPeelingData().depthMax.format,
+          blend: {
+            color: { operation: 'max' },
+            alpha: { operation: 'max' },
+          },
         },
-      },
-      {
-        format: depthPeelingData().fragmentCount.format,
-        blend: {
-          color: { operation: 'add', dstFactor: 'one' },
-          alpha: { operation: 'add', dstFactor: 'one' },
+        {
+          format: depthPeelingData().fragmentCount.format,
+          blend: {
+            color: { operation: 'add', dstFactor: 'one' },
+            alpha: { operation: 'add', dstFactor: 'one' },
+          },
         },
-      },
-    ],
+      ])
+      .flat(),
   },
   vertex: {
     buffers: [
@@ -1675,46 +1862,106 @@ const depthSpanPass = reactiveRenderPipeline({
   },
 });
 
-const depthBinPass = reactiveRenderPipeline({
+const depthCollectPass = reactiveRenderPipeline({
   vertexShader: () => /* wgsl */ `
+    struct VertexInput {
+      @location(0) p: vec3f,
+      @builtin(instance_index) instanceId: u32,
+      @builtin(vertex_index) vertexId: u32,
+    }
+
+    struct VertexOutput {
+      @builtin(position) out: vec4f,
+      @location(0) barycintric: vec2f,
+      // @interpolate(flat) @location(2) id: vec3u, // instanceIdx, modelIdx, faceIdx
+      @interpolate(flat) @location(1) faceIdx: u32, 
+      // @location(3) normal: vec3f,
+    }
+
+    const vertexBarycentrics = array<vec2f, 3>(
+      vec2f(0, 0),
+      vec2f(1, 0),
+      vec2f(0, 1),
+    );
+
     @vertex
-    fn main(@location(0) p: vec4f) -> @builtin(position) vec3f {
-      return p;
+    fn main(vertex: VertexInput) -> VertexOutput {
+      let faceIdx = vertex.vertexId / 3;
+      let barycentric = vertexBarycentrics[vertex.vertexId % 3];
+      // let id = vec3u(vertex.instanceId, getModelIdx(faceIdx), faceIdx);
+      
+      // let clipCoordinates = viewProjMatrix * vec4(vertex.p, 1);
+      // let ndc = clipCoordinates.xyz / clipCoordinates.w;
+      // var coordinates = vec4f(ndc, 1);
+
+      // if ${store.blitView != BlitView.Image} {
+      //   let z = ndc.z * 2 - 1;
+      //   let zxy = (ndc.xy + 1) / 2;
+      //   coordinates = vec4f(z, ndc.y, 1 - zxy.x, 1);
+      //   coordinates = vec4f(-z, ndc.y, zxy.x, 1);
+      //   coordinates = vec4f(ndc.x, z, 1 - zxy.y, 1);
+      //   coordinates = vec4f(ndc.x, -z, zxy.y, 1);
+      // }
+
+      return VertexOutput(
+        vertex.p,
+        barycentric,
+        // id
+        faceIdx
+      );
     }
   `,
-  fragmentShader: () => /* wgsl */ `
+  fragmentShader: (x) => /* wgsl */ `
+    ${x.bindTexture('depthMinTexture', 'float', depthPeelingData()[0].depthMin, true)}
+    ${x.bindTexture('depthMaxTexture', 'float', depthPeelingData()[0].depthMax, true)}
+
     struct FragmentInput {
       @builtin(position) fragmentPosition: vec4f,
+      @interpolate(flat) @location(1) faceIdx: u32,
     }
 
     struct FragmentOutput {
-      @location(0) depthMin: f32,
-      @location(1) depthMax: f32,
+      ${Iterator.natural(store.gBuffer.layers)
+        .map(
+          (i) => /* wgsl */ `
+            @location(${2 * i + 0}) depth${i}: f32,
+            @location(${2 * i + 1}) faceIdx${i}: u32,
+          `
+        )
+        .join('\n')}
     }
 
     @fragment
     fn main(input: FragmentInput) -> FragmentOutput {
-      return FragmentOutput(input.fragmentPosition.z, input.fragmentPosition.z);
+      let upos = vec2u(input.fragmentPosition.xy);
+      let depth = input.fragmentPosition.z;
+
+      var output: FragmentOutput;
+
+      ${Iterator.natural(Math.ceil(store.gBuffer.layers / 2)).map(
+        (i) => /* wgsl */ `{
+            if depth == textureLoad(depthMinTexture, upos, ${2 * i + 0}).r {
+              output.depth${2 * i + 0} = input.fragmentPosition.z;
+              output.faceIdx${2 * i + 0} = faceIdx;
+            } else if (${i * 2 + 1} < ${store.gBuffer.layers} && depth == textureLoad(depthMinTexture, upos, ${2 * i + 1}).r) {
+              output.depth${2 * i + 1} = input.fragmentPosition.z;
+              output.faceIdx${2 * i + 1} = faceIdx;
+            }
+          }`
+      )}
+      
+
+      return output;
     }
   `,
 
   fragment: {
-    targets: [
-      {
-        format: depthPeelingData().depthMin.format,
-        blend: {
-          color: { operation: 'min' },
-          alpha: { operation: 'min' },
-        },
-      },
-      {
-        format: depthPeelingData().depthMax.format,
-        blend: {
-          color: { operation: 'max' },
-          alpha: { operation: 'max' },
-        },
-      },
-    ],
+    targets: Iterator.natural(store.gBuffer.layers)
+      .map<GPUColorTargetState[]>(() => [
+        { format: currentGeometryData().depthTexture.format },
+        { format: currentGeometryData().objectIdTexture.format },
+      ])
+      .flat(),
   },
   vertex: {
     buffers: [
@@ -1783,6 +2030,93 @@ export async function renderFrame(now: number) {
   const view = viewMatrix();
 
   const encoder = device.createCommandEncoder();
+
+  computePass(encoder, {}, (computePass) => {
+    const [_computePipeline, computeBindGroups] =
+      projectGeometryComputePipeline();
+    computePass.setPipeline(_computePipeline);
+    computeBindGroups.forEach((bindGroup, i) =>
+      computePass.setBindGroup(i, bindGroup)
+    );
+    computePass.dispatchWorkgroups(verticesCount, 1, 1);
+  });
+
+  for (const i of Iterator.natural(store.gBuffer.layers)) {
+    const prevDepthPeelingData = depthPeelingData()[i % 2];
+    const currDepthPeelingData = depthPeelingData()[(i + 1) % 2];
+
+    const rpd = {
+      colorAttachments: Iterator.natural(store.gBuffer.layers)
+        .map<GPURenderPassColorAttachment[]>((i) => [
+          {
+            view: currDepthPeelingData.depthMin.createView({
+              baseArrayLayer: i,
+              arrayLayerCount: 1,
+            }),
+            clearValue: [0, 0, 0, 0],
+            loadOp: 'clear',
+            storeOp: 'store',
+          },
+          {
+            view: currDepthPeelingData.depthMax.createView({
+              baseArrayLayer: i,
+              arrayLayerCount: 1,
+            }),
+            clearValue: [0, 0, 0, 0],
+            loadOp: 'clear',
+            storeOp: 'store',
+          },
+          {
+            view: currDepthPeelingData.fragmentCount.createView({
+              baseArrayLayer: i,
+              arrayLayerCount: 1,
+            }),
+            clearValue: [0, 0, 0, 0],
+            loadOp: 'clear',
+            storeOp: 'store',
+          },
+        ])
+        .flat(),
+      ...(canTimestamp && {
+        timestampWrites: {
+          querySet,
+          beginningOfPassWriteIndex: 0,
+          endOfPassWriteIndex: 1,
+        },
+      }),
+    };
+
+    renderPass(encoder, rpd, (renderPass) => {
+      const [pipeline] = depthBinPass();
+      renderPass.setPipeline(pipeline);
+
+      renderPass.setBindGroup(
+        0,
+        device.createBindGroup({
+          layout: pipeline.getBindGroupLayout(0),
+          entries: Iterator.natural(store.gBuffer.layers)
+            .map<GPUBindGroupEntry[]>((i) => [
+              {
+                binding: 3 * i + 0,
+                resource: prevDepthPeelingData.depthMin.createView(),
+              },
+              {
+                binding: 3 * i + 1,
+                resource: prevDepthPeelingData.depthMin.createView(),
+              },
+              {
+                binding: 3 * i + 2,
+                resource: prevDepthPeelingData.depthMin.createView(),
+              },
+            ])
+            .flat(),
+        })
+      );
+      renderPass.setVertexBuffer(0, outVerticesBuffer);
+      renderPass.setIndexBuffer(indicesBuffer, 'uint32');
+      renderPass.drawIndexed(facesCount * 3);
+    });
+  }
 
   // // raytrace
   // computePass(encoder, {}, (computePass) => {
