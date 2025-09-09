@@ -118,6 +118,21 @@ https://highperformancegraphics.org/previous/www_2009/presentations/liu-bucket.p
 https://gitea.yiem.net/QianMo/Real-Time-Rendering-4th-Bibliography-Collection/raw/commit/c4d6730d56a0d16f3baf7e588242c608fc72e379/Chapter%201-24/[1056]%20[HPG%202009]%20Efficient%20Depth%20Peeling%20via%20Bucket%20Sort.pdf
 https://developer.download.nvidia.com/assets/gamedev/docs/OrderIndependentTransparency.pdf
 
+Pipeline:
+1. Project scene into clip spaces around the camera. Clip primitives outside of viewport cube.
+Every clip space is frustrum with 90deg horizontal and vertical fov. The size is enough to contain camera frustrum. Optionally shift frustrums to cover the center.
+2. Rasterize each frustrum along each major axis. Collect N first layers of fragments for the Z-axis. Collect N first and last fragments for X- and Y-axis.
+3. Resolve fragments and collect interpolated fragment attributes - normal, uv, faceId, material properties.
+4. Compute importance map - for each fragment measure variance and normalize into probability distribution.
+5. Preprocess importance map into cdf.
+6. For each hitpoint lookup the fragment and allocate more samples when high variance.
+7. Run compute shader with fixed ray count. Sample importance map cdf to determine first ray origin.
+8. For each fragment ray origin compute each of the components of bsdf.
+9. For each hitpoint reproject prev frames values as "initial guess".
+10. For each computed hitpoint splat the color values back into frame cache.
+11. Rotate buffers for the next frame.
+12. Reconstruct final frame from stored samples.
+
 depth peeling pipeline:
 1. Initialize 6 texture arrays of length L. Each array item is a bin responsible for some depth range. The fisrt 3 of them are used for the current iteration, the other 3 are the values from the previous iteration.
    1. prev depth min, start from 0 and increment in 1/L steps.
@@ -213,6 +228,9 @@ We may improve convergence speed by reprojecting on every bounce. Additionally i
 ![[chrome_JdHyu08wpq_1755075985.jpg]]
 
 Also accuracy of reprojection greatly affects the quality.
+
+https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf
+https://blog.selfshadow.com/publications/s2015-shading-course/burley/s2015_pbs_disney_bsdf_notes.pdf
 ## Filtering
 
 We can filter out bad samples with exponential average, or based on some "quality" heuristic, like distance from the sample to target point.
