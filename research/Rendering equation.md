@@ -187,8 +187,19 @@ Note that the G term is computationally complex and also misses the secondary bo
 
 # Multibounce microfacets
 
-Fresnel equations and microfacets by themselves can't entirely approximate diffuse light. Diffuse light models absolute randomness in scattering distribution, making both $\omega_i$ and $\omega_o$ irrelevant.
+Fresnel equations and microfacets by themselves can't entirely approximate diffuse light, and I'm not even talking about approximating the rendering equation's output in its entirety. Diffuse light models absolute randomness in scattering distribution, making both $\omega_i$ and $\omega_o$ irrelevant.
 When light bounces multiple times, it decorrelates $\omega_i$ and $\omega_o$ directions, making it more and more diffuse. And if the surface is extremely rough and reflective, a lot of bounces will happen, until the ray exits the surface, making it diffuse in nature.
+
+We can evaluate the RTE over the microfacet's volume, bounded between upper and lower depth of the surface. The more bounces we simulate, the better the approximation becomes. Simulating it inside the volume via statistics is much cheaper than full raytracing per each facet, but still quite expensive considering the number of macrosurface intersections.
+
+Following (this paper)[https://eheitzresearch.wordpress.com/240-2/] we can simulate random walks in microfacet volumes, and evaluate the RTE at each step. We treat rays that exit the volume as contributing to overall BSDF, and others as part of the random walk.
+
+We still assume dielectric interactions for each microfacet, so the paper has only one relevant phase function for us.
+
+### Relevant microfacet distributions and functions
+
+Smith model and other stuff.
+
 # Anisotropic effects
 
 Materials may behave differently at some angles, when geometry is directionally correlated, elongating the specular highlight, for example when looking at machined surfaces.
