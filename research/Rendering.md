@@ -43,8 +43,6 @@ We may improve convergence speed by reprojecting on every bounce. Additionally i
 
 Also accuracy of reprojection greatly affects the quality.
 
-https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf
-https://blog.selfshadow.com/publications/s2015-shading-course/burley/s2015_pbs_disney_bsdf_notes.pdf
 ## Filtering
 
 We can filter out bad samples with exponential average, or based on some "quality" heuristic, like distance from the sample to target point.
@@ -60,7 +58,6 @@ By computing the face coverage for a particular pixel square, we could improve o
 https://www.reddit.com/r/GraphicsProgramming/s/h1GI7rb6nq
 
 
-https://onlinelibrary.wiley.com/doi/full/10.1111/j.1467-8659.2009.01674.x
 https://jcgt.org/published/0003/04/04/paper.pdf
 https://www.semanticscholar.org/paper/Real-time-multiply-recursive-reflections-and-using-Ganestam-Doggett/0c4cebce66ce22b9253b2674650eeeab4fae4879
 https://abasilak.github.io/papers/journals/eg2020star/paper.pdf
@@ -79,6 +76,18 @@ denoising
 https://alain.xyz/blog/ray-tracing-denoising
 https://www.reddit.com/r/GraphicsProgramming/s/Vm4LmWi3Dc
 https://www.reddit.com/r/GraphicsProgramming/s/enCyTAwmm0
+https://web.ece.ucsb.edu/~psen/Papers/Sen11_RandomParameterFiltering_LoRes.pdf
+https://cseweb.ucsd.edu/~viscomp/classes/cse274/wi18/papers/a18-sen.pdf
+https://perso.telecom-paristech.fr/boubek/papers/BCD/BCD_lowres.pdf
+https://web.ece.ucsb.edu/~psen/Papers/Sen15_DenoisingMCRenders.pdf
+https://people.engr.tamu.edu/nimak/Data/EG13_RemovingMCNoiseWithGeneralDenoising.pdf
+
+gradient domain rendering
+https://www.semanticscholar.org/paper/Lossless-Basis-Expansion-for-Gradient%E2%80%90Domain-Fang-Hachisuka/3a6618b2b68f8b7f3a7ae3bfc70126ee761ed297
+https://cs.uwaterloo.ca/~thachisu/lbegdr.pdf
+
+acceleration structures
+https://my.eng.utah.edu/~cs6958/papers/thesis_ize.pdf
 
 Importance Sampling: https://ameye.dev/notes/sampling-the-hemisphere/
 https://www.reddit.com/r/GraphicsProgramming/s/lw9OdJUSkF
@@ -123,13 +132,6 @@ https://en.wikipedia.org/wiki/Aitken%27s_delta-squared_process
 http://numbers.computation.free.fr/Constants/Miscellaneous/seriesacceleration.html
 
 https://graphics.stanford.edu/papers/veach_thesis/thesis.pdf
-
-bloom
-https://www.youtube.com/watch?v=QWqb5Gewbx8&ab_channel=AngeTheGreat
-
-lens flare
-https://resources.mpi-inf.mpg.de/lensflareRendering/pdf/flare.pdf
-https://www.youtube.com/watch?v=IbJfZS0o2kg&ab_channel=GameDevelopersConference
 
 panini projection
 http://tksharpless.net/vedutismo/Pannini/

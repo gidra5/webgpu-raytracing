@@ -94,6 +94,7 @@ result so far:
 ![[gmAofKkLc6.mp4]]
 
 depth peeling
+https://onlinelibrary.wiley.com/doi/full/10.1111/j.1467-8659.2009.01674.x
 https://www.microsoft.com/en-us/research/wp-content/uploads/2006/06/tr-2006-81.pdf
 https://diglib.eg.org/server/api/core/bitstreams/229ef198-d130-4142-bccf-9ac7cf7499ff/content
 https://highperformancegraphics.org/previous/www_2009/presentations/liu-bucket.pdf
@@ -159,15 +160,7 @@ https://research.nvidia.com/sites/default/files/pubs/2015-08_An-Adaptive-Acceler
 https://outerra.blogspot.com/2012/11/maximizing-depth-buffer-range-and.html
 https://community.khronos.org/t/linearize-the-depth-buffer/72335/8
 https://www.researchgate.net/publication/267453578_Fast_Data_Parallel_Radix_Sort_Implementation_in_DirectX_11_Compute_Shader_to_Accelerate_Ray_Tracing_Algorithms
-https://my.eng.utah.edu/~cs6958/papers/thesis_ize.pdf
 https://www.youtube.com/watch?v=AzXEao-WKRc&ab_channel=DantheMan
-https://www.semanticscholar.org/paper/Lossless-Basis-Expansion-for-Gradient%E2%80%90Domain-Fang-Hachisuka/3a6618b2b68f8b7f3a7ae3bfc70126ee761ed297
-https://cs.uwaterloo.ca/~thachisu/lbegdr.pdf
-https://web.ece.ucsb.edu/~psen/Papers/Sen15_DenoisingMCRenders.pdf
-https://people.engr.tamu.edu/nimak/Data/EG13_RemovingMCNoiseWithGeneralDenoising.pdf
-https://cseweb.ucsd.edu/~viscomp/classes/cse274/wi18/papers/a18-sen.pdf
-https://web.ece.ucsb.edu/~psen/Papers/Sen11_RandomParameterFiltering_LoRes.pdf
-https://perso.telecom-paristech.fr/boubek/papers/BCD/BCD_lowres.pdf
 
 Render 6 frustrums with cubemap for each one. Thats view cube
 Cubemaps store projections for each side of the frustrum.

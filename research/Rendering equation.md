@@ -1,65 +1,67 @@
+chatgpt'd
 The standard Rendering Equation has the following form:
 
 $$L\left(\omega_{o}\right)=\intop\nolimits_{H^2}\mathrm{f\left(\omega_{o},\omega_{i}\right)L\left(\omega_{i}\right)\cos\left(\omega_{i}\right)d}\omega_{i}$$
 where $\omega_{i}$ ranges over the sphere of directions around some point $x$
 
 It is a simplification of a more generic Radiative Transfer Equation (differential form):
-$$\omega\cdot\nabla L\left(\boldsymbol x,\omega\right)+\sigma_{t}\left(\boldsymbol x, \omega\right)L\left(\boldsymbol x,\omega\right)=V(\boldsymbol x,\omega)$$
-$$V(\boldsymbol x,\omega)=Q_{e}(\boldsymbol x,\omega)+\sigma_a(\boldsymbol x,\omega)Q_a\left(\boldsymbol x,\omega\right) +\sigma_{s}
-(\boldsymbol x, \omega)\intop\nolimits_{S^2} p\left(\boldsymbol x,\omega_{i}\to\omega\right)L\left(\boldsymbol x,\omega_{i}\right)\mathrm{d}\omega_{i}$$
+$$\omega\cdot\nabla L\left(\omega\right)+\sigma_{t}\left(\omega\right)L\left(\omega\right)=V(\omega)$$
+$$V(\omega)=Q_{e}(\omega)+\sigma_a(\omega)Q_a\left(\omega\right) +\sigma_{s}
+(\omega)\intop\nolimits_{S^2} p\left(\omega_{i}\to\omega\right)L\left(\omega_{i}\right)\mathrm{d}\omega_{i}$$
 Where
 * $\boldsymbol x$ is the ray origin
 * $\omega$ is the ray direction
-* $L(\boldsymbol x,\omega)$ the incoming radiance to the point $\boldsymbol x$ from the direction $\omega$
-* $Q_e(\boldsymbol x,\omega)$ is the emission of light at the point $\boldsymbol x$ in the direction $\omega$. A free parameter
-* $Q_a(\boldsymbol x,\omega)$ is the re-emission of absorbed light at the point $\boldsymbol x$ in the direction $\omega$. A free parameter
-* $p(\boldsymbol x,\omega_{i}\to\omega)$ is the phase function - probability density for scattering at the point $\boldsymbol x$ from the direction $\omega_{i}$ in the direction $\omega$. A free parameter
-* $\sigma_{a}(\boldsymbol x,\omega)$, $\sigma_{s}(\boldsymbol x,\omega)$, $\sigma_{t}(\boldsymbol x,\omega)=\sigma_{a}(\boldsymbol x,\omega)+\sigma_{s}(\boldsymbol x,\omega)$ are the absorption, scattering, and extinction coefficients respectively for a given point $\boldsymbol x$ along the direction $\omega$. All must be non-negative values. A free parameter
-* $V(\boldsymbol x,\omega)$ is a source term for the light coming from the point $\boldsymbol x$ in the direction $\omega$.
+* $L$ the incoming radiance from the direction $\omega$
+* $Q_e$ is the emission of light in the direction $\omega$
+* $Q_a$ is the re-emission of absorbed light in the direction $\omega$
+* $p$ is the phase function - probability density for scattering from the direction $\omega_{i}$ in the direction $\omega$
+* $\sigma_{a}$, $\sigma_{s}$, $\sigma_{t}=\sigma_{a}+\sigma_{s}$ are the absorption, scattering, and extinction coefficients respectively for a given point $\boldsymbol x$ along the direction $\omega$.
+* $V$ is a source term for the light coming from the direction $\omega$.
 
-The $p(\boldsymbol x,\omega_{i}\to\omega)$ must obey normalization constraint:
-$$\intop\nolimits_{S^2}p\left(x,\omega_{i}\to\omega\right)\mathrm{d}\omega_{}=1$$
+The $p$ must obey normalization constraint:
+$$\intop\nolimits_{S^2}p\left(\omega_{i}\to\omega\right)\mathrm{d}\omega_{}=1$$
 Radiative Transfer Equation in integral form:
 $$L\left(\boldsymbol x,\omega\right)=T(\boldsymbol x \to \boldsymbol x_{surf})L_{surf}(\boldsymbol x_{surf}, \omega)+\int_{0}^{t_{surf}}T\left(\boldsymbol x\to \boldsymbol x_{t}\right) V(\boldsymbol x,\omega)\mathrm{d}t$$
 Where $\boldsymbol x_{surf}$ and $\boldsymbol x_{t}$ are shorthands for $\boldsymbol x_{t}=\boldsymbol x+t\omega$ and $\boldsymbol x_{surf}=\boldsymbol x+t_{surf}\omega$, and $T\left(x\to x_{t}\right)$ is the following:
 $$T\left(x\to x_{t}\right)=e^{-\intop\nolimits_0^{t}\sigma_{t}\left(x_{u}, \omega\right)\mathrm{d}u}$$
-
-Free parameters are also parametrized by time (so could change over time). $t_{surf}$ is also a free term, since it entirely depends on the actual scene. Thus it is time-dependent as well.
-
 The $L_{surf}$ term is the one expressed in a standard rendering equation. But it is usually simplified to only consider reflected light. The exact form is as follows:
-$$L_{surf}\left(\boldsymbol x,\omega\right)=L_{e}(\boldsymbol x,\omega) + (1-\sigma_{r}
-(\boldsymbol x, \omega))Q_{surf}(\boldsymbol x,\omega)+\sigma_{r}
-(\boldsymbol x, \omega)\intop\nolimits_{S^2}f(\boldsymbol x,\omega_{i} \to \omega)L(\boldsymbol x,\omega_{i})(\boldsymbol n(\boldsymbol x)\cdot\omega_{i})\mathrm{d}\omega_{i}$$
+$$L_{surf}\left(\omega\right)=L_{e}(\omega) + (1-\sigma_{r}
+(\omega))Q_{surf}(\omega)+\sigma_{r}
+(\omega)\intop\nolimits_{S^2}f(\omega_{i} \to \omega)(\boldsymbol n\cdot\omega_{i})L(\omega_{i})\mathrm{d}\omega_{i}$$
 Where
 * $\boldsymbol x$ is the ray origin
 * $\omega$ is the ray direction
-* $L(\boldsymbol x,\omega)$ the incoming radiance to the point $\boldsymbol x$ from the direction $\omega$
-* $L_e(\boldsymbol x,\omega)$ the emitted radiance to the point $\boldsymbol x$ in the direction $\omega$
-* $\boldsymbol n(\boldsymbol x)$ is the normal of the surface at the point $\boldsymbol x$. A free parameter
-* $f(\boldsymbol x,\omega_{i}\to\omega)$ is the scattering function - probability density for scattering at the point $\boldsymbol x$ from the direction $\omega_{i}$ in the direction $\omega$. A free parameter
-* $Q_{surf}(\boldsymbol x,\omega)$ is the re-emitted absorbed light at the point $\boldsymbol x$ in the direction $\omega$. A free parameter
-* $\sigma_{r}(\boldsymbol x, \omega)$  is the absorption factor at the surface point $\boldsymbol x$ in the direction $\omega$. A free parameter
+* $L$ the incoming radiance from the direction $\omega$
+* $L_e$ the emitted radiance in the direction $\omega$
+* $\boldsymbol n$ is the normal of the surface.
+* $f$ is the bidirectional scattering distribution function - probability density for scattering from the direction $\omega_{i}$ in the direction $\omega$.
+* $Q_{surf}$ is the re-emitted absorbed light in the direction $\omega$.
+* $\sigma_{r}$  is the absorption factor in the direction $\omega$.
 
 The $f(\boldsymbol x,\omega_{i}\to\omega)$ must also obey normalization constraint:
-$$\intop\nolimits_{S^2}f\left(x,\omega_{i}\to\omega\right)(\boldsymbol n(\boldsymbol x)\cdot\omega_{i})\mathrm{d}\omega_{}=1$$
+$$\intop\nolimits_{S^2}f\left(\omega_{i}\to\omega\right)(\boldsymbol n\cdot\omega_{i})\mathrm{d}\omega_{}=1$$
 Since energy must be conserved, the following must hold:
-$$\sigma_{r}(x_{t}, \omega)\le1$$
+$$\sigma_{r}\le1$$
 
 Notice that the surface point is explicit and integration domain is the whole sphere of directions.
 For simplicity sake, we could omit the parameters for each of the functions to simplify equations visually. If unclear assume we refer to the equations above.
 
-The $f$ function is the BSDF we usually use in computation.
+All the equations above are also parametrized by time, ray origin and wavelength. Only parameters relevant for the un-ambiguation of the equation are written, others are implicitly passed through.
+$t_{surf}$ is the boundary condition for the surface hit of a ray and entirely depends on the actual scene. 
 # Reciprocity
-
+chatgpt'd
 It is a common assumption that it does not matter in which direction we measure light - from camera to light or the other way.
-There are only two functions that depend both on incoming and outgoing light directions - $p(\boldsymbol x,\omega_{i}\to\omega)$ and $f(\boldsymbol x,\omega\to\omega_{i})$. Thus we impose additional constraints on these functions:
-$$p\left(\boldsymbol x,\omega_{i}\to\omega\right)=p\left(\boldsymbol x,\omega\to\omega_{i}\right)$$
-$$f\left(\boldsymbol x,\omega_{i}\to\omega\right)=f\left(\boldsymbol x,\omega\to\omega_{i}\right)$$
+There are only two functions that depend both on incoming and outgoing light directions - $p(\omega_{i}\to\omega)$ and $f(\omega\to\omega_{i})$. Thus we impose additional constraints on these functions:
+$$\sigma_s(\omega_i)p\left(\omega_{i}\to\omega\right)=\sigma_s(\omega)p\left(\omega\to\omega_{i}\right)$$
+$$\sigma_r(\omega_i)f\left(\omega_{i}\to\omega\right)=\sigma_r(\omega)f\left(\omega\to\omega_{i}\right)$$
 # BSDF
 
 We define BSDF as the function that describes radiance transfer across a surface boundary. It describes how much light is reflected or exits from inside the object between an incoming and outgoing directions.
-### Dielectrics and conductors
 
+https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf
+https://blog.selfshadow.com/publications/s2015-shading-course/burley/s2015_pbs_disney_bsdf_notes.pdf
+### Dielectrics and conductors
+chatgpt'd
 We use the research dielectrics and conductors as the base for any other materials. So we assume that any material is a mixture of such materials and local geometric properties of the surface.
 
 They are described by an index of refraction (IoR), which is a complex number $\eta(x, \omega, \lambda)=n+ik$. If $k$ is zero, then it is considered a dielectric, otherwise a conductor. $k$ represents absorption rate of the material.
@@ -96,11 +98,26 @@ r_{s,p}^2 &=\left|\frac{a-ib}{a+ib}\right|^2=\left|\frac{\left(a-ib\right)^2}{a^
 Thus, in a case of perfectly smooth surface, BSDF is as follows:
 $$f_{s}\left(x,\omega_{i}\to\omega_{o},\lambda\right)=R\left(\lambda,\omega_{i}, n\right)\delta(\omega_o-reflect\left(\omega_{i},n\right))+T_{BSDF}\left(\lambda,\omega_{i}, n\right)\delta(\omega_o-refract(\omega_{i}, \eta(x, \omega_{i}, \lambda), n))$$
 ### Absorption
-
+chatgpt'd
 The absorption rate can be expressed in terms of $k$:
 $$\sigma_a=\frac{4\pi k}{\lambda}$$
 It is not unphysical if we also include explicit surface reemission, as long as we scale it down proportional to absorption coefficient. That way, whatever reemission happens due to volumetric absorption, it is not double counted.
-# Microfacet theory
+
+# Phase function
+chatgpt'd
+Phase function is the basis for volumetric rendering, since it describes generically how the light scatters in a volume.
+For phase function there isn't any good "universal" model. The most precise formulation for the phase function is given by Mie theory, which requires high computational resources.
+We describe participating media by particle radius $a$ and complex refractive index $n$.
+If we assume particles to be much smaller than wavelength, we get Rayleigh scattering:
+$$\sigma_s(\lambda)=\frac{8\pi^3a^6|n^2-1|^2}{3\lambda^4|n^2+2|^2}$$
+$$p(\omega_i\to\omega)=\frac{3}{16\pi}(1+(\omega_i\cdot\omega)^2)$$
+
+# Microgeometry
+While general RTE fully describes the radiance, it is unfeasible to render the micro details of objects. Besides unpracticality, such fine details are also imperceivable, since all of the detail is in a single pixel area, which is averaged in the final render. Thus it is a great place for statistical methods that describe microgeometry properties statistically.
+In that case for every sample point $x$ we evaluate a statistical model of properties in an infinitesimal volume at that point, which simulates averaged result of fine details in both participating media and surface. 
+There were developed two theories that give tools to handle both cases.
+Together with broad scattering simulated in raytracing directly, it gives a complete description of radiance in the scene.
+## Microfacet theory
 
 The fresnel terms define reflection and transmission for ideal smooth surfaces. But that misses the imperfection of real world. Lets define a map from surface coords to world coords $H: R^2\to R^3$. If we assume that for a local patch $A$ the function $H$ is a heightmap, we can apply microfacet theory.
 
@@ -184,17 +201,33 @@ D(m)G(m)dm\\
 https://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf
 
 Note that the G term is computationally complex and also misses the secondary bounces. Basically we would want to evaluate the complete RTE for each microfacet, instead of two generic functions.
-
-# Multibounce microfacets
+## Microflake theory
+particle density $\sigma_p$
+albedo $\alpha$
+NDF $D$
+$$\sigma_a(\omega)=\sigma_p(1-\alpha)\intop\nolimits_{S^2}(m\cdot \omega)D(m)dm$$
+$$\sigma_s(\omega)=\sigma_p\alpha\intop\nolimits_{S^2}(m\cdot \omega)D(m)dm$$
+$$\rho(\omega_i\to\omega)=\frac{\alpha}{\sigma_s(\omega_i)}D(\frac{\omega_i+\omega}{|\omega_i+\omega|})D(-\frac{\omega_i+\omega}{|\omega_i+\omega|})$$
+https://cseweb.ucsd.edu/~tzli/cse272/wi2023/lectures/11_microflake.pdf
+## Multibounce microfacets
 
 Fresnel equations and microfacets by themselves can't entirely approximate diffuse light, and I'm not even talking about approximating the rendering equation's output in its entirety. Diffuse light models absolute randomness in scattering distribution, making both $\omega_i$ and $\omega_o$ irrelevant.
 When light bounces multiple times, it decorrelates $\omega_i$ and $\omega_o$ directions, making it more and more diffuse. And if the surface is extremely rough and reflective, a lot of bounces will happen, until the ray exits the surface, making it diffuse in nature.
 
 We can evaluate the RTE over the microfacet's volume, bounded between upper and lower depth of the surface. The more bounces we simulate, the better the approximation becomes. Simulating it inside the volume via statistics is much cheaper than full raytracing per each facet, but still quite expensive considering the number of macrosurface intersections.
 
-Following (this paper)[https://eheitzresearch.wordpress.com/240-2/] we can simulate random walks in microfacet volumes, and evaluate the RTE at each step. We treat rays that exit the volume as contributing to overall BSDF, and others as part of the random walk.
+Following [this paper](https://eheitzresearch.wordpress.com/240-2/) we can simulate random walks in microfacet volumes, and evaluate the RTE at each step. We treat rays that exit the volume as contributing to overall BSDF, and others as part of the random walk.
 
-We still assume dielectric interactions for each microfacet, so the paper has only one relevant phase function for us.
+visible normal distribution function $D_\omega$:
+$$D_{\omega}(n)=\frac{(\omega\cdot n)D(n)}{\cos\theta(1+\Lambda(\omega))}$$
+Generic phase function:
+$$
+p(\omega_i\to\omega, n)=\intop\nolimits_{H}f(m, \omega_i\to\omega)(\omega\cdot m)D_{\omega_i}(m)dm
+$$
+
+We still assume dielectric interactions for each microfacet, so the paper has only one relevant phase function for us:
+
+$$p(\omega_i\to\omega, n)=\frac{RD_{\omega_i}(h_r)}{4|\omega_i\cdot h_r|} + (\omega\cdot n)\frac{\eta_o^2TD_{\omega_i}(h_t)}{(\eta_i(\omega_i\cdot h_t)+\eta_o(\omega_o\cdot h_t))^2}$$
 
 ### Relevant microfacet distributions and functions
 
@@ -209,15 +242,16 @@ Materials may behave differently at some angles, when geometry is directionally 
 We can describe surface of objects as a layered materials with depth $d$. Each material is modeled with its own BSDF, which are then composed into a single function.
 
 # Diffraction
-
+chatgpt'd
 Happens due to wavelength-scale details in surface. For a thin layer, we get phase delay:
 $$\delta(\lambda, d, \eta, \theta_t)=\frac{4\pi\ \eta\ d \cos \theta_t}{\lambda }$$
 They scale polarized reflection and refraction as follows:
 
 $$r'=\frac{r_1+r_2e^{2i\delta}}{1+r_1 r_2e^{2i\delta}}$$
 where $r_1$ and $r_2$ are the entry and exit values for fresnel terms.
-# Emission
 
+# Emission
+chatgpt'd
 If we want to be even more physically accurate, we can define the $L_e$ and $Q$ functions based on thermal equilibrium or radiative equilibrium, which is "the total thermal radiation leaving an object is equal to the total thermal radiation entering it". Thus we can define them as follows:
 $$Q_a=B_{\lambda}\left(T\right)$$
 $$Q_{surf}=B_{\lambda}\left(T\right)$$
@@ -254,26 +288,49 @@ In the same manner is defined a surface re-emission term:
 $$Q_{surf}=(1-\eta_s)B_{\lambda}(T)+\eta_s\intop\nolimits_{S^2}(n\cdot\omega)f_eLd\omega$$
 
 
-# Eye photosensitivity
 
-Our definitions are wavelength-dependent, but our eyes have a different response for each of the wavelengths. Thus before displaying the radience field must be convolved with the response curves for R, G, and B of our eyes, to get corresponding intensities.
+# Camera image rendering
+Overall
+Integrate over "sensor" area
+Integrate over aperture
+Integrate over exposure time
+Integrate over wavelengths (importance sample by photosensitivity)
+Convert collected intensities for each wavelength to rgb
+### Eye photosensitivity
 
-# Effects covered
+Our definitions are wavelength-dependent, but our eyes have a different response for each of the wavelengths. Thus before displaying we need to compute the response for R, G, and B of our eyes.
+Given some intensity distribution $L(\lambda)$, we need to compute spectral power distribution $S(\lambda)$ with the following formula:
+chatgpt'd
+$$S(\lambda)=\int_{A}\int_{\Omega} L(x,\omega,\lambda)(\omega\cdot n)d\omega dx$$
+Where $A$ is the area of the pixel, $\Omega$ is aperture area, and $n$ is the direction of view.
 
-Covered:
-- Matte to glossy reflection (iso/anisotropic), polished/brushed metals.
-- Clearcoat & general multilayer stacks (absorption, rough-on-rough, base BSDFs).
-- Rough transmission (frosted/etched glass), thin colored films.
-- Retroreflection (beads/corner cubes) via normalized vMF lobe.
-- Subsurface scattering (diffusion or random-walk).
-- Participating media: fog, haze, godrays, atmospheric scattering, Sea foam, breaking waves?
-- Environment & area lights, soft shadows (via NEE/MIS).
-- Blackbody light emission
-- Photolumineshence
-- Dusty, wet, shimmery materials
+Then we can compute RGB response with $\overline{r}\left(\lambda\right)$, $\overline{b}\left(\lambda\right)$, $\overline{b}\left(\lambda\right)$ functions that correspond to sensor response of each color sensor:
+$$R=\int_0^{\infty}S(\lambda)\overline{r}\left(\lambda\right)d\lambda$$
+$$G=\int_0^{\infty}S(\lambda)\overline{g}\left(\lambda\right)d\lambda$$
+$$B=\int_0^{\infty}S(\lambda)\overline{b}\left(\lambda\right)d\lambda$$
+The $\overline{r}\left(\lambda\right)$, $\overline{b}\left(\lambda\right)$, $\overline{b}\left(\lambda\right)$ functions itself are normalized to have equal area:
+$$\int_0^{\infty}\overline{r}\left(\lambda\right)d\lambda=\int_0^{\infty}\overline{g}\left(\lambda\right)d\lambda=\int_0^{\infty}\overline{b}\left(\lambda\right)d\lambda$$
+These function can be approximated through XYZ color space as a mixture of two-sided Gaussians $g$:
+$$\tau(x,\mu,\tau_1,\tau_2)=\begin{cases}
+    \tau_1 & \text{if } x<\mu \\
+    \tau_2 & \text{otherwise}
+\end{cases}$$
+$$g(x,\mu,\tau_1,\tau_2)=e^{-\frac{\tau^2(x-\mu)^2}{2}}$$
+$$\begin{aligned}\overline{x}\left(\lambda\right)&=1.056g(\lambda,599.8,0.0264,0.0323)\\
+&+0.362g(\lambda,422,0.0624,0.0374)\\
+&-0.065g(\lambda,501.1,0.049,0.0382)\end{aligned}$$
+$$\overline{y}\left(\lambda\right)=0.821g(\lambda,568.8,0.0213,0.0247)+0.286g(\lambda,530.9,0.0613,0.0322)$$
+$$\overline{z}\left(\lambda\right)=1.217g(\lambda,437,0.0845,0.0278)+0.681g(\lambda,459,0.0385,0.0725)$$
+$$\left[\array{r\cr g\cr b}\right]=\left[\matrix{0.49 & 0.31 & 0.2\cr 0.17697 & 0.8124 & 0.01063\cr 0 & 0 & 0.99}\right]^{-1}\left[\array{x\cr y\cr z}\right]$$
+![[chrome_VOI1ndezrZ_1758182559.png]]
+https://youtu.be/wA1KVZ1eOuA?si=vBoEcSDCgD2pVAGd
+https://en.wikipedia.org/wiki/CIE_1931_color_space
 
-Not covered:
-- Full **spectral dispersion**, thin-film interference color fringing, **polarization** (our base is RGB, unpolarized).    
-- **Fluorescence/phosphorescence**, bioluminescence (wavelength-shift effects).    
-- Coherent wave optics (diffraction, speckle).    
-- Non-local texture appearance (true BTF/BRDF-field) unless provided as measured data.
+We also need inverse transformations to transform a material color into spectral reflectance distribution.
+### Motion blur
+In addition to sensor area, aperture and wavelength integrals required for wavelength-to-rgb conversion for a camera, we also need to integrate over exposure time to get motion blur effects, and... well... total exposure.
+### Lens flare
+https://resources.mpi-inf.mpg.de/lensflareRendering/pdf/flare.pdf
+https://www.youtube.com/watch?v=IbJfZS0o2kg&ab_channel=GameDevelopersConference
+### Bloom
+https://www.youtube.com/watch?v=QWqb5Gewbx8&ab_channel=AngeTheGreat
