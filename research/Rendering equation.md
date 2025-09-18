@@ -334,3 +334,36 @@ https://resources.mpi-inf.mpg.de/lensflareRendering/pdf/flare.pdf
 https://www.youtube.com/watch?v=IbJfZS0o2kg&ab_channel=GameDevelopersConference
 ### Bloom
 https://www.youtube.com/watch?v=QWqb5Gewbx8&ab_channel=AngeTheGreat
+
+
+iridescence
+https://hal.science/hal-01518344/file/paper-small%20%281%29.pdf
+
+layered materials
+https://hal.science/hal-01785457/document
+
+glints
+https://cseweb.ucsd.edu/~ravir/glints.pdf
+https://rgl.epfl.ch/publications/Zeltner2020Specular
+https://igg.unistra.fr/People/chermain/real_time_glint/
+https://rgl.epfl.ch/publications/Loubet2020Slope
+
+fiber rendering
+https://dl.acm.org/doi/pdf/10.1145/3023368.3023372
+
+fur rendering
+http://kunzhou.net/2013/fur-rendering-tvcg.pdf
+
+area light source
+https://eheitzresearch.wordpress.com/415-2/
+
+gradient domain
+https://mediatech.aalto.fi/publications/graphics/GPT/
+https://mediatech.aalto.fi/publications/graphics/GMLT/
+
+subsurface scattering
+https://users.cg.tuwien.ac.at/zsolnai/wp/wp-content/uploads/2014/12/ssss.pdf
+
+metropolis
+https://graphics.stanford.edu/papers/metro/
+https://users.cg.tuwien.ac.at/zsolnai/gfx/adaptive_metropolis/
