@@ -1,4 +1,5 @@
 chatgpt'd
+https://www.pbr-book.org/4ed/Light_Transport_II_Volume_Rendering/The_Equation_of_Transfer
 The standard Rendering Equation has the following form:
 
 $$L\left(\omega_{o}\right)=\intop\nolimits_{H^2}\mathrm{f\left(\omega_{o},\omega_{i}\right)L\left(\omega_{i}\right)\cos\left(\omega_{i}\right)d}\omega_{i}$$
@@ -21,9 +22,15 @@ Where
 The $p$ must obey normalization constraint:
 $$\intop\nolimits_{S^2}p\left(\omega_{i}\to\omega\right)\mathrm{d}\omega_{}=1$$
 Radiative Transfer Equation in integral form:
-$$L\left(\boldsymbol x,\omega\right)=T(\boldsymbol x \to \boldsymbol x_{surf})L_{surf}(\boldsymbol x_{surf}, \omega)+\int_{0}^{t_{surf}}T\left(\boldsymbol x\to \boldsymbol x_{t}\right) V(\boldsymbol x,\omega)\mathrm{d}t$$
-Where $\boldsymbol x_{surf}$ and $\boldsymbol x_{t}$ are shorthands for $\boldsymbol x_{t}=\boldsymbol x+t\omega$ and $\boldsymbol x_{surf}=\boldsymbol x+t_{surf}\omega$, and $T\left(x\to x_{t}\right)$ is the following:
+$$L\left(\boldsymbol x,\omega\right)=T(\boldsymbol x \to \boldsymbol x_{surf})L_{surf}(\boldsymbol x_{surf}, \omega)+\int_{0}^{t_{surf}}T\left(\boldsymbol x\to \boldsymbol x_{t}\right) V(\boldsymbol x_t,\omega)\mathrm{d}t$$
+Where $\boldsymbol x_{surf}$ and $\boldsymbol x_{t}$ are shorthands for $\boldsymbol x_{t}=\boldsymbol x+t\omega$ and $\boldsymbol x_{surf}=\boldsymbol x+t_{surf}\omega$, and trasmittance $T\left(x\to x_{t}\right)$ is the following:
+https://www.pbr-book.org/4ed/Volume_Scattering/Transmittance
 $$T\left(x\to x_{t}\right)=e^{-\intop\nolimits_0^{t}\sigma_{t}\left(x_{u}, \omega\right)\mathrm{d}u}$$
+It also satisfies some properties such as:
+$$T(x\to x)=1$$
+$$T(x\to z)=T(x\to y)T(y\to z)$$
+$$T(x\to z)=T(z\to x)$$
+
 The $L_{surf}$ term is the one expressed in a standard rendering equation. But it is usually simplified to only consider reflected light. The exact form is as follows:
 $$L_{surf}\left(\omega\right)=L_{e}(\omega) + (1-\sigma_{r}
 (\omega))Q_{surf}(\omega)+\sigma_{r}
@@ -48,6 +55,7 @@ For simplicity sake, we could omit the parameters for each of the functions to s
 
 All the equations above are also parametrized by time, ray origin and wavelength. Only parameters relevant for the un-ambiguation of the equation are written, others are implicitly passed through.
 $t_{surf}$ is the boundary condition for the surface hit of a ray and entirely depends on the actual scene. 
+https://graphics.stanford.edu/papers/veach_thesis/thesis.pdf
 # Reciprocity
 chatgpt'd
 It is a common assumption that it does not matter in which direction we measure light - from camera to light or the other way.
@@ -56,6 +64,7 @@ $$\sigma_s(\omega_i)p\left(\omega_{i}\to\omega\right)=\sigma_s(\omega)p\left(\om
 $$\sigma_r(\omega_i)f\left(\omega_{i}\to\omega\right)=\sigma_r(\omega)f\left(\omega\to\omega_{i}\right)$$
 # BSDF
 
+https://blog.demofox.org/2020/05/25/casual-shadertoy-path-tracing-1-basic-camera-diffuse-emissive/
 We define BSDF as the function that describes radiance transfer across a surface boundary. It describes how much light is reflected or exits from inside the object between an incoming and outgoing directions.
 
 https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf
@@ -105,12 +114,25 @@ It is not unphysical if we also include explicit surface reemission, as long as 
 
 # Phase function
 chatgpt'd
+https://www.pbr-book.org/4ed/Volume_Scattering/Phase_Functions
+https://en.wikipedia.org/wiki/Rayleigh_scattering
+https://en.wikipedia.org/wiki/Anomalous_diffraction_theory
+https://miepython.readthedocs.io/en/v2.3.1/01_basics.html
+https://drive.google.com/file/d/1xIU8YB-R6iS2JHanA9v9P-3WbmqALxfe/view
 Phase function is the basis for volumetric rendering, since it describes generically how the light scatters in a volume.
-For phase function there isn't any good "universal" model. The most precise formulation for the phase function is given by Mie theory, which requires high computational resources.
+For phase function there isn't any universal and simple model. The most precise formulation for the phase function is given by Mie theory, which requires high computational resources.
 We describe participating media by particle radius $a$ and complex refractive index $n$.
 If we assume particles to be much smaller than wavelength, we get Rayleigh scattering:
-$$\sigma_s(\lambda)=\frac{8\pi^3a^6|n^2-1|^2}{3\lambda^4|n^2+2|^2}$$
-$$p(\omega_i\to\omega)=\frac{3}{16\pi}(1+(\omega_i\cdot\omega)^2)$$
+$$\sigma_s(\lambda)=\left(\frac{2\pi}{\lambda}\right)^4\frac{8\pi a^6|n^2-1|^2}{3|n^2+2|^2}$$
+$$p(\omega_i\to\omega)=\frac{3}{4\pi}(1+(\omega_i\cdot\omega)^2)$$
+For particles larger or at the order of wavelength we would need to evaluate Mie equations. Instead we can get arbitrarily close approximation with a weighted sum:
+$$p=\sum_{i=1}^{n}w_ip_i,\ \sum_{i=1}^{n}w_i=1$$
+$$p_i(\omega_i\to\omega)=\frac{1}{4\pi}\frac{1-g_i^2}{(1+g_i^2+2g_i(\omega_i\cdot \omega))^{3/2}}$$
+where $g\in[-1,1]$ is the asymmetry parameter. This is called Henyey–Greenstein model. $g$ actually has a formula:
+$$g=\int_{S^2}p(-\omega_i\to\omega)(\omega_i\cdot \omega)d\omega$$
+
+We could also introduce a phase shift $\varphi$, which would represent an off-ray preferred direction.
+$$p_i(\omega_i\to\omega)=\frac{1}{4\pi}\frac{1-g_i^2}{(1+g_i^2+2g_i\cos(acos(\omega_i\cdot \omega)-\varphi))^{3/2}}$$
 
 # Microgeometry
 While general RTE fully describes the radiance, it is unfeasible to render the micro details of objects. Besides unpracticality, such fine details are also imperceivable, since all of the detail is in a single pixel area, which is averaged in the final render. Thus it is a great place for statistical methods that describe microgeometry properties statistically.
@@ -119,6 +141,8 @@ There were developed two theories that give tools to handle both cases.
 Together with broad scattering simulated in raytracing directly, it gives a complete description of radiance in the scene.
 ## Microfacet theory
 
+https://d1qx31qr3h6wln.cloudfront.net/publications/microfacet-theory-non-uniform-heightfields_1.pdf
+https://www.pbr-book.org/4ed/Reflection_Models/Roughness_Using_Microfacet_Theory
 The fresnel terms define reflection and transmission for ideal smooth surfaces. But that misses the imperfection of real world. Lets define a map from surface coords to world coords $H: R^2\to R^3$. If we assume that for a local patch $A$ the function $H$ is a heightmap, we can apply microfacet theory.
 
 We define geometric surface properties as a combination of two functions $D(x,h, \lambda, n, t)$ and $G(x,\omega_i,\omega_o,\lambda, n, t)$, the Normal Distribution Function, and masking-shadowing function. The parameters $n$ and $t$ are the geometric normal and tangent vectors, $h$ is a normal that would reflect/refract the $\omega_i$ into $\omega_o$, also called a half-vector.  Together these allow modelling a single scattering event at the surface.
@@ -238,11 +262,15 @@ Smith model and other stuff.
 Materials may behave differently at some angles, when geometry is directionally correlated, elongating the specular highlight, for example when looking at machined surfaces.
 
 # Layered Materials
-
+https://www.pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF
+https://www.pbr-book.org/4ed/Light_Transport_II_Volume_Rendering/Scattering_from_Layered_Materials
+https://dl.acm.org/doi/10.1145/2601097.2601139
 We can describe surface of objects as a layered materials with depth $d$. Each material is modeled with its own BSDF, which are then composed into a single function.
 
 # Diffraction
 chatgpt'd
+https://eugenedeon.com/
+https://ssteinberg.xyz/2024fsdbsdf/steinberg2024_fsd_paper.pdf
 Happens due to wavelength-scale details in surface. For a thin layer, we get phase delay:
 $$\delta(\lambda, d, \eta, \theta_t)=\frac{4\pi\ \eta\ d \cos \theta_t}{\lambda }$$
 They scale polarized reflection and refraction as follows:
@@ -292,12 +320,15 @@ $$Q_{surf}=(1-\eta_s)B_{\lambda}(T)+\eta_s\intop\nolimits_{S^2}(n\cdot\omega)f_e
 # Camera image rendering
 Overall
 Integrate over "sensor" area
+Sum over lenses
 Integrate over aperture
 Integrate over exposure time
 Integrate over wavelengths (importance sample by photosensitivity)
+Apply bloom (diffraction pattern)
 Convert collected intensities for each wavelength to rgb
 ### Eye photosensitivity
 
+https://larswander.com/writing/spectral-ray-tracing/
 Our definitions are wavelength-dependent, but our eyes have a different response for each of the wavelengths. Thus before displaying we need to compute the response for R, G, and B of our eyes.
 Given some intensity distribution $L(\lambda)$, we need to compute spectral power distribution $S(\lambda)$ with the following formula:
 chatgpt'd
@@ -327,14 +358,31 @@ https://youtu.be/wA1KVZ1eOuA?si=vBoEcSDCgD2pVAGd
 https://en.wikipedia.org/wiki/CIE_1931_color_space
 
 We also need inverse transformations to transform a material color into spectral reflectance distribution.
+
+### Antialiasing
+https://www.iryoku.com/aacourse/
+https://www.reddit.com/r/GraphicsProgramming/s/f26q2kQi56
+### Depth of field
+https://blog.demofox.org/2018/07/04/pathtraced-depth-of-field-bokeh/
 ### Motion blur
 In addition to sensor area, aperture and wavelength integrals required for wavelength-to-rgb conversion for a camera, we also need to integrate over exposure time to get motion blur effects, and... well... total exposure.
+https://raytracing.github.io/books/RayTracingTheNextWeek.html#motionblur
 ### Lens flare
 https://resources.mpi-inf.mpg.de/lensflareRendering/pdf/flare.pdf
 https://www.youtube.com/watch?v=IbJfZS0o2kg&ab_channel=GameDevelopersConference
 ### Bloom
 https://www.youtube.com/watch?v=QWqb5Gewbx8&ab_channel=AngeTheGreat
+### Tonemapping
+https://bruop.github.io/tonemapping/
+### Projections
 
+panini projection
+http://tksharpless.net/vedutismo/Pannini/
+https://www.scribd.com/document/284463081/The-General-Panini-Projection
+https://www.researchgate.net/publication/220795340_Pannini_A_New_Projection_for_RenderingWide_Angle_Perspective_Images
+
+[(PDF) Essential Ray Generation Shaders](https://www.researchgate.net/publication/354065227_Essential_Ray_Generation_Shaders)
+# more
 
 iridescence
 https://hal.science/hal-01518344/file/paper-small%20%281%29.pdf
@@ -348,22 +396,9 @@ https://rgl.epfl.ch/publications/Zeltner2020Specular
 https://igg.unistra.fr/People/chermain/real_time_glint/
 https://rgl.epfl.ch/publications/Loubet2020Slope
 
-fiber rendering
-https://dl.acm.org/doi/pdf/10.1145/3023368.3023372
-
-fur rendering
+fur and hair rendering
 http://kunzhou.net/2013/fur-rendering-tvcg.pdf
-
-area light source
-https://eheitzresearch.wordpress.com/415-2/
-
-gradient domain
-https://mediatech.aalto.fi/publications/graphics/GPT/
-https://mediatech.aalto.fi/publications/graphics/GMLT/
+https://www.pbr-book.org/4ed/Reflection_Models/Scattering_from_Hair
 
 subsurface scattering
 https://users.cg.tuwien.ac.at/zsolnai/wp/wp-content/uploads/2014/12/ssss.pdf
-
-metropolis
-https://graphics.stanford.edu/papers/metro/
-https://users.cg.tuwien.ac.at/zsolnai/gfx/adaptive_metropolis/

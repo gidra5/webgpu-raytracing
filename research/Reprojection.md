@@ -219,3 +219,9 @@ dSn ~= dSn-1 + 1/(n-1)*dSn-1
 ```
 
 Lets say we had an object transform, such that point at (x,y) now appears at (u,v) along a direction w. We can reproject with a factor that account for attenuation due to closer proximity, by computing (u,v) by combining the scene transform, initial (x, y) and the direction w along which we measure change. In the same fasion as camera reprojection, we can compare face ids or distances to cutoff dissocclusion artifacts.
+
+
+https://www.semanticscholar.org/paper/Reflection-reprojection-using-temporal-coherence-Xie-Wang/0e7b582861fa33602801cec66d0908030f47249a
+
+https://www.semanticscholar.org/paper/The-real-time-reprojection-cache-Nehab-Sander/c0d92df2423e643bb78c939b9136f7807c464f95
+https://www.semanticscholar.org/paper/Accelerating-real-time-shading-with-reverse-caching-Nehab-Sander/ba59d37ae22053962d75762590a97e75fcb75977

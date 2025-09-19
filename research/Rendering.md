@@ -43,54 +43,11 @@ We may improve convergence speed by reprojecting on every bounce. Additionally i
 
 Also accuracy of reprojection greatly affects the quality.
 
-## Filtering
-
-We can filter out bad samples with exponential average, or based on some "quality" heuristic, like distance from the sample to target point.
-
-conservative rendering:
-https://developer.nvidia.com/gpugems/gpugems2/part-v-image-oriented-computing/chapter-42-conservative-rasterization
-https://github.com/andrewlowndes/perfect-antialiasing/tree/main
-
-we can render multiple faces of the clip space cube, to fix low sample rate at grazing angles. Expensive memory-wise.
-We could also fix edge sampling error, if we use the face coverage for a square we are sampling inside.
-By computing the face coverage for a particular pixel square, we could improve our texture sampling accuracy, when pixel covers multiple faces, like on edges.
-
 https://www.reddit.com/r/GraphicsProgramming/s/h1GI7rb6nq
 
-
-https://jcgt.org/published/0003/04/04/paper.pdf
 https://www.semanticscholar.org/paper/Real-time-multiply-recursive-reflections-and-using-Ganestam-Doggett/0c4cebce66ce22b9253b2674650eeeab4fae4879
-https://abasilak.github.io/papers/journals/eg2020star/paper.pdf
-http://graphics.cs.aueb.gr/graphics/docs/papers/IRT-i3D2016-av.pdf
-https://abasilak.github.io/papers/journals/vc2020/paper.pdf
-https://publications.lib.chalmers.se/records/fulltext/193772/193772.pdf
-https://www.semanticscholar.org/paper/The-real-time-reprojection-cache-Nehab-Sander/c0d92df2423e643bb78c939b9136f7807c464f95
-https://www.semanticscholar.org/paper/Accelerating-real-time-shading-with-reverse-caching-Nehab-Sander/ba59d37ae22053962d75762590a97e75fcb75977
-https://www.semanticscholar.org/paper/Real-time-multiply-recursive-reflections-and-using-Ganestam-Doggett/0c4cebce66ce22b9253b2674650eeeab4fae4879?sort=relevance&page=2
-https://www.semanticscholar.org/paper/Reflection-reprojection-using-temporal-coherence-Xie-Wang/0e7b582861fa33602801cec66d0908030f47249a
 https://www.semanticscholar.org/paper/Generating-exact-ray-traced-animation-frames-by-Adelson-Hodges/987c5e122a777efe3fb997caa88dda5ae48477c7
-https://www.semanticscholar.org/paper/Practical-approach-to-the-fast-Monte-Carlo-Gruzdev-Frolov/255f93658617156c20f54cb9f0dc6b4b8c84dcb6
-https://cgg.mff.cuni.cz/~wilkie/Website/EGSR_14_files/WNDWH14HWSS.pdf
 
-denoising
-https://alain.xyz/blog/ray-tracing-denoising
-https://www.reddit.com/r/GraphicsProgramming/s/Vm4LmWi3Dc
-https://www.reddit.com/r/GraphicsProgramming/s/enCyTAwmm0
-https://web.ece.ucsb.edu/~psen/Papers/Sen11_RandomParameterFiltering_LoRes.pdf
-https://cseweb.ucsd.edu/~viscomp/classes/cse274/wi18/papers/a18-sen.pdf
-https://perso.telecom-paristech.fr/boubek/papers/BCD/BCD_lowres.pdf
-https://web.ece.ucsb.edu/~psen/Papers/Sen15_DenoisingMCRenders.pdf
-https://people.engr.tamu.edu/nimak/Data/EG13_RemovingMCNoiseWithGeneralDenoising.pdf
-
-gradient domain rendering
-https://www.semanticscholar.org/paper/Lossless-Basis-Expansion-for-Gradient%E2%80%90Domain-Fang-Hachisuka/3a6618b2b68f8b7f3a7ae3bfc70126ee761ed297
-https://cs.uwaterloo.ca/~thachisu/lbegdr.pdf
-
-acceleration structures
-https://my.eng.utah.edu/~cs6958/papers/thesis_ize.pdf
-
-Importance Sampling: https://ameye.dev/notes/sampling-the-hemisphere/
-https://www.reddit.com/r/GraphicsProgramming/s/lw9OdJUSkF
 Assets: https://polyhaven.com/
 https://gabrielgambetta.com/computer-graphics-from-scratch/05-extending-the-raytracer.html
 You can check if neighboring pixels are occluded, and check that object first, assuming that for most rays they will hit the same object/triangle as the neighbor.
@@ -100,43 +57,7 @@ what we basically want is to find representative sample in the geometry buffer, 
 https://wickedengine.net/2022/05/derivatives-in-compute-shader/
 derivatives in compute shader, can be used for anisotropic filtering there.
 
-https://blog.demofox.org/2020/05/25/casual-shadertoy-path-tracing-1-basic-camera-diffuse-emissive/
-
 https://fgiesen.wordpress.com/2011/07/09/a-trip-through-the-graphics-pipeline-2011-index/
-
-Using matrices to compute further bounces:
-https://bartwronski.com/2022/02/15/light-transport-matrices-svd-spectral-analysis-and-matrix-completion/
-https://getcode.substack.com/p/massively-parallel-fun-with-gpus
-
-Antialiasing:
-https://www.iryoku.com/aacourse/
-https://www.reddit.com/r/GraphicsProgramming/s/f26q2kQi56
-
-depth of field:
-https://blog.demofox.org/2018/07/04/pathtraced-depth-of-field-bokeh/
-
-importance sampling advances
-https://arxiv.org/pdf/2102.05407
-https://math.arizona.edu/~tgk/mc/book_chap6.pdf
-https://developer.nvidia.com/gpugems/gpugems3/part-iii-rendering/chapter-20-gpu-based-importance-sampling
-https://jcgt.org/published/0014/01/08/paper.pdf
-https://dl.acm.org/doi/abs/10.1145/1015706.1015750
-https://arxiv.org/html/2504.05562v1
-https://www.researchgate.net/publication/252576633_Fast_Filtering_and_Tone_Mapping_using_Importance_sampling
-https://github.com/electronicarts/importance-sampled-FAST-noise
-
-accelerating convergence:
-https://en.wikipedia.org/wiki/Monte_Carlo_method
-https://en.wikipedia.org/wiki/Series_acceleration
-https://en.wikipedia.org/wiki/Aitken%27s_delta-squared_process
-http://numbers.computation.free.fr/Constants/Miscellaneous/seriesacceleration.html
-
-https://graphics.stanford.edu/papers/veach_thesis/thesis.pdf
-
-panini projection
-http://tksharpless.net/vedutismo/Pannini/
-https://www.scribd.com/document/284463081/The-General-Panini-Projection
-https://www.researchgate.net/publication/220795340_Pannini_A_New_Projection_for_RenderingWide_Angle_Perspective_Images
 
 raytracing in one weekend series
 https://raytracing.github.io/books/RayTracingInOneWeekend.html#diffusematerials
@@ -146,47 +67,8 @@ http://raytracing.github.io/books/RayTracingTheRestOfYourLife.html
 pbr book
 https://www.pbr-book.org/4ed/contents
 
-spatiotemporal upsampling
-https://www.researchgate.net/publication/220792188_Spatio-temporal_upsampling_on_the_GPU
-https://github.com/lukedan/ReSTIR-Vulkan?tab=readme-ov-file
-https://research.nvidia.com/sites/default/files/pubs/2020-07_Spatiotemporal-reservoir-resampling/ReSTIR.pdf
-https://github.com/jacquespillet/SVGF?tab=readme-ov-file
-https://www.cg.tuwien.ac.at/sites/default/files/course/4411/attachments/08_next%20event%20estimation.pdf
-
-[(PDF) Essential Ray Generation Shaders](https://www.researchgate.net/publication/354065227_Essential_Ray_Generation_Shaders)
-
-virtualized geometry
-https://discourse.threejs.org/t/virtually-geometric/28420
-
-virtualized textures
-https://discourse.threejs.org/t/virtual-textures/53353
-
-depth function:
-https://youtu.be/h1ocYFrtsM4?t=868
-
-https://gamedevnotesblog.wordpress.com/category/algorithms/optimisation/
-
 https://habr.com/en/articles/440488/
-https://web.archive.org/web/20180822041342/http://ericpolman.com/2016/03/17/reflective-shadow-maps/
-https://web.archive.org/web/20240717124558/https://ericpolman.com/2016/06/28/light-propagation-volumes/
-
-https://bruop.github.io/tonemapping/
 
 https://casual-effects.blogspot.com/2014/04/fast-terrain-rendering-with-continuous.html
-https://www.decarpentier.nl/
-https://briansharpe.wordpress.com/
-https://rgl.epfl.ch/publications/Zeltner2020Specular
 https://yehar.com/blog/?p=1495
 https://www.realtimerendering.com/#books-small-table
-https://larswander.com/writing/spectral-ray-tracing/
-https://dl.acm.org/doi/10.1145/2601097.2601139
-https://jo.dreggn.org/home/2010_atrous.pdf
-https://www.scratchapixel.com/lessons/3d-basic-rendering/volume-rendering-for-developers/volume-rendering-voxel-grids.html
-
-fft and dft
-https://paulbourke.net/miscellaneous/dft/
-
-triangle intersect:
-https://stackoverflow.com/questions/13163129/ray-triangle-intersection#:~:text=I%20have%20done%20a%20lot%20of%20benchmarks%2C,as%20fast%20as%20M%C3%B6ller%20and%20Trumbore's%20algorithm
-https://www.researchgate.net/publication/41910471_Yet_Faster_Ray-Triangle_Intersection_Using_SSE4
-https://www.researchgate.net/publication/352128555_Robust_Visibility_Surface_Determination_in_Object_Space_via_Plucker_Coordinates
