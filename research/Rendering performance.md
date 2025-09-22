@@ -52,6 +52,9 @@ https://cgg.mff.cuni.cz/~wilkie/Website/EGSR_14_files/WNDWH14HWSS.pdf
 
 pbr book
 https://www.pbr-book.org/4ed/contents
+https://pbr-book.org/3ed-2018/Monte_Carlo_Integration/Metropolis_Sampling
+https://pbr-book.org/3ed-2018/Monte_Carlo_Integration/Bias
+https://pbr-book.org/4ed/Monte_Carlo_Integration/Improving_Efficiency#eq:splitting-candidate-integral
 
 https://getcode.substack.com/p/massively-parallel-fun-with-gpus
 https://www.semanticscholar.org/paper/Practical-approach-to-the-fast-Monte-Carlo-Gruzdev-Frolov/255f93658617156c20f54cb9f0dc6b4b8c84dcb6
@@ -131,3 +134,15 @@ triangle intersect:
 https://stackoverflow.com/questions/13163129/ray-triangle-intersection#:~:text=I%20have%20done%20a%20lot%20of%20benchmarks%2C,as%20fast%20as%20M%C3%B6ller%20and%20Trumbore's%20algorithm
 https://www.researchgate.net/publication/41910471_Yet_Faster_Ray-Triangle_Intersection_Using_SSE4
 https://www.researchgate.net/publication/352128555_Robust_Visibility_Surface_Determination_in_Object_Space_via_Plucker_Coordinates
+
+https://blog.demofox.org/2020/06/04/a-link-between-russian-roulette-and-rejection-sampling-importance-sampling/
+https://blog.demofox.org/2020/11/25/multiple-importance-sampling-in-1d/
+https://blog.demofox.org/2018/06/12/monte-carlo-integration-explanation-in-1d/
+https://blog.demofox.org/2019/05/25/generating-random-numbers-from-a-specific-distribution-with-the-metropolis-algorithm-mcmc/
+https://blog.demofox.org/2020/07/11/interpolating-data-over-arbitrary-shapes-with-laplaces-equation-and-walk-on-spheres/
+https://blog.demofox.org/2018/04/16/prefix-sums-and-summed-area-tables/
+https://blog.demofox.org/2016/07/28/fourier-transform-and-inverse-of-images/
+
+https://blog.demofox.org/2017/06/20/simd-gpu-friendly-branchless-binary-search/
+https://www.johndcook.com/blog/standard_deviation/
+https://blog.demofox.org/2020/03/10/how-do-i-calculate-variance-in-1-pass/

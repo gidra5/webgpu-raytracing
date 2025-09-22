@@ -225,6 +225,12 @@ D(m)G(m)dm\\
 https://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf
 
 Note that the G term is computationally complex and also misses the secondary bounces. Basically we would want to evaluate the complete RTE for each microfacet, instead of two generic functions.
+
+glints
+https://cseweb.ucsd.edu/~ravir/glints.pdf
+https://rgl.epfl.ch/publications/Zeltner2020Specular
+https://igg.unistra.fr/People/chermain/real_time_glint/
+https://rgl.epfl.ch/publications/Loubet2020Slope
 ## Microflake theory
 particle density $\sigma_p$
 albedo $\alpha$
@@ -265,7 +271,9 @@ Materials may behave differently at some angles, when geometry is directionally 
 https://www.pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF
 https://www.pbr-book.org/4ed/Light_Transport_II_Volume_Rendering/Scattering_from_Layered_Materials
 https://dl.acm.org/doi/10.1145/2601097.2601139
-We can describe surface of objects as a layered materials with depth $d$. Each material is modeled with its own BSDF, which are then composed into a single function.
+https://hal.science/hal-01785457/document
+Until that point we only considered a uniform surface boundary. We can extend it to multiple layers. Each layer is modeled as a small participating media of depth $d$. Each material is modeled with its own BSDF and phase function, which are then composed into a single BSDF function. The composition is described by transfer operator $T$, encoding effect of each event, like reflectance or transmittance between layers.
+There are multiple internal reflections that can occur inside single layer, as well as re-enterance from other layers, all of which is encoded by iterating the transfer infinetely.
 
 # Diffraction
 chatgpt'd
@@ -387,14 +395,6 @@ https://www.researchgate.net/publication/220795340_Pannini_A_New_Projection_for_
 iridescence
 https://hal.science/hal-01518344/file/paper-small%20%281%29.pdf
 
-layered materials
-https://hal.science/hal-01785457/document
-
-glints
-https://cseweb.ucsd.edu/~ravir/glints.pdf
-https://rgl.epfl.ch/publications/Zeltner2020Specular
-https://igg.unistra.fr/People/chermain/real_time_glint/
-https://rgl.epfl.ch/publications/Loubet2020Slope
 
 fur and hair rendering
 http://kunzhou.net/2013/fur-rendering-tvcg.pdf
