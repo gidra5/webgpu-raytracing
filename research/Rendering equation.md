@@ -1,11 +1,10 @@
-chatgpt'd
-https://www.pbr-book.org/4ed/Light_Transport_II_Volume_Rendering/The_Equation_of_Transfer
 The standard Rendering Equation has the following form:
 
 $$L\left(\omega_{o}\right)=\intop\nolimits_{H^2}\mathrm{f\left(\omega_{o},\omega_{i}\right)L\left(\omega_{i}\right)\cos\left(\omega_{i}\right)d}\omega_{i}$$
 where $\omega_{i}$ ranges over the sphere of directions around some point $x$
 
 It is a simplification of a more generic Radiative Transfer Equation (differential form):
+https://www.pbr-book.org/4ed/Light_Transport_II_Volume_Rendering/The_Equation_of_Transfer
 $$\omega\cdot\nabla L\left(\omega\right)+\sigma_{t}\left(\omega\right)L\left(\omega\right)=V(\omega)$$
 $$V(\omega)=Q_{e}(\omega)+\sigma_a(\omega)Q_a\left(\omega\right) +\sigma_{s}
 (\omega)\intop\nolimits_{S^2} p\left(\omega_{i}\to\omega\right)L\left(\omega_{i}\right)\mathrm{d}\omega_{i}$$
@@ -43,12 +42,10 @@ Where
 * $\boldsymbol n$ is the normal of the surface.
 * $f$ is the bidirectional scattering distribution function - probability density for scattering from the direction $\omega_{i}$ in the direction $\omega$.
 * $Q_{surf}$ is the re-emitted absorbed light in the direction $\omega$.
-* $\sigma_{r}$  is the absorption factor in the direction $\omega$.
+* $\sigma_{r}\in[0,1]$  is the absorption factor in the direction $\omega$.
 
 The $f(\boldsymbol x,\omega_{i}\to\omega)$ must also obey normalization constraint:
 $$\intop\nolimits_{S^2}f\left(\omega_{i}\to\omega\right)(\boldsymbol n\cdot\omega_{i})\mathrm{d}\omega_{}=1$$
-Since energy must be conserved, the following must hold:
-$$\sigma_{r}\le1$$
 
 Notice that the surface point is explicit and integration domain is the whole sphere of directions.
 For simplicity sake, we could omit the parameters for each of the functions to simplify equations visually. If unclear assume we refer to the equations above.
@@ -114,26 +111,64 @@ It is not unphysical if we also include explicit surface reemission, as long as 
 
 # Phase function
 chatgpt'd
-https://www.pbr-book.org/4ed/Volume_Scattering/Phase_Functions
-https://en.wikipedia.org/wiki/Rayleigh_scattering
-https://en.wikipedia.org/wiki/Anomalous_diffraction_theory
 https://miepython.readthedocs.io/en/v2.3.1/01_basics.html
 https://drive.google.com/file/d/1xIU8YB-R6iS2JHanA9v9P-3WbmqALxfe/view
+
+The $1/4\pi$ factor is omitted from phase functions to unclutter a bit.
+
 Phase function is the basis for volumetric rendering, since it describes generically how the light scatters in a volume.
 For phase function there isn't any universal and simple model. The most precise formulation for the phase function is given by Mie theory, which requires high computational resources.
 We describe participating media by particle radius $a$ and complex refractive index $n$.
 If we assume particles to be much smaller than wavelength, we get Rayleigh scattering:
+https://en.wikipedia.org/wiki/Rayleigh_scattering
+$$\cos\theta=\omega_i\cdot \omega$$
 $$\sigma_s(\lambda)=\left(\frac{2\pi}{\lambda}\right)^4\frac{8\pi a^6|n^2-1|^2}{3|n^2+2|^2}$$
-$$p(\omega_i\to\omega)=\frac{3}{4\pi}(1+(\omega_i\cdot\omega)^2)$$
+$$p(\omega_i\to\omega)=\frac{3}{2}(1+\cos^2\theta)$$
+Can be extended for anisotropic volumes:
+chatgpt'd
+$$p(\omega_i\to\omega)=\frac{3}{4}\frac{1+\rho\cos^2\theta}{1+\rho/3},\ \rho=\frac{1-\delta}{1+\delta}$$
+Where $\delta(\lambda)\in[0,6/7]$ is the depolarization factor that accounts for molecular anisotropy
+Can be approximated similarly to HG with $g$ factor:
+chatgpt'd
+$$p(\omega_i\to\omega)=\frac{3}{2}(1+\cos^2\theta)(1+g\cos\theta)$$
 For particles larger or at the order of wavelength we would need to evaluate Mie equations. Instead we can get arbitrarily close approximation with a weighted sum:
-$$p=\sum_{i=1}^{n}w_ip_i,\ \sum_{i=1}^{n}w_i=1$$
-$$p_i(\omega_i\to\omega)=\frac{1}{4\pi}\frac{1-g_i^2}{(1+g_i^2+2g_i(\omega_i\cdot \omega))^{3/2}}$$
-where $g\in[-1,1]$ is the asymmetry parameter. This is called Henyey–Greenstein model. $g$ actually has a formula:
-$$g=\int_{S^2}p(-\omega_i\to\omega)(\omega_i\cdot \omega)d\omega$$
+https://www.pbr-book.org/4ed/Volume_Scattering/Phase_Functions
+$$p(\omega_i\to\omega)=\sum_{i=1}^{n}w_ip_i(\theta-\varphi_i, g_i),\ \sum_{i=1}^{n}w_i=1$$
+Where:
+* $w_i$ is the weights for each phase function.
+* $p_i$ are the constituent phase functions.
+* $\varphi_i$ is the phase shift to allow off-ray preferred scattering direction.
+* $g_i\in[-1,1]$ is the anisotropy factor. Must be equal mean cosine value of the distribution.
 
-We could also introduce a phase shift $\varphi$, which would represent an off-ray preferred direction.
-$$p_i(\omega_i\to\omega)=\frac{1}{4\pi}\frac{1-g_i^2}{(1+g_i^2+2g_i\cos(acos(\omega_i\cdot \omega)-\varphi))^{3/2}}$$
-
+The $p_i$ can be chosen arbitrarily, as long as constraints on the phase function are respected. Common choices are:
+* Henyey–Greenstein phase function
+$$p_{HG}(\omega_i\to\omega)=\frac{1-g^2}{(1+g^2-2g\cos\theta)^{3/2}}$$
+* Cornette–Shanks Phase Function:
+Note that it is equivalent to rayleigh when $g=0$
+$$p_{CS}(\omega_i\to\omega)=\frac{3(1+\cos^2\theta)}{2(1+g^2)}p_{HG}=\frac{p_{rayleigh}\ p_{HG}}{(1+g^2)}$$
+* Xiao-Lei Fan:
+https://cornercodes.com/2020/11/04/mie-phase-functions-comparison/
+Faster to compute due to removal of square-roots. Better approximates Mie for low $g$. Not physically based, which causes a worse result for larger $g$ values.
+$$p_{XLF}(\omega_i\to\omega)=p_{CS}(1+g^2-2g\cos\theta)^{1/2}+g\cos\theta$$
+* von Mises–Fisher distribution:
+https://persci.mit.edu/pub_pdfs/translucency.pdf
+It is found that mixing it with the HG results in better approximations. Allows to approximate sharp peaks in scattering. $\kappa$ is the parameter that controls the sharpness of peaks and plays similar role to $g$, but they are not the same.
+$$p_{vMF}(\omega_i\to\omega)=\frac{\kappa e^{\kappa\cos\theta}}{\sinh\kappa}$$
+$$g_{vMF}=\coth\kappa-1/\kappa\ge 0$$
+* van de Hulst approximations
+https://en.wikipedia.org/wiki/Anomalous_diffraction_theory
+chatgpt'd
+These are the asymptotic approximations for Mie phase function when particle size $a\gg1$ and $n-1\ll1$.
+$$p(\omega_i\to\omega)=\frac{1}{\pi a^2}\left(\frac{J_1(2ka\sin\frac{\theta}{2})}{ka\sin\frac{\theta}{2}}\right)^2$$
+$$k=\frac{2\pi n}{\lambda}$$
+$$x=ka$$
+$$J_1(2z)=\sum\limits_{n=0}^{\infty}\frac{(-1)^{n}}{n!(n+1)!}z^{2n+1}$$
+$$J_1(z)=\frac{1}{\pi}\intop_{0}^{\pi}\cos(\tau-z\sin\tau)d\tau$$
+$$J_1(z) \backsim \sqrt{\frac{2}{\pi z}}\cos(z-\frac{3\pi}{4})\ \ (z\to\infty)$$
+With the scattering and absorption coefficients:
+$$\sigma_e=N\pi a^2(2-\frac{4\sin p}{p}-\frac{4(1-\cos p)}{p^2})$$
+$$p=2x(n-1)$$
+Where $N$ is number of particles per unit volume.
 # Microgeometry
 While general RTE fully describes the radiance, it is unfeasible to render the micro details of objects. Besides unpracticality, such fine details are also imperceivable, since all of the detail is in a single pixel area, which is averaged in the final render. Thus it is a great place for statistical methods that describe microgeometry properties statistically.
 In that case for every sample point $x$ we evaluate a statistical model of properties in an infinitesimal volume at that point, which simulates averaged result of fine details in both participating media and surface. 
@@ -232,6 +267,8 @@ https://rgl.epfl.ch/publications/Zeltner2020Specular
 https://igg.unistra.fr/People/chermain/real_time_glint/
 https://rgl.epfl.ch/publications/Loubet2020Slope
 ## Microflake theory
+Microfacet theory assumes the facets form a single surface. If we relax this assumption such that facets can be positioned arbitrarily in micro-volume, then we basically get small plane-like dielectric flakes, which opens a possibility for modeling small-scale multi-bounces and subsurface scattering in thin surface volumes.
+
 particle density $\sigma_p$
 albedo $\alpha$
 NDF $D$
@@ -239,8 +276,11 @@ $$\sigma_a(\omega)=\sigma_p(1-\alpha)\intop\nolimits_{S^2}(m\cdot \omega)D(m)dm$
 $$\sigma_s(\omega)=\sigma_p\alpha\intop\nolimits_{S^2}(m\cdot \omega)D(m)dm$$
 $$\rho(\omega_i\to\omega)=\frac{\alpha}{\sigma_s(\omega_i)}D(\frac{\omega_i+\omega}{|\omega_i+\omega|})D(-\frac{\omega_i+\omega}{|\omega_i+\omega|})$$
 https://cseweb.ucsd.edu/~tzli/cse272/wi2023/lectures/11_microflake.pdf
+https://research.nvidia.com/sites/default/files/pubs/2015-08_The-SGGX-microflake/sggx.pdf
+https://onrendering.com/data/papers/ms16/ms16.pdf
+https://arxiv.org/pdf/2110.07145
 ## Multibounce microfacets
-
+https://arxiv.org/pdf/2110.07145
 Fresnel equations and microfacets by themselves can't entirely approximate diffuse light, and I'm not even talking about approximating the rendering equation's output in its entirety. Diffuse light models absolute randomness in scattering distribution, making both $\omega_i$ and $\omega_o$ irrelevant.
 When light bounces multiple times, it decorrelates $\omega_i$ and $\omega_o$ directions, making it more and more diffuse. And if the surface is extremely rough and reflective, a lot of bounces will happen, until the ray exits the surface, making it diffuse in nature.
 
@@ -270,11 +310,32 @@ Materials may behave differently at some angles, when geometry is directionally 
 # Layered Materials
 https://www.pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF
 https://www.pbr-book.org/4ed/Light_Transport_II_Volume_Rendering/Scattering_from_Layered_Materials
-https://dl.acm.org/doi/10.1145/2601097.2601139
+https://rgl.s3.eu-central-1.amazonaws.com/media/papers/Jakob2014Comprehensive_2.pdf
 https://hal.science/hal-01785457/document
-Until that point we only considered a uniform surface boundary. We can extend it to multiple layers. Each layer is modeled as a small participating media of depth $d$. Each material is modeled with its own BSDF and phase function, which are then composed into a single BSDF function. The composition is described by transfer operator $T$, encoding effect of each event, like reflectance or transmittance between layers.
-There are multiple internal reflections that can occur inside single layer, as well as re-enterance from other layers, all of which is encoded by iterating the transfer infinetely.
+https://arxiv.org/pdf/2110.07145
+Until that point we only considered a uniform surface boundary. Having that foundation, we can extend it to multiple layers. 
+Let us model each layer as a thin participating media of depth $d$, with upper boundary described by BSDF $f_l$, and a phase function $p_l$, each carrying the necessary parameters to be described with models for a single surface interface above. 
+With this we can express radiance exiting a single layer as follows:
+$$T=\left[R_l^{top}\ T_l^{bot}\atop T_l^{top}\ R_l^{bot}\right]$$
+$$Q_l=\left[Q_l^{top}\atop Q_l^{bot}\right]$$
+$$L_l=\left[L_l^{top}\atop L_l^{bot}\right]$$
+$$L_l=TQ_l$$
+Where
+* $L_l^{top}$ and $L_l^{bot}$ are the radiance exiting the layer at the top and bottom
+* $Q_l^{top}$ and $Q_l^{bot}$ are the radiance entering the layers, 
+* $R^{top}$ and $R^{bot}$ as the reflected fraction of radiance from top and bottom.
+* $T^{top}$ and $T^{bot}$ are the transmitted fractions between boundaries from top and bottom to the other side.
+* $L_l$ is the vector of exiting radiance.
+* $Q_l$ is the vector of entering radiance.
+* $T$ is the Transfer matrix
 
+We can compose two such layers using *adding equations*, which describe how two combine multiple transfer matrices into a single one:
+$$R^{top}=R^{top}_1+T^{bot}_1(I-R^{top}_2R^{bot}_1)^{-1}R^{top}_2T^{top}_1$$
+$$R^{bot}=R^{bot}_1+T^{top}_1(I-R^{bot}_1R^{top}_2)^{-1}R^{bot}_1T^{bot}_2$$
+$$T^{top}=T^{top}_2(I-R^{bot}_1R^{top}_2)^{-1}T^{top}_1$$
+$$T^{bot}=T^{bot}_1(I-R^{top}_2R^{bot}_1)^{-1}T^{bot}_2$$
+Getting $T$ in general requires computing multiple bounces, which is expensive and often does not yield. We can get arbitrarily fine approximation by choosing finitely small $\Delta d$, where we can neglect multiple scattering, and apply *adding-doubling* algorithm to achieve desired layer depth.
+The only issue with this approach is that it disregards the volumetric scattering by phase functions, and essentially replaces them by iteration of reflections and transmittance over the depth of the layer, which may have a significant impact for thick layers.
 # Diffraction
 chatgpt'd
 https://eugenedeon.com/
@@ -285,6 +346,9 @@ They scale polarized reflection and refraction as follows:
 
 $$r'=\frac{r_1+r_2e^{2i\delta}}{1+r_1 r_2e^{2i\delta}}$$
 where $r_1$ and $r_2$ are the entry and exit values for fresnel terms.
+
+iridescence
+https://hal.science/hal-01518344/file/paper-small%20%281%29.pdf
 
 # Emission
 chatgpt'd
@@ -390,11 +454,12 @@ https://www.scribd.com/document/284463081/The-General-Panini-Projection
 https://www.researchgate.net/publication/220795340_Pannini_A_New_Projection_for_RenderingWide_Angle_Perspective_Images
 
 [(PDF) Essential Ray Generation Shaders](https://www.researchgate.net/publication/354065227_Essential_Ray_Generation_Shaders)
+
+# Measurement fitting
+god damn its so hard
+# Artistic parametrization
+Reformulation with a different set of parameters, that is much more artist-friendly.
 # more
-
-iridescence
-https://hal.science/hal-01518344/file/paper-small%20%281%29.pdf
-
 
 fur and hair rendering
 http://kunzhou.net/2013/fur-rendering-tvcg.pdf

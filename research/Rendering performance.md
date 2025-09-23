@@ -12,6 +12,8 @@ we can render multiple faces of the clip space cube, to fix low sample rate at g
 We could also fix edge sampling error, if we use the face coverage for a square we are sampling inside.
 By computing the face coverage for a particular pixel square, we could improve our texture sampling accuracy, when pixel covers multiple faces, like on edges.
 
+# Caching/accumulation
+
 depth function:
 https://youtu.be/h1ocYFrtsM4?t=868
 
@@ -146,3 +148,6 @@ https://blog.demofox.org/2016/07/28/fourier-transform-and-inverse-of-images/
 https://blog.demofox.org/2017/06/20/simd-gpu-friendly-branchless-binary-search/
 https://www.johndcook.com/blog/standard_deviation/
 https://blog.demofox.org/2020/03/10/how-do-i-calculate-variance-in-1-pass/
+
+path guiding, zero variance theory
+https://drive.google.com/file/d/1xIU8YB-R6iS2JHanA9v9P-3WbmqALxfe/view (ch. 74.4.2, p. 363)
