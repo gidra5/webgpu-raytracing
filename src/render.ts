@@ -146,9 +146,6 @@ type DepthPeelingTextures = {
   currDepth: GPUTexture;
   currCount: GPUTexture;
 };
-
-let depthPeelingGeneration = 0;
-
 const createDepthPeelingTexture = (
   format: GPUTextureFormat,
   usage: GPUTextureUsageFlags,
@@ -184,8 +181,6 @@ const depthPeelingData = createMemo<DepthPeelingTextures>((prev) => {
     currDepth: createDepthPeelingTexture('r32float', baseUsage, options),
     currCount: createDepthPeelingTexture('r32float', baseUsage, options),
   };
-
-  depthPeelingGeneration += 1;
   return textures;
 });
 
