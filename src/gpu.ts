@@ -646,7 +646,7 @@ export const computePipeline = (
 
 export const reactiveComputePipeline = (x: ComputePipelineDescriptor) => {
   return createMemo<[GPUComputePipeline, GPUBindGroup[]]>((prev) => {
-    const { pipeline, bindGroups } = computePipeline(x, prev[0]);
+    const { pipeline, bindGroups } = computePipeline(x, prev?.[0]);
     return [pipeline, bindGroups] as const;
   });
 };
@@ -676,7 +676,7 @@ export const computePipelineRunner = (
 
 export const reactiveRenderPipeline = (x: RenderPipelineDescriptor) => {
   return createMemo<[GPURenderPipeline, GPUBindGroup[]]>((prev) => {
-    const { pipeline, bindGroups } = renderPipeline(x, prev[0]);
+    const { pipeline, bindGroups } = renderPipeline(x, prev?.[0]);
     return [pipeline, bindGroups] as const;
   });
 };

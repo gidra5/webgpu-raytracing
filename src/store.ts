@@ -87,7 +87,7 @@ export const [store, setStore] = createStore({
   // exposure: 1,
   gamma: 1,
   ambience: 0.1,
-  normalsType: NormalsType.Interpolated,
+  normalsType: NormalsType.Flat,
   projectionType: ProjectionType.Perspective,
   lensShape: LensShape.Circle,
   tonemapping: Tonemapping.Aces,
