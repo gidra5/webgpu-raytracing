@@ -117,6 +117,8 @@ export const [store, setStore] = createStore({
     frustrumSides: 0b100000, // bitfield of [+Z, -Z, +X, -X, +Y, -Y] for clip space cube sides
   },
 
+  depthLayer: 0,
+
   jitterStrength: 0,
   resolutionScale: 1,
   scale: 1,
@@ -318,6 +320,12 @@ export const setDebugBVH = (debugBVH: boolean) => {
 
 export const setBlitView = (blitView: BlitView) => {
   setStore('blitView', blitView);
+};
+
+export const setDepthLayer = (layer: number) => {
+  const maxLayer = Math.max(0, store.gBuffer.layers - 1);
+  const clamped = Math.min(Math.max(0, Math.round(layer)), maxLayer);
+  setStore('depthLayer', clamped);
 };
 
 export const setTime = (time: number) => {

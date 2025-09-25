@@ -102,8 +102,8 @@ https://gitea.yiem.net/QianMo/Real-Time-Rendering-4th-Bibliography-Collection/ra
 https://developer.download.nvidia.com/assets/gamedev/docs/OrderIndependentTransparency.pdf
 
 
-depth peeling pipeline:
-1. Initialize 6 texture arrays of length L. Each array item is a bin responsible for some depth range. The fisrt 3 of them are used for the current iteration, the other 3 are the values from the previous iteration.
+depth peeling pipeline, min and max:
+1. Initialize 6 texture arrays of length L. Each array item is a bin responsible for some depth range. The first 3 of them are used for the current iteration, the other 3 are the values from the previous iteration.
    2. prev depth min, start from 0 and increment in 1/L steps.
    3. prev depth max, start from 1/L and increment in 1/L steps.
    4. prev fragment count, all values are 0.
@@ -133,7 +133,27 @@ depth peeling pipeline:
 25. Sort fragments into bins.
 26. If current fragment's depth is within range of the bin I, add it to the min/max and increment fragment count for that bin. The range is not inclusive on upped bound.
 
+
 keeping track of min and max of a bit harder than a single min value. But maybe it adds some performance by cutting down the number of passes necessary.
+
+depth peeling pipeline, only min:
+1. Initialize 4 texture arrays of length L. Each array item is a bin responsible for some depth range. The first 3 of them are used for the current iteration, the other 3 are the values from the previous iteration.
+	1. prev depth, start from 1/L and increment in 1/L steps up to 1.
+	2. prev fragment count, all values are 0.
+	3. current depth, all values are 0
+	4. current fragment count, all values are 0
+	5. When reusing from prev frame:
+		1. prev depth i, equal to prev frame's current depth i+1, incremented by O. Last layer is 1.
+		2. prev fragment count, all values are 0.
+2. Look at prev bin values, decide effective bin ranges for current iteration.
+	1. If total fragment count is 0, then bin ranges equal to the `(prevDepth[i-1]??0, prevDepth[i]]`, end loop. Since we got a fragment at this position, but the count is 0, it means that we just started, otherwise we would have had at least one fragment in total.
+	2. If total fragment count is not 0, then its a secondary pass. Min and max values should be filled.
+	3. Find a bin with at least 1 fragment.
+	4. If the bin has exactly 1 fragment, pick its range as current iteration range `(depth[N-1]??0, prevDepth[i]]`. Increment current fragment count N by 1. 
+	5. If the bin has M fragments, which is between 1 and L-N, split into M bins. First bin is the range  `(depth[N-1]??0, prevDepth[i]]`, the rest is `(prevDepth[i], prevDepth[i+1]+O]` split into equal ranges. Increment current fragment count N by M.
+	6. If N is greater or equal to L, end loop.
+3. If current fragment's depth is within range of the bin I, add it to the min and increment fragment count for that bin.
+4. Iterate step 2-3 until we fill each layer such that there is only one fragment in range `(depth[i-1]??0, depth[i]]`. Use stencil to handle only those pixels where there is a bin with more than 1 fragment. At most L iterations, since each iteration gives at least one more sorted fragment.
 
 bad:
 1. Gather stats into depth min/max

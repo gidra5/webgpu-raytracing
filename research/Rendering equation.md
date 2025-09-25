@@ -177,7 +177,6 @@ Together with broad scattering simulated in raytracing directly, it gives a comp
 ## Microfacet theory
 
 https://d1qx31qr3h6wln.cloudfront.net/publications/microfacet-theory-non-uniform-heightfields_1.pdf
-https://www.pbr-book.org/4ed/Reflection_Models/Roughness_Using_Microfacet_Theory
 The fresnel terms define reflection and transmission for ideal smooth surfaces. But that misses the imperfection of real world. Lets define a map from surface coords to world coords $H: R^2\to R^3$. If we assume that for a local patch $A$ the function $H$ is a heightmap, we can apply microfacet theory.
 
 We define geometric surface properties as a combination of two functions $D(x,h, \lambda, n, t)$ and $G(x,\omega_i,\omega_o,\lambda, n, t)$, the Normal Distribution Function, and masking-shadowing function. The parameters $n$ and $t$ are the geometric normal and tangent vectors, $h$ is a normal that would reflect/refract the $\omega_i$ into $\omega_o$, also called a half-vector.  Together these allow modelling a single scattering event at the surface.
@@ -260,6 +259,27 @@ D(m)G(m)dm\\
 https://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf
 
 Note that the G term is computationally complex and also misses the secondary bounces. Basically we would want to evaluate the complete RTE for each microfacet, instead of two generic functions.
+### Normal Distribution Function
+chatgpt'd
+https://www.pbr-book.org/4ed/Reflection_Models/Roughness_Using_Microfacet_Theory
+If we assume ellipsoidal facets with Cauchy/Lorentzian slope distribution, we get the following NDF and masking function:
+$$D(m)=\frac{1}{\pi\alpha_x\alpha_y\cos^4\theta(1+\tan^2\theta(\frac{\cos^2\phi}{\alpha_x^2}+\frac{\sin^2\phi}{\alpha_y^2}))}$$
+Where $a_x$ and $a_y$ are the anisotropy coefficients.
+### Smith's model
+https://www.pbr-book.org/4ed/Reflection_Models/Roughness_Using_Microfacet_Theory
+$G_1\in[0,1]$ describes a fraction of normals $m$ that is visible from direction $\omega$.
+We expect that physically plausible distributions must satisfy:
+$$\int_HD(m)G_1(\omega, m)(\omega\cdot m>0)dm=\omega\cdot n$$
+Where $(x>0)$ is 1 whenever the condition is true.
+
+We can simplify computation of $G$ by making a single assumption that the visibility from a given direction $\omega$. Thus we can write down $G$ as follows:
+$$G(\omega_i,\omega_o)=G_1(\omega_i)G_1(\omega_o)$$
+$$G_1(\omega)=\frac{1}{1+\Lambda(\omega)}$$
+Where $\Lambda$ is the expected number of occluding events.
+
+It is also useful to define a Visible Normal Distribution Function:
+$$D_{\omega}(m)=\frac{(\omega\cdot m>0)(\omega\cdot m)D(m)}{\int_H(\omega\cdot m'>0)(\omega\cdot m')D(m')dm'}=\frac{\omega\cdot m}{\omega\cdot n}(\omega\cdot m>0)D(m)$$
+
 
 glints
 https://cseweb.ucsd.edu/~ravir/glints.pdf

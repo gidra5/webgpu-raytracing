@@ -1,9 +1,9 @@
-import { type Component } from 'solid-js';
 import {
   FovOrientation,
   LensShape,
   ProjectionType,
   setBlitView,
+  setDepthLayer,
   setCircleOfConfusion,
   setDebugBVH,
   setDebugReprojection,
@@ -92,6 +92,17 @@ const App: Component = () => {
           <option value={BlitView.Normals}>Normals</option>
           <option value={BlitView.Reproject}>Reproject</option>
         </select>
+      </label>
+      <label class="flex gap-1 text-white text-sm items-baseline">
+        Depth layer
+        <input
+          class="m-0"
+          type="number"
+          min="0"
+          max={Math.max(0, store.gBuffer.layers - 1)}
+          value={store.depthLayer}
+          onChange={(e) => setDepthLayer(Number(e.target.value))}
+        />
       </label>
       <label class="flex gap-2 text-white text-sm items-baseline">
         Reprojection filtering
@@ -239,3 +250,5 @@ const App: Component = () => {
 };
 
 export default App;
+
+
