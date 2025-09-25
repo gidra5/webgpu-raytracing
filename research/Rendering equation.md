@@ -177,9 +177,13 @@ Together with broad scattering simulated in raytracing directly, it gives a comp
 ## Microfacet theory
 
 https://d1qx31qr3h6wln.cloudfront.net/publications/microfacet-theory-non-uniform-heightfields_1.pdf
+https://jcgt.org/published/0003/02/03/paper.pdf
 The fresnel terms define reflection and transmission for ideal smooth surfaces. But that misses the imperfection of real world. Lets define a map from surface coords to world coords $H: R^2\to R^3$. If we assume that for a local patch $A$ the function $H$ is a heightmap, we can apply microfacet theory.
 
-We define geometric surface properties as a combination of two functions $D(x,h, \lambda, n, t)$ and $G(x,\omega_i,\omega_o,\lambda, n, t)$, the Normal Distribution Function, and masking-shadowing function. The parameters $n$ and $t$ are the geometric normal and tangent vectors, $h$ is a normal that would reflect/refract the $\omega_i$ into $\omega_o$, also called a half-vector.  Together these allow modelling a single scattering event at the surface.
+We define geometric surface properties as a combination of two functions:
+* $D(x,h, n, t)$ - the Normal Distribution Function (NDF). The fraction of normals that is aligned with $h$.
+* $G(x,\omega,h, n, t)\in[0,1]$ - the masking function. Describes a fraction of normals $h$ that is visible from direction $\omega$.
+The parameters $n$ and $t$ are the geometric normal and tangent vectors, $h$ is a normal that would reflect/refract the $\omega_i$ into $\omega_o$, also called a half-vector.  Together these allow modelling a single successful scattering event at the surface from $\omega_i$ to $\omega_o$.
 
 We also need to apply correction factors to first transform incident irradiance onto the microsurface and then transform the scattered radiance back to the macrosurface, because both irradiance and radiance are measured relative to a surface’s projected area.
 
@@ -208,20 +212,6 @@ $$k=1-\eta^2(1-(n\cdot \omega_o)^2)$$
 $$refract(\omega_o, n, \eta) = \eta I - (\eta (n \cdot \omega_o) + \sqrt{k})\ n$$
 https://registry.khronos.org/OpenGL-Refpages/gl4/html/refract.xhtml
 https://registry.khronos.org/OpenGL-Refpages/gl4/html/reflect.xhtml
-
-There are some constraints on what $D$ and $G$ can be. The constraints on $D$:
-1. $D$ is not negative: $D\ge0$
-2. $D$  produce the same (signed) projected area as the macrosurface for any direction $v$: $\intop\nolimits_{H^2}(\boldsymbol v\cdot\omega)D\mathrm{d}\omega=(v\cdot n)$
-3. $D$ total area must be at least as large as the macrosurface: $\intop\nolimits_{H^2}D\mathrm{d}\omega\ge1$
-4. Is zero outside hemisphere and at the boundary
-5. Sometimes it is required that $D(h)=O(1/\cos^3\theta_h)$ or slower.
-
-The constraints on $G$:
-1. $G(\omega_i, \omega_o)=G(\omega_o, \omega_i)$
-2. $G\in\left\lbrack0,1\right\rbrack$
-3. $G$ is smooth
-4. As $n\cdot\omega\to0$, $G\to0$
-5. Backfaces of microfacets are not visible frontside of macrosurfaces: $G=0$ if $(\omega_i\cdot m)(\omega_i\cdot n)\le0$ or $(\omega_o\cdot m)(\omega_o\cdot n)\le0$
 
 We can apply change of variables theorem for delta-function and get the following expression for the $f_m$:
 $$
@@ -261,23 +251,72 @@ https://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf
 ### Normal Distribution Function
 chatgpt'd
 https://www.pbr-book.org/4ed/Reflection_Models/Roughness_Using_Microfacet_Theory
-If we assume ellipsoidal facets with Cauchy/Lorentzian slope distribution, we get the following NDF and masking function:
-$$D(m)=\frac{1}{\pi\alpha_x\alpha_y\cos^4\theta(1+\tan^2\theta(\frac{\cos^2\phi}{\alpha_x^2}+\frac{\sin^2\phi}{\alpha_y^2}))}$$
-Where $a_x$ and $a_y$ are the anisotropy coefficients.
+
+The constraints on $D$:
+1. $D$ is not negative: $D\ge0$
+2. $D$ produce the same (signed) projected area as the macrosurface for any direction $v$: $$\intop\nolimits_{H^2}(\boldsymbol v\cdot\omega)D\mathrm{d}\omega=(v\cdot n)$$
+3. $D$ total area must be at least as large as the macrosurface: $$\intop\nolimits_{H^2}D\mathrm{d}\omega\ge1$$
+4. Is zero outside hemisphere and at the boundary
+5. Sometimes it is required that $D(h)=O(1/\cos^3\theta_h)$ or slower.
+
+It is also useful to define a Visible Normal Distribution Function:
+$$D_{\omega}(m)=\frac{G(\omega,m)\left<\omega\cdot m\right>D(m)}{\int_HG(\omega,m')\left<\omega\cdot m'\right>D(m')dm'}=\frac{\left<\omega\cdot m\right>}{\omega\cdot n}G(\omega,m)D(m)$$
+### Masking function
+The constraints on $G$:
+1. $G$ is smooth
+2. As $n\cdot\omega\to0$, $G\to0$
+3. Proper distribution of normals must project onto $\omega$ the same way as the macro surface. With that we expect that physically plausible distributions must satisfy:
+$$\int_HD(m)G(\omega, m)\left<\omega\cdot m\right>dm=\left<\omega\cdot n\right>$$$\left<\omega\cdot m\right>=max(\omega\cdot m,0)$
+Where $(x>0)$ is Heaviside function, that is 1 whenever the condition is true.
 ### Smith's model
 https://www.pbr-book.org/4ed/Reflection_Models/Roughness_Using_Microfacet_Theory
-We can simplify computation of $G$ by making a single assumption that the masking and shadowing are independent. Thus we can write down $G$ as follows:
-$$G(\omega_i,\omega_o, m)=G_1(\omega_i, m)G_1(\omega_o, m)$$
-$G_1\in[0,1]$ describes a fraction of normals $m$ that is visible from direction $\omega$.
-Proper distribution of normals must project onto $\omega$ the same way as the macro surface. With that we expect that physically plausible distributions must satisfy:
-$$\int_HD(m)G_1(\omega, m)(\omega\cdot m>0)dm=\omega\cdot n$$
-Where $(x>0)$ is 1 whenever the condition is true.
-We can also express $G_1$ in terms of $\Lambda$, the expected number of occluding events:
-$$G_1(\omega)=\frac{1}{1+\Lambda(\omega)}$$
-$\Lambda$ is easier to derive from the base slope distribution, which is often used in the papers.
-It is also useful to define a Visible Normal Distribution Function:
-$$D_{\omega}(m)=\frac{G_1(\omega,m)(\omega\cdot m)D(m)}{\int_HG_1(\omega,m')(\omega\cdot m')D(m')dm'}=\frac{\omega\cdot m}{\omega\cdot n}(\omega\cdot m>0)D(m)$$
+https://jcgt.org/published/0003/02/03/paper.pdf
 
+We can simplify computation of $G$ by making a single assumption that the masking is independent of normal. That means that there is no correlation between the height (or the normal) at one point of the microsurface and the height (or the normal) at any neighboring point, even the closest ones. The material conceptually turns from a connected surface into an opaque soup of little surface fragments that float in space. A consequence of this simplification is that masking becomes independent of the microsurface normal, which allows us to move $G$ from the integral above and solve for it:
+$$G(\omega)=\frac{\left<\omega\cdot n\right>}{\int_HD(m)\left<\omega\cdot m\right>dm}$$
+This is _Smith’s approximation_. Despite the rather severe simplification, it has been found to be in good agreement with both brute-force simulation of scattering on randomly generated surface microstructures and real-world measurements.
+
+We can also express $G$ in terms of $\Lambda$, the expected number of occluding events:
+$$G(\omega)=\frac{1}{1+\Lambda(\omega)}$$
+$\Lambda$ arises naturally in the derivation of masking in the slope domain $P_2$. The exact definitions for $\Lambda$ are as follows:
+$$\Lambda(\omega)=\int_{\cot\theta}^{\infty}(x\tan\theta-1)P(x)dx$$
+Where $P$ is the slope distribution in the view direction:
+$$P(x)=\int_{-\infty}^{\infty}P_2(x, y)dy$$
+Where $P_2$ is the slope distribution of the microfacets, related to the NDF as follows:
+$$P_2(\bar{m})d\bar{m}=(m\cdot n)D(m)dm$$
+$$D(m)=\frac{P_2(\bar{m})}{(m\cdot n)^4}$$
+$$\bar{m}=-\frac{[m_x,m_y]}{m_z}=-\tan\theta[\cos\phi,\sin\phi]$$
+### Masking-shadowing function
+https://www.pbr-book.org/4ed/Reflection_Models/Roughness_Using_Microfacet_Theory
+If we only account for a single scattering event, we should also account for shadowing of outgoing ray. If we assume independence of these two processes, we get:
+$$G_s(\omega_i,\omega_o, m)=G(\omega_i, m)G(\omega_o, m)$$
+While simple, it can underestimate visibility of peaks and valleys, which causes darkening at some angles.
+
+If the heights are normally distributed, we can extend Smith's formulation to account for shadowing, allowing less conservative estimation:
+$$G_s(\omega_i, \omega_o)=\frac{1}{1+\Lambda(\omega_i)+\Lambda(\omega_o)}$$
+
+In particular, both guarantee reciprocity of the resulting BSDF.
+
+### Stretch invariance
+https://jcgt.org/published/0003/02/03/paper.pdf
+Some distributions allow for an easy extension to the anisotropic masking function, since they are invariant under stretching in the following sense:
+$$P_2(\bar{m},\alpha)=\frac{1}{\lambda_x\lambda_y}P_2(\frac{\bar{m}}{\lambda},\frac{\alpha}{\lambda}),\text{ for any } \lambda>0$$
+Intuitively it means that we can stretch the distribution however much we want, the shape will not change. In that case they can be expressed in terms of a single dimensional distribution $f$:
+$$P_2(\bar{m},\alpha)=\frac{1}{\alpha_x\alpha_y}f(\left|\frac{\bar{m}}{\alpha}\right|)$$
+For such distribution masking function only depends on a parameter $a$, a roughness projected onto the outgoing direction:
+$$a=\frac{1}{\alpha_o\tan\theta}$$
+$$\alpha_o=|[\omega_x,\omega_y]\cdot\alpha|$$
+
+### Generalized Trowbridge–Reitz model
+https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf
+Lets consider a generic distribution of slopes, parametrized by power $\gamma$ and roughness $\alpha$:
+$$
+P_2(\bar{m})=\frac{c_\gamma}{\pi\alpha_x\alpha_y(1+\left|\frac{\bar{m}}{\alpha}\right|)^\gamma}
+$$
+From it we can derive NDF and masking functions:
+$$D(m)=\frac{c_\gamma}{\pi\alpha_x\alpha_y(m\cdot n)^4(1+\left|\frac{\bar{m}}{\alpha}\right|)^\gamma}$$
+$$\Lambda(m)=...$$
+Note that with $\gamma\to\infty$ it approaches normal distribution, which is the basis for Beckmann distribution. For $\gamma=2$ it results in regular Trowbridge–Reitz model.
 
 glints
 https://cseweb.ucsd.edu/~ravir/glints.pdf
@@ -320,10 +359,6 @@ $$p(\omega_i\to\omega, n)=\frac{RD_{\omega_i}(h_r)}{4|\omega_i\cdot h_r|} + (\om
 ### Relevant microfacet distributions and functions
 
 Smith model and other stuff.
-
-# Anisotropic effects
-
-Materials may behave differently at some angles, when geometry is directionally correlated, elongating the specular highlight, for example when looking at machined surfaces.
 
 # Layered Materials
 https://www.pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF
@@ -476,6 +511,7 @@ https://www.researchgate.net/publication/220795340_Pannini_A_New_Projection_for_
 # Measurement fitting
 god damn its so hard
 # Artistic parametrization
+https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf
 Reformulation with a different set of parameters, that is much more artist-friendly.
 # more
 
