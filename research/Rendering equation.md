@@ -279,13 +279,13 @@ This is _Smith’s approximation_. Despite the rather severe simplification, it
 We can also express $G$ in terms of $\Lambda$, the expected number of occluding events:
 $$G(\omega)=\frac{1}{1+\Lambda(\omega)}$$
 $\Lambda$ arises naturally in the derivation of masking in the slope domain $P_2$. The exact definitions for $\Lambda$ are as follows:
-$$\Lambda(\omega)=\int_{\cot\theta}^{\infty}(x\tan\theta-1)P(x)dx$$
+$$\Lambda(\omega)=\int_{\cot\theta}^{\infty}\int_{-\infty}^{\infty}P_2(x, y)(x\tan\theta-1)dydx=\int_{\cot\theta}^{\infty}P(x)(x\tan\theta-1)dx$$
 Where $P$ is the slope distribution in the view direction:
 $$P(x)=\int_{-\infty}^{\infty}P_2(x, y)dy$$
 Where $P_2$ is the slope distribution of the microfacets, related to the NDF as follows:
 $$P_2(\bar{m})d\bar{m}=(m\cdot n)D(m)dm$$
 $$D(m)=\frac{P_2(\bar{m})}{(m\cdot n)^4}$$
-$$\bar{m}=-\frac{[m_x,m_y]}{m_z}=-\tan\theta[\cos\phi,\sin\phi]$$
+$$\bar{m}=-\frac{[m_x,m_y]}{m_z}=-\tan\theta_m[\cos\phi_m,\sin\phi_m]$$
 ### Masking-shadowing function
 https://www.pbr-book.org/4ed/Reflection_Models/Roughness_Using_Microfacet_Theory
 If we only account for a single scattering event, we should also account for shadowing of outgoing ray. If we assume independence of these two processes, we get:
@@ -303,20 +303,160 @@ Some distributions allow for an easy extension to the anisotropic masking functi
 $$P_2(\bar{m},\alpha)=\frac{1}{\lambda_x\lambda_y}P_2(\frac{\bar{m}}{\lambda},\frac{\alpha}{\lambda}),\text{ for any } \lambda>0$$
 Intuitively it means that we can stretch the distribution however much we want, the shape will not change. In that case they can be expressed in terms of a single dimensional distribution $f$:
 $$P_2(\bar{m},\alpha)=\frac{1}{\alpha_x\alpha_y}f(\left|\frac{\bar{m}}{\alpha}\right|)$$
-For such distribution masking function only depends on a parameter $a$, a roughness projected onto the outgoing direction:
-$$a=\frac{1}{\alpha_o\tan\theta}$$
-$$\alpha_o=|[\omega_x,\omega_y]\cdot\alpha|$$
+When $\alpha_x=\alpha_y=\alpha$ we call it isotropic distribution. 
+Consider the $\Lambda$ function with invariance and isotropic distribution assumed:
+$$\begin{aligned}
+\Lambda(\omega)=\int_{\cot\theta}^{\infty}\int_{-\infty}^{\infty}P_2(x, y)(x\tan\theta-1)dydx &=
+\tan\theta\int_{0}^{\infty}\int_{-\infty}^{\infty}P_2(x+\cot\theta, y)x dydx\\ 
+&=
+\tan\theta\int_{0}^{\infty}\int_{-\infty}^{\infty}\frac{1}{\alpha^2}f(\left|\frac{[x+\cot\theta,y]}{\alpha}\right|)xdydx\\
+&=\frac{\tan\theta}{\alpha^2}
+\int_{0}^{\infty}\int_{-\infty}^{\infty}f(\left|\frac{[x+\cot\theta,y]}{\alpha}\right|)xdydx
+\end{aligned}$$
 
+$$(x+\cot\theta)/\alpha=r\cos\phi$$
+$$y/\alpha=r\sin\phi$$
+$$\alpha r\cos\phi-\cot\theta\ge0$$
+$$r\ge\frac{\cot\theta}{\alpha\cos\phi}=\frac{a}{\cos\phi}$$
+$$\begin{aligned}
+\int_{0}^{\infty}\int_{-\infty}^{\infty}f(\left|\frac{[x+\cot\theta,y]}{\alpha}\right|)xdydx &= \alpha^2\int_{-\pi/2}^{\pi/2}\int_{\frac{a}{\cos\phi}}^{\infty}f(r)(r\alpha\cos\phi-\cot\theta)r\ dr\ d\phi
+\end{aligned}$$
+$$\begin{aligned}
+\int_{-\pi/2}^{\pi/2}\int_{\frac{a}{\cos\phi}}^{\infty}f(r)(\alpha r\cos\phi-\cot\theta)r\ dr\ d\phi 
+&= \alpha\int_{-\pi/2}^{\pi/2}\cos\phi\int_{\frac{a}{\cos\phi}}^{\infty}f(r)r^2 drd\phi \\&- \cot\theta \int_{-\pi/2}^{\pi/2}\int_{\frac{a}{\cos\phi}}^{\infty}f(r)rdrd\phi\\
+\end{aligned}$$
+$$\begin{aligned}
+\int f(r)rdr=r\int f(r)dr-\int\int f(r)drdr=rF_1(r)-\int F(r)dr=rF_1(r)-F_2(r)
+\end{aligned}$$
+$$\begin{aligned}
+\int f(r)r^2dr&=r^2\int f(r)dr-\int\int f(r)dr2rdr\\&=r^2F(r)-2\int F(r)rdr\\&=r^2F(r)-2rF_2(r)+2\int F_2(r)dr\\&=r^2F_1(r)-2rF_2(r)+2F_3(r)
+\end{aligned}$$
+$$\begin{aligned}
+\int_{-\pi/2}^{\pi/2}\cos\phi\int_{\frac{\cot\theta}{\alpha_x\cos\phi}}^{\infty}f(r)r^2 drd\phi
+\end{aligned}$$
+$$\begin{aligned}
+\int_{-\pi/2}^{\pi/2}\int_{\frac{a}{\cos\phi}}^{\infty}f(r,\gamma)rdrd\phi
+&=\int_{-\pi/2}^{\pi/2}(rF_1(r)-F_2(r))\Big|_{\frac{a}{\cos\phi}}^{\infty}d\phi\\
+&=\int_{-\pi/2}^{\pi/2}\lim_{r\to\infty}(rF_1(r)-F_2(r))-(\frac{a}{\cos\phi}F_1(\frac{a}{\cos\phi})-F_2(\frac{a}{\cos\phi}))d\phi\\
+&=\lim_{r\to\infty}(rF_1(r)-F_2(r))-\int_{-\pi/2}^{\pi/2}\frac{a}{\cos\phi}F_1(\frac{a}{\cos\phi})-F_2(\frac{a}{\cos\phi})d\phi\\
+&=\lim_{r\to\infty}(rF_1(r)-F_2(r))-2\int_{0}^{\pi/2}\frac{a}{\cos\phi}F_1(\frac{a}{\cos\phi})-F_2(\frac{a}{\cos\phi})d\phi
+\end{aligned}$$
+$$\begin{aligned}
+&r=\frac{a}{\cos\phi}\\
+&\cos\phi=\frac{a}{r}\\
+&\phi=\arccos(\frac{a}{r})\\
+&d\phi=\frac{1}{\sqrt{1-(\frac{a}{r})^2}}d(\frac{a}{r})=\frac{1}{\sqrt{1-(\frac{a}{r})^2}}\frac{-a}{r^2}dr=\frac{-1}{r\sqrt{(\frac{r}{a})^2-1}}dr\\
+\end{aligned}$$
+$$\begin{aligned}
+\int_{0}^{\pi/2}\frac{a}{\cos\phi}F_1(\frac{a}{\cos\phi})-F_2(\frac{a}{\cos\phi})d\phi
+&=\int_{a}^{\infty}\frac{F_2(r)-rF_1(r)}{r\sqrt{(\frac{r}{a})^2-1}}dr\\
+\end{aligned}$$
+$$\begin{aligned}
+&\Lambda(\omega)= \frac{1}{a}\int_{-\pi/2}^{\pi/2}\cos\phi\int_{\frac{a}{\cos\phi}}^{\infty}f(r)r^2 drd\phi - \int_{-\pi/2}^{\pi/2}\int_{\frac{a}{\cos\phi}}^{\infty}f(r)rdrd\phi \\&
+a=\frac{1}{\alpha\tan\theta}
+\end{aligned}$$
+We can reduce anisotropic distribution to isotropic with roughness $\alpha_y$ by stretching it along x-axis by $\alpha_y/\alpha_x$. Since $\Lambda$ only depends on $\omega$, we just need to transform it into stretched coordinates:
+$$\omega'=[\frac{\alpha_x}{\alpha_y}\omega_x,\omega_y,\omega_z]$$
+$${\tan\theta'}={\sqrt{(\frac{\alpha_x}{\alpha_y}\sin\phi)^2+\cos^2\phi}\tan\theta}$$
+Then if we look at parameter a, that we derived above, we should express it in new coords:
+$$a=\frac{1}{\alpha_y\tan\theta'}=\frac{1}{\alpha_y{\sqrt{(\frac{\alpha_x}{\alpha_y}\sin\phi)^2+\cos^2\phi}\tan\theta}}=\frac{1}{{\sqrt{(\alpha_x\sin\phi)^2+(\alpha_y\cos\phi)^2}\tan\theta}}=\frac{1}{\alpha\tan\theta}$$
+In that case isotropic roughness $\alpha$ has the following value in terms of a roughness projected onto the outgoing direction $\omega_o$:
+$$\alpha=\sqrt{(\alpha_x\sin\phi)^2+(\alpha_y\cos\phi)^2}=\frac{|[\alpha_x\omega_x, \alpha_y\omega_y]|}{\sin\theta}$$
+### Unaligned stretching
+https://jcgt.org/published/0003/02/03/paper.pdf
+The stretching operation does not need to be axis aligned. We can define a matrix $Q$ that would describe the rule for a norm computation:
+$$|m|=\sqrt{m^TQm}$$
+A standard Euclidean norm uses the unit matrix. Isotropic distributions then will be described with uniform scaling matrix. Anisotropic distributions can be described with non-uniform scaling. Unaligned stretching can be described with additional correlation parameters $r$. Thus we can describe $Q$ as follows:
+$$Q=\left[
+\matrix{
+\alpha_x^2 & r\alpha_x\alpha_y \cr 
+r\alpha_x\alpha_y & \alpha_y^2
+}
+\right]$$
+### Vertical Shearing and Non-Centered Distributions
+https://jcgt.org/published/0003/02/03/paper.pdf
+Since all the results are derived from slope distribution $P_2$, we can also introduce average slope $\widetilde{m}$ distinct from zero. That would allow us to accurately represent normal and bump maps, frequently used to add detail. The surface created by off-center the average slope is called meso-surface, being intermediate between macro and micro representation. 
+Note that in the presence of meso-surface, the projected area of the micro-surface, as well as all other $\omega\cdot n$ factors, must be adjusted:
+$$\intop\nolimits_{H^2}(\boldsymbol v\cdot\omega)D\mathrm{d}\omega=\frac{v\cdot \widetilde m}{n\cdot \widetilde m}$$
 ### Generalized Trowbridge–Reitz model
 https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf
 Lets consider a generic distribution of slopes, parametrized by power $\gamma$ and roughness $\alpha$:
+$$f(r)=\frac{\gamma-1}{\pi(1+r^2)^\gamma}$$
+$$\begin{aligned}
+F(r)&=\frac{\gamma-1}{\pi}\int (1+r^2)^{-\gamma}dr\\
+&=\frac{\gamma-1}{\pi} r F_{2,1}(1/2,\gamma,3/2,-r^2)+C
+\end{aligned}$$
+$$\begin{aligned}
+\int F(r)dr&=\frac{\gamma-1}{\pi} \int r F_{2,1}(1/2,\gamma,3/2,-r^2)dr\\
+&=\frac{\gamma-1}{\pi}\left(r^2F_{2,1}(r)+C_1r+C_2+\frac{1}{2(\gamma-1)(1+r^2)^{\gamma-1}}\right)\\
+&=\frac{\gamma-1}{\pi}r^2F_{2,1}(r)+C_1r+C_2+\frac{\gamma-1}{\pi}\frac{1}{2(\gamma-1)(1+r^2)^{\gamma-1}}\\
+&=rF(r)+\frac{1}{2\pi(1+r^2)^{\gamma-1}}+C_2
+\end{aligned}$$
 $$
-P_2(\bar{m})=\frac{c_\gamma}{\pi\alpha_x\alpha_y(1+\left|\frac{\bar{m}}{\alpha}\right|)^\gamma}
+P_2(\bar{m})=\frac{\gamma-1}{\pi\alpha^2(1+\left|\frac{\bar{m}}{\alpha}\right|^2)^\gamma}
 $$
 From it we can derive NDF and masking functions:
-$$D(m)=\frac{c_\gamma}{\pi\alpha_x\alpha_y(m\cdot n)^4(1+\left|\frac{\bar{m}}{\alpha}\right|)^\gamma}$$
-$$\Lambda(m)=...$$
-Note that with $\gamma\to\infty$ it approaches normal distribution, which is the basis for Beckmann distribution. For $\gamma=2$ it results in regular Trowbridge–Reitz model.
+$$D(m)=\frac{\gamma-1}{\pi\alpha^2(m\cdot n)^4(1+\left|\frac{\bar{m}}{\alpha}\right|^2)^\gamma}$$
+$$\begin{aligned}
+\int\frac{\gamma-1}{(1+r^2)^\gamma}rdr=\int\frac{\gamma-1}{(1+r^2)^\gamma}\frac 1 2 d(1+r^2)=-\frac {(1+r^2)^{1-\gamma}} 2
+\end{aligned}$$
+$$\begin{aligned}
+\int\frac{(\gamma-1)r^2}{(1+r^2)^\gamma} dr&=r\int \frac{\gamma-1}{(1+r^2)^\gamma}r dr -\int \int \frac{\gamma-1}{(1+r^2)^\gamma}r drdr\\
+&=-r\frac {(1+r^2)^{1-\gamma}} 2 +\frac 1 2\int (1+r^2)^{1-\gamma} dr
+\end{aligned}$$
+$$\begin{aligned}
+\Lambda(\omega)&= \frac{1}{a}\int_{-\pi/2}^{\pi/2}\cos\phi\int_{\frac{a}{\cos\phi}}^{\infty}\frac{\gamma-1}{\pi(1+r^2)^\gamma}r^2 drd\phi - \int_{-\pi/2}^{\pi/2}\int_{\frac{a}{\cos\phi}}^{\infty}\frac{\gamma-1}{\pi(1+r^2)^\gamma}rdrd\phi \\
+\end{aligned}$$
+$$\begin{aligned}
+\int_{\frac{a}{\cos\phi}}^{\infty}\frac{\gamma-1}{(1+r^2)^\gamma}r^2 dr
+&= \frac 1 2 \int_{\frac{a}{\cos\phi}}^{\infty} (1+r^2)^{1-\gamma} dr - \frac 1 2 r(1+r^2)^{1-\gamma}\Big|_{\frac{a}{\cos\phi}}^{\infty}\\
+&= \frac 1 2 \lim_{r\to\infty}(r(1+r^2)^{1-\gamma})- \frac 1 2 \frac{a}{\cos\phi}(1+(\frac{a}{\cos\phi})^2)^{1-\gamma}+\frac 1 2 \int_{\frac{a}{\cos\phi}}^{\infty} (1+r^2)^{1-\gamma} dr \\
+&= \frac {\beta_1} 2- \frac 1 2 \frac{a}{\cos\phi}(1+(\frac{a}{\cos\phi})^2)^{1-\gamma}+\frac 1 2 \int_{\frac{a}{\cos\phi}}^{\infty} (1+r^2)^{1-\gamma} dr \\
+\beta_1&=\lim_{r\to\infty}\frac{r}{(1+r^2)^{\gamma-1}}
+\end{aligned}$$
+$$\begin{aligned}
+\int_{\frac{a}{\cos\phi}}^{\infty} (1+r^2)^{1-\gamma} dr
+&=\frac{\gamma-1}{\pi} r F_{2,1}(1/2,\gamma,3/2,-r^2)\Big|_{\frac{a}{\cos\phi}}^{\infty}\\
+&=\frac{\gamma-1}{\pi}(\lim_{r\to\infty} r F_{2,1}(1/2,\gamma,3/2,-r^2)- \frac{a}{\cos\phi} F_{2,1}(1/2,\gamma,3/2,-(\frac{a}{\cos\phi})^2))\\
+&=\beta_2 - \frac{\gamma-1}{\pi}\frac{a}{\cos\phi} F_{2,1}(1/2,\gamma,3/2,-(\frac{a}{\cos\phi})^2)\\
+\beta_2&=\frac{\gamma-1}{\pi}\lim_{r\to\infty} r F_{2,1}(1/2,\gamma,3/2,-r^2)
+\end{aligned}$$
+$$\begin{aligned}
+\frac{1}{a}\int_{-\pi/2}^{\pi/2}\cos\phi\int_{\frac{a}{\cos\phi}}^{\infty}\frac{\gamma-1}{(1+r^2)^\gamma}r^2 drd\phi=\\
+
+\frac{1}{a}\int_{-\pi/2}^{\pi/2}\cos\phi(\frac {\beta_1} 2 - \frac{a}{2\cos\phi}(1+(\frac{a}{\cos\phi})^2)^{1-\gamma}+\frac {\beta_2} 2- \frac{\gamma-1}{2\pi}\frac{a}{\cos\phi} F_{2,1}(1/2,\gamma,3/2,-(\frac{a}{\cos\phi})^2))d\phi =\\ 
+
+\frac{1}{a}\frac {\beta_1+\beta_2} 2\int_{-\pi/2}^{\pi/2}\cos\phi d\phi- \frac 1 2 \int_{-\pi/2}^{\pi/2}(1+(\frac{a}{\cos\phi})^2)^{1-\gamma}+ \frac{\gamma-1}{2\pi}F_{2,1}(1/2,\gamma,3/2,-(\frac{a}{\cos\phi})^2))d\phi =\\
+
+\frac{\beta_1+\beta_2}{a}- \frac 1 2\int_{-\pi/2}^{\pi/2}(1+(\frac{a}{\cos\phi})^2)^{1-\gamma}d\phi- \frac{\gamma-1}{2\pi}\int_{-\pi/2}^{\pi/2} F_{2,1}(1/2,\gamma,3/2,-(\frac{a}{\cos\phi})^2))d\phi
+\end{aligned}$$
+$$\begin{aligned}
+\int_{-\pi/2}^{\pi/2}(1+r^2)^{1-\gamma}\Big|_{\frac{a}{\cos\phi}}^{\infty}d\phi &= \lim_{r\to\infty}(1+r^2)^{1-\gamma}-\int_{-\pi/2}^{\pi/2}(1+(\frac{a}{\cos\phi})^2)^{1-\gamma}d\phi\\
+&= \beta_3-\int_{-\pi/2}^{\pi/2}(1+(\frac{a}{\cos\phi})^2)^{1-\gamma}d\phi\\
+\beta_3&=\lim_{r\to\infty}(1+r^2)^{1-\gamma}
+\end{aligned}$$
+[HGMfromEuler-arXiv.pdf](https://jvoight.github.io/articles/HGMfromEuler-arXiv.pdf)
+$$\begin{aligned}
+\int_{-\pi/2}^{\pi/2}(1+(\frac{a}{\cos\phi})^2)^{1-\gamma}d\phi &= 
+\int_{-\pi/2}^{\pi/2}\cos^{2\gamma-2}\phi(\cos^2\phi+a^2)^{1-\gamma}d\phi \\
+&= 2\int_{0}^{\pi/2}\cos^{2\gamma-2}\phi(\cos^2\phi+a^2)^{1-\gamma}d\phi\\
+u=\cos^2\phi,\ &d\phi=\frac{du}{-2\sqrt{u(1-u)}}\\
+\int_{0}^{\pi/2}\cos^{2\gamma-2}\phi(\cos^2\phi+a^2)^{1-\gamma}d\phi&=\int_{0}^{1}u^{\gamma-1}(u+a^2)^{1-\gamma}\frac{du}{-2\sqrt{u(1-u)}}\\
+&=-\frac {a^{2(1-\gamma)}} 2\int_{0}^{1}u^{\gamma-\frac 3 2}(1-u)^{-\frac 1 2}(\frac u {a^2}+1)^{1-\gamma}du\\
+&=-\frac {a^{2(1-\gamma)}} 2B(\gamma-\frac 1 2, \frac 1 2)F_{2,1}(\gamma-1,\gamma-\frac 1 2,\gamma,-\frac 1 {a^2})\\
+&=-\frac {a^{2(1-\gamma)}\Gamma(\gamma-\frac 1 2)\Gamma(\frac 1 2)} {2\Gamma(\gamma)}F_{2,1}(\gamma-1,\gamma-\frac 1 2,\gamma,-\frac 1 {a^2})
+\end{aligned}$$
+$$\begin{aligned}
+\Lambda(\omega)&= \frac{1}{a}\int_{-\pi/2}^{\pi/2}\cos\phi\int_{\frac{a}{\cos\phi}}^{\infty}\frac{\gamma-1}{\pi(1+r^2)^\gamma}r^2 drd\phi + \int_{-\pi/2}^{\pi/2}\int_{\frac{a}{\cos\phi}}^{\infty}\frac{\gamma-1}{\pi(1+r^2)^\gamma}r drd\phi \\
+&=\frac{\beta_1+\beta_2}{a\pi}- \frac 1 {2\pi}\int_{-\pi/2}^{\pi/2}(1+(\frac{a}{\cos\phi})^2)^{1-\gamma}d\phi- \frac{\gamma-1}{2\pi^2} \int_{-\pi/2}^{\pi/2}F_{2,1}(1/2,\gamma,3/2,-(\frac{a}{\cos\phi})^2))d\phi\\
+&+ \frac {\beta_3} {2\pi}-\frac 1 {2\pi}\int_{-\pi/2}^{\pi/2}(1+(\frac{a}{\cos\phi})^2)^{1-\gamma}d\phi\\
+&=\frac{\beta_1+\beta_2}{a\pi}- \frac 1 \pi\int_{-\pi/2}^{\pi/2}(1+(\frac{a}{\cos\phi})^2)^{1-\gamma}d\phi- \frac{\gamma-1}{2\pi^2} \int_{-\pi/2}^{\pi/2} F_{2,1}(1/2,\gamma,3/2,-(\frac{a}{\cos\phi})^2))d\phi\\
+&+ \frac {\beta_3} {2\pi}\\
+&=\frac{\beta_1+\beta_2}{a\pi}+ \frac {a^{2(1-\gamma)}\Gamma(\gamma-\frac 1 2)\Gamma(\frac 1 2)} {2\pi\Gamma(\gamma)}F_{2,1}(\gamma-1,\gamma-\frac 1 2,\gamma,-\frac 1 {a^2})- \frac{\gamma-1}{2\pi^2} \int_{-\pi/2}^{\pi/2} F_{2,1}(1/2,\gamma,3/2,-(\frac{a}{\cos\phi})^2))d\phi\\
+&+ \frac {\beta_3} {2\pi}
+\end{aligned}$$
+
+Note that with $\gamma\to\infty$ it approaches normal distribution, which is the basis for Beckmann distribution. For $\gamma=1$ it results in regular Trowbridge–Reitz model.
 
 glints
 https://cseweb.ucsd.edu/~ravir/glints.pdf
