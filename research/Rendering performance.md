@@ -14,6 +14,8 @@ By computing the face coverage for a particular pixel square, we could improve o
 
 # Caching/accumulation
 
+https://blog.demofox.org/2022/03/02/sampling-importance-resampling/
+
 depth function:
 https://youtu.be/h1ocYFrtsM4?t=868
 
