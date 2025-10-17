@@ -14,7 +14,18 @@ By computing the face coverage for a particular pixel square, we could improve o
 
 # Caching/accumulation
 
+Non-Euclidean rendering. Since in such geometries the light does not follow straight lines, usual techniques can't be applied. But since all medium are scattering to some degree, we can "keep lines straight" by continuously scattering in the direction of straight lines. That basically just scales light contribution along the path stronger than predicted by Beer's law, but other than that it allows us to reuse all knowledge from a standard Euclidean raytracing.
+
+cone tracing
+https://ssteinberg.xyz/2025/08/28/elliptical_cone_tracing_ads/
+
+spectral
+https://inria.hal.science/hal-03331619/file/Efficient%20Spectral%20Rendering%20on%20the%20GPU.pdf
+
+sampling
 https://blog.demofox.org/2022/03/02/sampling-importance-resampling/
+https://eheitzresearch.wordpress.com/792-2/
+https://eheitzresearch.wordpress.com/749-2/
 
 depth function:
 https://youtu.be/h1ocYFrtsM4?t=868
@@ -84,6 +95,8 @@ https://my.eng.utah.edu/~cs6958/papers/thesis_ize.pdf
 
 Importance Sampling: https://ameye.dev/notes/sampling-the-hemisphere/
 https://www.reddit.com/r/GraphicsProgramming/s/lw9OdJUSkF
+https://arxiv.org/pdf/1707.08358
+https://advances.realtimerendering.com/s2018/s2018_real_time_correct_soft_shadows.pdf
 
 accelerating convergence:
 https://en.wikipedia.org/wiki/Monte_Carlo_method
@@ -115,6 +128,7 @@ https://cseweb.ucsd.edu/~viscomp/classes/cse274/wi18/papers/a18-sen.pdf
 https://perso.telecom-paristech.fr/boubek/papers/BCD/BCD_lowres.pdf
 https://web.ece.ucsb.edu/~psen/Papers/Sen15_DenoisingMCRenders.pdf
 https://people.engr.tamu.edu/nimak/Data/EG13_RemovingMCNoiseWithGeneralDenoising.pdf
+https://eheitzresearch.wordpress.com/772-2/
 
 area light source
 https://eheitzresearch.wordpress.com/415-2/
@@ -126,13 +140,12 @@ https://diglib.eg.org/server/api/core/bitstreams/a365c243-3d09-4939-a185-3af4b4b
 https://files.is.tue.mpg.de/black/papers/OpenDR.pdf
 https://www.semanticscholar.org/paper/Lossless-Basis-Expansion-for-Gradient%E2%80%90Domain-Fang-Hachisuka/3a6618b2b68f8b7f3a7ae3bfc70126ee761ed297
 https://cs.uwaterloo.ca/~thachisu/lbegdr.pdf
+https://www.cs.umd.edu/~zwicker/publications/GradientDomainRenderingSTAR-CGF2019.pdf
 
 metropolis
 https://graphics.stanford.edu/papers/metro/
 https://users.cg.tuwien.ac.at/zsolnai/gfx/adaptive_metropolis/
-
-fiber rendering
-https://dl.acm.org/doi/pdf/10.1145/3023368.3023372
+https://web.archive.org/web/20240920170720/https://www.uni-kl.de/AG-Heinrich/MediaMLT.pdf
 
 triangle intersect:
 https://stackoverflow.com/questions/13163129/ray-triangle-intersection#:~:text=I%20have%20done%20a%20lot%20of%20benchmarks%2C,as%20fast%20as%20M%C3%B6ller%20and%20Trumbore's%20algorithm
@@ -153,3 +166,17 @@ https://blog.demofox.org/2020/03/10/how-do-i-calculate-variance-in-1-pass/
 
 path guiding, zero variance theory
 https://drive.google.com/file/d/1xIU8YB-R6iS2JHanA9v9P-3WbmqALxfe/view (ch. 74.4.2, p. 363)
+
+https://www.semanticscholar.org/paper/Accelerating-Path-Tracing-by-Re-Using-Paths-Bekaert-Sbert/a5a7d3c86f756f443aeae07ac8c64f8346914204
+https://www.semanticscholar.org/paper/Towards-accelerating-polarization-path-tracing-of-Ohba-Yatagawa/676a79673126be1fc507f8d431dea0f0b7960311
+
+fiber rendering
+https://dl.acm.org/doi/pdf/10.1145/3023368.3023372
+
+differential rendering
+https://shuangz.com/projects/dtrt-sa19/diff_rendering.pdf
+https://scontent.fiev6-1.fna.fbcdn.net/v/t39.8562-6/10000000_245993640840564_4920334379577755863_n.pdf?_nc_cat=101&ccb=1-7&_nc_sid=e280be&_nc_ohc=cbyx_6jcjcwQ7kNvwGc0E6P&_nc_oc=AdkdiCu8q5V-5kHy68qQ30B93WzBKdn0TTLqQ26CcXyokxz6qN1TBiQq8Bbqyw6QWF8&_nc_zt=14&_nc_ht=scontent.fiev6-1.fna&_nc_gid=6e26HQsWQwO2eUApHHnopg&oh=00_AffpCtHaVUn7eaQo_MIQ-y35IDViZZPJZpepCs9dXkzpAg&oe=68ED4AB1
+https://shuangz.com/projects/psdr-aq-sg22/psdr-aq-sg22.pdf
+https://inria.hal.science/hal-02497191/file/differentiable-pt-cov.pdf
+https://shuangz.com/projects/psdr-pixel-sa22/psdr-pixel-sa22.pdf
+https://shuangz.com/projects/psdr-sdf-sg24/psdr-sdf-sg24.pdf

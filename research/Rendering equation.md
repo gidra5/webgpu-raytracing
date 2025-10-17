@@ -1,18 +1,33 @@
-The standard Rendering Equation has the following form:
+To describe visual appearance of the scene we have to first define ground rules - what are we actually trying to simulate. Any rendered scene is characterized by scattering events, that happen on the way between a light source and camera sensor. Thus we need to consider when scattering happens and what happens during and in-between scattering.
 
-$$L\left(\omega_{o}\right)=\intop\nolimits_{H^2}\mathrm{f\left(\omega_{o},\omega_{i}\right)L\left(\omega_{i}\right)\cos\left(\omega_{i}\right)d}\omega_{i}$$
-where $\omega_{i}$ ranges over the sphere of directions around some point $x$
+This process can be view in multiple different perspectives:
+* An integral over all paths from source to sensor
+* A differential equation considering change of radiosity at a point.
+* An explicit equation considering radiosity at a point incoming from a particular direction.
+* Wave equation capturing wave-optics effects like diffraction.
 
+Each formulation is suitable to a different rendering problem domain, thus a combination of such formulations if usually required for closed form solutions and efficient evaluation.
+
+When it is known a function depends on more arguments than shown, assume it is explicitly passed through.
+# Physical Formulations
+https://www.youtube.com/watch?v=FS8NotZ3diY
+https://en.wikipedia.org/wiki/Radiative_transfer
+https://math.stanford.edu/~papanico/pubftp/TRANSPORT.pdf
+
+The process raytracing simulates is based on Radiative Transfer Equation (RTE). 
+
+Let's consider a radiosity at a point $x$ received from a given direction $\omega$. 
 It is a simplification of a more generic Radiative Transfer Equation (differential form):
 https://www.pbr-book.org/4ed/Light_Transport_II_Volume_Rendering/The_Equation_of_Transfer
-$$\omega\cdot\nabla L\left(\omega\right)+\sigma_{t}\left(\omega\right)L\left(\omega\right)=V(\omega)$$
-$$V(\omega)=Q_{e}(\omega)+\sigma_a(\omega)Q_a\left(\omega\right) +\sigma_{s}
+https://d38rqfq1h7iukm.cloudfront.net/media/papers/Jakob2010Radiative.pdf
+$$\frac 1 c \frac {\partial L}{\partial t}+\omega\cdot\nabla_{x} L+\sigma_{t}L=V$$
+$$V(\omega)=V_{e}(\omega)+\sigma_a(\omega)Q_a\left(\omega\right) +\sigma_{s}
 (\omega)\intop\nolimits_{S^2} p\left(\omega_{i}\to\omega\right)L\left(\omega_{i}\right)\mathrm{d}\omega_{i}$$
 Where
 * $\boldsymbol x$ is the ray origin
 * $\omega$ is the ray direction
 * $L$ the incoming radiance from the direction $\omega$
-* $Q_e$ is the emission of light in the direction $\omega$
+* $V_e$ is the emission of light in the direction $\omega$
 * $Q_a$ is the re-emission of absorbed light in the direction $\omega$
 * $p$ is the phase function - probability density for scattering from the direction $\omega_{i}$ in the direction $\omega$
 * $\sigma_{a}$, $\sigma_{s}$, $\sigma_{t}=\sigma_{a}+\sigma_{s}$ are the absorption, scattering, and extinction coefficients respectively for a given point $\boldsymbol x$ along the direction $\omega$.
@@ -22,7 +37,7 @@ The $p$ must obey normalization constraint:
 $$\intop\nolimits_{S^2}p\left(\omega_{i}\to\omega\right)\mathrm{d}\omega_{}=1$$
 Radiative Transfer Equation in integral form:
 $$L\left(\boldsymbol x,\omega\right)=T(\boldsymbol x \to \boldsymbol x_{surf})L_{surf}(\boldsymbol x_{surf}, \omega)+\int_{0}^{t_{surf}}T\left(\boldsymbol x\to \boldsymbol x_{t}\right) V(\boldsymbol x_t,\omega)\mathrm{d}t$$
-Where $\boldsymbol x_{surf}$ and $\boldsymbol x_{t}$ are shorthands for $\boldsymbol x_{t}=\boldsymbol x+t\omega$ and $\boldsymbol x_{surf}=\boldsymbol x+t_{surf}\omega$, and trasmittance $T\left(x\to x_{t}\right)$ is the following:
+Where $\boldsymbol x_{surf}$ and $\boldsymbol x_{t}$ are shorthand for $\boldsymbol x_{t}=\boldsymbol x+t\omega$ and $\boldsymbol x_{surf}=\boldsymbol x+t_{surf}\omega$, and transmittance $T\left(x\to x_{t}\right)$ is the following:
 https://www.pbr-book.org/4ed/Volume_Scattering/Transmittance
 $$T\left(x\to x_{t}\right)=e^{-\intop\nolimits_0^{t}\sigma_{t}\left(x_{u}, \omega\right)\mathrm{d}u}$$
 It also satisfies some properties such as:
@@ -53,7 +68,161 @@ For simplicity sake, we could omit the parameters for each of the functions to s
 All the equations above are also parametrized by time, ray origin and wavelength. Only parameters relevant for the un-ambiguation of the equation are written, others are implicitly passed through.
 $t_{surf}$ is the boundary condition for the surface hit of a ray and entirely depends on the actual scene. 
 https://graphics.stanford.edu/papers/veach_thesis/thesis.pdf
-# Reciprocity
+### Polarization
+https://en.wikipedia.org/wiki/Polarization_(waves)
+
+Since light is a wave, it oscillates around the ray direction. We can view the oscillations in the plane perpendicular to the ray. We can describe a polarization state in this plane with two values, each containing a phase and amplitude. Complex numbers give a natural way of encoding the state as a 2D complex vector:
+$$s=\left[
+A_xe^{i\varphi_x}\atop
+A_ye^{i\varphi_y}
+\right]=\left[
+a_x+ib_x\atop
+a_y+ib_y
+\right]=a+ib$$
+In that plane we can arbitrarily choose an orthogonal basis, that will be used to describe polarization state. The polarization states along each basis are considered basis polarizations. In principle any two orthogonal polarization states can be chosen as the basis. These satisfy the following constraint:
+$$\left<s_1, s_2\right>=\bar{s}_{1x}s_{2x}+\bar{s}_{1y}s_{2y}=0$$
+Thus the basis can be chosen to simplify the particular computations.
+
+The wave may also be unpolarized, which means that no single polarization can be distinguished in the ray. In that case we can describe it with statistical values describing variations and correlations in polarization state over time. It can be described with coherence matrix, averaged over time:
+$$J=s\bar{s}^T=\left[
+s_x\bar{s}_x\ s_x\bar{s}_y\atop
+s_y\bar{s}_x\ s_y\bar{s}_y
+\right]$$
+Equivalently, we can represent this matrix as 4 parameters called Stokes vector:
+$$S_1=J_{11}+J_{22}$$
+$$S_2=J_{11}-J_{22}$$
+$$S_3=J_{12}+J_{21}$$
+$$S_3=i(J_{12}-J_{21})$$
+This representation allows for easier visualization and computations. Additionally, the $S_1$ parameter represents total intensity of the ray, which is convenient for rendering.
+
+The light may also be partially polarized, with a fraction of purely polarized light $p$. The other fraction is unpolarized light, that is described by the average coherence matrix. We may assume that unpolarized light has absolutely no correlations, which makes $S_{1,2,3}=0$, and allows us to split the stokes vector into polarized and unpolarized parts. Otherwise we need 3 more values describing which fractions of each parameter belong to unpolarized matrix' parameters. Or we can literally track two such vectors.
+
+One useful basis is based on the plane of incidence, which is the plane defined by incoming propagation direction and surface normal. The term that is parallel to the plane is called *p-like*, and the perpendicular one is *s-like*. Refracted and reflected amount of polarized light from Fresnel equations are defined in terms of this basis.
+
+### Wave equation
+https://ssteinberg.xyz/2023/03/27/rtplt/
+https://en.wikipedia.org/wiki/Wave_equation
+https://dl.acm.org/doi/pdf/10.1145/3450626.3459791
+We can also look at this as a wave propagation problem in an absorbing and emitting medium. Let's consider a function $\psi(x, t)$ in electromagnetic field, satisfying the wave equation:
+$$\frac 1 {c^2} \frac {\partial^2\psi}{\partial t^2}+n \frac {\partial\psi}{\partial t}=\nabla^2\psi+S$$
+It is *damped*, which describes absorption with rate $n$, and has a source $S$, describing emission. 
+From the wave function $\psi$ we can define a Wigner distribution function (WDF):
+$$W(x,k)=\frac 1 {(2\pi)^3}\int\bar{\psi}(x-\frac 1 2x')\psi(x+\frac 1 2x')e^{-ix'\cdot k}dx'$$
+Where a new parameter $k$ is the wave-vector.
+
+A [wave-vector](https://en.wikipedia.org/wiki/Wave_vector) encodes a direction and a frequency of the wave at some point. We can define it as follows:
+$$k=\omega\frac {2\pi\eta} {\lambda}=\omega\ 2\pi\nu\ \eta$$
+Where $\omega$ is the direction of propagation, $\nu$ is the frequency, $\eta$ is the refractive index of the medium.
+With that, WDF describes the direction spread of $\omega$ for a particular frequency $\nu$ at a given position $x$. We can recover the wave function $\psi$ from it up to a global phase shift, which gives a complete description of light.
+
+We can use a gaussian WDF with the following shape:
+$$g_{\beta,\rho}(x, k;x_0, k_0)=\frac 1 {\pi^3}e^{\frac {q(x-x_0,k-k_0)} {\beta^2}}$$
+$$q(x,k)=\beta^2(\beta|k|-\rho|x|)^2+|x|^2$$
+Where $x_0$, $k_0$ are the mean position and wave-vector, $\beta$ is the initial spatial variance of the distribution, and $\rho$ is the correlation parameter, encoding polarizations state. In general, $\rho$ and $\beta$ can be matrices, encoding anisotropy.
+It is also normalized: $\int g(x,k)dx\ dk=1$
+This distribution represents a *generalized ray*, which allows us to apply regular raytracing approaches, while still getting wave-optics accurate result.
+
+We can derive a corresponding wave function for a given $g_{\beta,\rho}$:
+$$\psi_{\beta,\rho}(x;x_0,k_0)=\frac 1 {(\pi\beta^2)^{3/4}}e^{q'(x-x_0,k_0)}$$
+$$q'(x,k)=ik\cdot x-\frac 1 {2\beta^2}(1-i\rho)|x|^2$$
+With that the measured intensity is computed as follows:
+$$L=\int W(x,k)W_D(x,k)dx\ dk$$
+Where $W_D$ is the detector's WDF.
+If we assume our detectors are classical photoelectric detectors, the $\rho$ is 0. Then detector's WDF is computed as follows:
+$$W_D(x,k)=\int_D \alpha(x_0) g_{\beta,0}(x,k;x_0)dx_0$$
+Where $\alpha$ is the detection efficiency, and $D$ is the spatial extent of the detector.
+
+Substituting into $L$ and swapping order of integration we get the following expression:
+$$L=\int \alpha(x_0) \int W(x,k)g_{\beta,0}(x,k;x_0)dx\ dk\ dx_0$$
+
+We can then apply the ordinary approach of measuring backwards by evolving $W_D$ under time-reversed dynamics. That approach can be characterized as *weakly local* (not a point, but a gaussian in phase space), *linear* (the "rays" do not interfere) and *complete* (fully describes wave-optics).
+
+Consider the WDF $W_s$ of the light source. It interacts with the scene, until it reaches the detector. At that point the WDF transformed into $K\{W_s\}$ by the interaction kernel $K$ as follows:
+$$K\{W_s\}(x,k)=\int K(x',k',x,k)W_s(x',k')dx'dk'$$
+Where $K$ is a kernel representing the change in light distribution.
+
+Since we want to apply this transform in reverse time, the directions change $k\to-k$, and phases get conjugated. Which means that we can express $L$ equivalently as follows:
+$$L=\int \alpha(x_0) \int W(x,k)K^{-1}\{g_{\beta,0}\}(x,k;x_0)dx\ dk\ dx_0$$
+Then we further integrate over $k_0$, $\beta$ and $\rho$.
+For a given WDF $W$ and light source WDF $W_s$ we can compute measured light as follows:
+$$L_s=\int W(x,k)W_s(x,k)dx\ dk=\int g_{\beta,\rho}(x,k)W_s(x,k)dx\ dk=\frac 1 {(2\pi)^3}\left|\int \psi_s(x)\bar{\psi}_{\beta,\rho}(x)dx\right|^2$$
+
+The interaction kernels can be classified in two categories:
+* Simple linear optics interactions. The same interactions that are simulated by classical raytracing following RTE.
+* Diffractive interactions. These are the interactions that heavily depend on interference of the waves, such as scattering by rough surfaces.
+
+Reflection/refraction and free-space propagation fall under simple interactions, which makes them easy to define:
+$$K_{free}\{g_{\beta,\rho}(x_0, k_0)\}=g_{\beta',\rho'}(x_0+\bar zk_0, k_0)$$
+$$K_{r}\{g_{\beta,\rho}(k_0)\}=Rg_{\beta,\rho}(reflect(k_0))$$
+$$K_{t}\{g_{\beta,\rho}(k_0)\}=(1-R)g_{\beta,\rho}(refract(k_0))$$
+$$\bar z = z /|k_0|$$
+$$\beta'^2=\beta^2 + \bar z(2\rho+2\bar z\sigma_k)$$
+$$\rho'=\rho+2\bar z\sigma_k$$
+$$\sigma_k=\frac {1+\rho^2}{2\beta^2}$$
+Where $z$ is the propagation distance.
+### Birefringence
+https://en.wikipedia.org/wiki/Birefringence
+https://en.wikipedia.org/wiki/Huygens_principle_of_double_refraction
+Dependance of refractive index on direction of the ray and its polarization.
+### General relativity
+https://docs.google.com/document/d/1Ueo_gLj2LiP7dUPGt_-ERMB3dszPQkrqaGAIKRV7omc/edit?tab=t.0
+If we introduce time dependance into RTE, we can simulate effects predicted by general relativity, like lensing, phase redshifts, time dilation and stretching. We may improve even further by tracing geodesics instead of regular rays, which would allow simulation of light bending in space.
+
+https://en.wikipedia.org/wiki/Metric_tensor
+First, lets look at a notion of a metric tensor. 
+Suppose that $g$ is the metric tensor. We can think of it as a parametrization for the dot product:
+$$a\cdot b=g(a, b)=a^TGb$$
+Which implies a few things:
+1. It is a n by n matrix, where n is the number of dimensions
+2. It is completely described by a matrix $G$.
+3. It inherits all the properties of a dot product (bilinear, symmetric)
+4. $G$ is symmetric
+
+Note that under a coordinate transformation from $x_n$ to $x_n'$ the $G$ matrix also changes proportional to a jacobian $J$:
+$$G'=J^TGJ$$
+$$J=\left[\frac {\partial x_i}{\partial x_j'}\right]$$
+The $G$ itself can be viewed as a collection of partial derivatives:
+$$G=\left[\frac {\partial s}{\partial x_i}\cdot \frac {\partial s}{\partial x_j}\right]$$
+Where $s$ is a higher dimensional parametrization of the surface. Something like $s(u,v)=[x(u,v),y(u,v),z(u,v)]$. 
+
+(?) The dot product here corresponds to the geometry of infinitesimals, and usually assumed to be flat surface. That means if we "zoom in" close enough, it will look like a flat surface, which implies a standard dot product.
+
+https://en.wikipedia.org/wiki/Einstein_field_equations
+Einstein's field equations:
+$$R_{\mu\nu}-\frac 1 2 Rg_{\mu\nu}+\Lambda g_{\mu\nu}=\kappa T_{\mu\nu}$$
+$$R=g^{\mu\nu}R_{\mu\nu}$$
+$$R_{\mu\nu}=?$$
+$$T_{\mu\nu}=T^{\alpha\beta}g_{\alpha\mu}g_{\beta\nu}=?$$
+$$\kappa=\frac {8\pi G}{c^4}$$
+Stress-energy tensor $T$, ricci curvature tensor $R$.
+
+minkowski metric:
+$$G=\left[
+1 0 0 0
+0 1 0 0
+0 0 1 0
+0 0 0 -1
+\right]$$
+
+general relativity renderers
+https://iopscience.iop.org/article/10.3847/0004-637X/820/2/105/pdf
+https://github.com/hungyipu/Odyssey
+https://arxiv.org/pdf/1207.4234
+https://itp.uni-frankfurt.de/~hees/publ/kolkata.pdf
+https://arxiv.org/pdf/astro-ph/0406401
+https://arxiv.org/pdf/2304.03804
+https://www.researchgate.net/publication/362968273_Skylight_a_new_code_for_general-relativistic_ray-tracing_and_radiative_transfer_in_arbitrary_space-times
+https://arxiv.org/html/2507.16165v1?utm_source=chatgpt.com
+https://github.com/ABHModels/raytransfer?utm_source=chatgpt.com
+https://arxiv.org/pdf/2407.10431
+
+special relativity is the general relativity with minkowski metric
+
+special relativity
+https://www.linkedin.com/pulse/rendering-relativity-webgl-javascript-dmitry-lavrov?utm_source=chatgpt.com
+https://github.com/freemeson/specRelTrace?utm_source=chatgpt.com
+
+### Reciprocity
 chatgpt'd
 It is a common assumption that it does not matter in which direction we measure light - from camera to light or the other way.
 There are only two functions that depend both on incoming and outgoing light directions - $p(\omega_{i}\to\omega)$ and $f(\omega\to\omega_{i})$. Thus we impose additional constraints on these functions:
@@ -102,7 +271,13 @@ r_{s,p}^2 &=\left|\frac{a-ib}{a+ib}\right|^2=\left|\frac{\left(a-ib\right)^2}{a^
 \end{aligned}$$
 
 Thus, in a case of perfectly smooth surface, BSDF is as follows:
-$$f_{s}\left(x,\omega_{i}\to\omega_{o},\lambda\right)=R\left(\lambda,\omega_{i}, n\right)\delta(\omega_o-reflect\left(\omega_{i},n\right))+T_{BSDF}\left(\lambda,\omega_{i}, n\right)\delta(\omega_o-refract(\omega_{i}, \eta(x, \omega_{i}, \lambda), n))$$
+$$\begin{aligned}
+f_{s}\left(x,\omega_{i}\to\omega_{o},\lambda\right)
+
+&=R\left(\lambda,\omega_{i}, n\right)\delta(\omega_o-reflect\left(\omega_{i},n\right))\\
+
+&+T_{BSDF}\left(\lambda,\omega_{i}, n\right)\delta(\omega_o-refract(\omega_{i}, \eta(x, \omega_{i}, \lambda), n))
+\end{aligned}$$
 ### Absorption
 chatgpt'd
 The absorption rate can be expressed in terms of $k$:
@@ -169,26 +344,85 @@ With the scattering and absorption coefficients:
 $$\sigma_e=N\pi a^2(2-\frac{4\sin p}{p}-\frac{4(1-\cos p)}{p^2})$$
 $$p=2x(n-1)$$
 Where $N$ is number of particles per unit volume.
+# Geometry
+Different effects happen and contribute significantly at different geometric detail scales, or have implications that make impractical approaches used for other scales.
 
-# Mesogeometry
-Meso-geometry is any geometry on the scale between micro and macro. It is detail that is impractical to describe with macro-geometry (wasteful and expensive), but not as fine as microgeometry, that we can treat statistically.
+We can split geometric detail into following categories:
+1. Scene. The highest level in the hierarchy, describing the whole world's composition from distinct objects. Allows for crude approximations and efficient evaluation.
+2. Macro-scale. Defines explicit object geometry with a combination of primitives, which are shaded and traced against explicitly. 
+3. Meso-scale. Significant geometric detail along the surface of an object. Usually mapped from object surface domain to a 2D domain defining geometric detail with less data and spatial variance.
+4. Micro-scale. A detail, that is imperceptable at any given rendering resolution, but yields significant shading contributions due to self-shadowing and multiple bounces in vicinity of the surface.
+5. Nano-geometry. A wavelength scale detail, that is insignificant to self-shadowing and multiple-bounce lighting, but introduces various dispersion effects due to wave optics.
 
-While useful, overusing it may create too much visible artifacts due to it being limited to the primitive's plane. While it is possible to trace against meso-geometry, it is often impractical.
+Each scale requires distinct approaches to allow practical and universal shading of any surface.
+
+The classification is applicable not only to surface detail, but also to volumetric detail.
+## Meso-geometry
+https://research.nvidia.com/sites/default/files/pubs/2016-02_Real-time-Rendering-of/ZirrKaplanyan_MultiscaleI3D2016.pdf
+Meso-geometry is any geometry on the scale between micro and macro. It is detail that is impractical to describe with macro-geometry (wasteful and expensive), but not as fine as microgeometry, that we can treat it completely statistically.
+
+While useful, overusing it may create too much visible artifacts due to it being limited to the primitive's plane\volume. While it is possible to trace against meso-geometry, it is often impractical. Since we don't recognize global texture of such geometry as distinct, we just need the pattern to be distinct locally, which allows this detail to be procedurally generated.
+
+Many techniques to describe it rely on procedural or tabulated data, or textures.
+### Surface detail
+https://userpages.cs.umbc.edu/olano/papers/lean/lean.pdf
+https://inria.hal.science/file/index/docid/967847/filename/LEADRmapping.pdf
+
+https://www.youtube.com/watch?v=43Ilra6fNGc (why normal maps and height maps produce different shading? Seems to have rotated normals which causes incorrect shading)
+https://learnopengl.com/Advanced-Lighting/Parallax-Mapping
+We can represent additional surface detail on the single triangle with a variety of displacement maps, such as height/bump/parallax map. A similar effect is achieved with normal map, which is not strictly a displacement map, since it only *implies* displacement due to its effect on shading. Shell maps
+
+### Thin geometry
+Another class of meso-geometry is thin geometry like cloth, fur and hair, that adds further complications to the modelling.
+### Fibers
+https://shuangz.com/courses/cloth-sa12/cloth-sa12.pdf
+A fiber, represents "building block" of any cloth. A fiber then woven against itself multiple times to create plies. The same way plies form yarns, and yarns form even deeper textiles. In some sense this process can be indefinite in both scaling up and down the fiber size.  Scaling up is both impractical and unrealistic, in a sense that we don't encounter usually such extreme cases. If needed they might be better modelled with explicit geometry.
+
+fiber rendering
+https://dl.acm.org/doi/pdf/10.1145/3023368.3023372
+We can split how fibers are woven in the following categories: 
+* migration - when there is $n$ fibers in a ply which twist around its center.
+* loop - the fibers that were accidentally pulled out.
+* hair - fibers that have open endpoints that stick outside.
 
 cloth
 https://s3.amazonaws.com/srmweb/publications/IrawanThesis.pdf
+Woven cloth is constructed by interlacing two sets of parallel yarns, known as the warp and weft, at right angles to each other. In the process of weaving, warp yarns are raised or lowered and weft yarns (also known as fillings) are inserted in the space that resulted. Figure 2.1 shows a loom with the warp yarns before the weft yarns are inserted. The pattern in which the warp and weft are interleaved varies greatly, but the majority of fabrics are made in one of the three simplest weave patterns: plain weave, twill, and satin.
 
-fur and hair rendering
+https://dl.acm.org/doi/pdf/10.1145/74333.74359
+### Fur
+A sparse field of independent fibers.
 http://kunzhou.net/2013/fur-rendering-tvcg.pdf
+### Hair
+A not so sparse field of independent fibers.
 https://www.pbr-book.org/4ed/Reflection_Models/Scattering_from_Hair
 https://www.cemyuksel.com/research/hairmesh_rendering/
-# Microgeometry
+https://www.cs.cornell.edu/~srm/publications/SG03-hair-lr.pdf
+### Glint
+glints
+https://cseweb.ucsd.edu/~ravir/glints.pdf
+https://rgl.epfl.ch/publications/Zeltner2020Specular
+https://igg.unistra.fr/People/chermain/real_time_glint/
+https://rgl.epfl.ch/publications/Loubet2020Slope
+https://hal.science/hal-02364885/file/glint_ms.pdf
+https://igg.unistra.fr/People/chermain/assets/pdf/Chermain2021ImportanceSampling.pdf
+https://cs.uwaterloo.ca/sites/ca.computer-science/files/uploads/files/cs-2024-02.pdf
+https://cs.uwaterloo.ca/sites/default/files/uploads/documents/cs-2024-02_0.pdf
+https://ggx-research.github.io/publication/2023/06/09/publication-glints.html
+
+more references
+https://www.semanticscholar.org/paper/Importance-Sampling-of-Glittering-BSDFs-based-on-Chermain-Sauvage/f9f6ddb7b159264c9510a51db96321bdea68017f
+### Scratch
+https://rgl.epfl.ch/publications/Werner2017Scratch
+https://inria.hal.science/hal-01321289/document
+### Foam
+https://hal.science/hal-04220006/file/micrograin_HAL.pdf
+## Micro-geometry
 While general RTE fully describes the radiance, it is unfeasible to render the micro details of objects. Besides unpracticality, such fine details are also imperceivable, since all of the detail is in a single pixel area, which is averaged in the final render. Thus it is a great place for statistical methods that describe microgeometry properties statistically.
 In that case for every sample point $x$ we evaluate a statistical model of properties in an infinitesimal volume at that point, which simulates averaged result of fine details in both participating media and surface. 
 There were developed two theories that give tools to handle both cases.
 Together with broad scattering simulated in raytracing directly, it gives a complete description of radiance in the scene.
-## Microfacet theory
-
+### Microfacet theory
 https://d1qx31qr3h6wln.cloudfront.net/publications/microfacet-theory-non-uniform-heightfields_1.pdf
 https://jcgt.org/published/0003/02/03/paper.pdf
 The fresnel terms define reflection and transmission for ideal smooth surfaces. But that misses the imperfection of real world. Lets define a map from surface coords to world coords $H: R^2\to R^3$. If we assume that for a local patch $A$ the function $H$ is a heightmap, we can apply microfacet theory.
@@ -261,7 +495,7 @@ D(m)G(m)dm\\
 
 https://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf
 
-### Normal Distribution Function
+#### Normal Distribution Function
 chatgpt'd
 https://www.pbr-book.org/4ed/Reflection_Models/Roughness_Using_Microfacet_Theory
 
@@ -274,14 +508,14 @@ The constraints on $D$:
 
 It is also useful to define a Visible Normal Distribution Function:
 $$D_{\omega}(m)=\frac{G(\omega,m)\left<\omega\cdot m\right>D(m)}{\int_HG(\omega,m')\left<\omega\cdot m'\right>D(m')dm'}=\frac{\left<\omega\cdot m\right>}{\omega\cdot n}G(\omega,m)D(m)$$
-### Masking function
+#### Masking function
 The constraints on $G$:
 1. $G$ is smooth
 2. As $n\cdot\omega\to0$, $G\to0$
 3. Proper distribution of normals must project onto $\omega$ the same way as the macro surface. With that we expect that physically plausible distributions must satisfy:
 $$\int_HD(m)G(\omega, m)\left<\omega\cdot m\right>dm=\left<\omega\cdot n\right>$$$\left<\omega\cdot m\right>=max(\omega\cdot m,0)$
 Where $(x>0)$ is Heaviside function, that is 1 whenever the condition is true.
-### Smith's model
+#### Smith's model
 https://www.pbr-book.org/4ed/Reflection_Models/Roughness_Using_Microfacet_Theory
 https://jcgt.org/published/0003/02/03/paper.pdf
 
@@ -299,7 +533,7 @@ Where $P_2$ is the slope distribution of the microfacets, related to the NDF as 
 $$P_2(\bar{m})d\bar{m}=(m\cdot n)D(m)dm$$
 $$D(m)=\frac{P_2(\bar{m})}{(m\cdot n)^4}$$
 $$\bar{m}=-\frac{[m_x,m_y]}{m_z}=-\tan\theta_m[\cos\phi_m,\sin\phi_m]$$
-### Masking-shadowing function
+#### Masking-shadowing function
 https://www.pbr-book.org/4ed/Reflection_Models/Roughness_Using_Microfacet_Theory
 If we only account for a single scattering event, we should also account for shadowing of outgoing ray. If we assume independence of these two processes, we get:
 $$G_s(\omega_i,\omega_o, m)=G(\omega_i, m)G(\omega_o, m)$$
@@ -310,7 +544,7 @@ $$G_s(\omega_i, \omega_o)=\frac{1}{1+\Lambda(\omega_i)+\Lambda(\omega_o)}$$
 
 In particular, both guarantee reciprocity of the resulting BSDF.
 
-### Stretch invariance
+#### Stretch invariance
 https://jcgt.org/published/0003/02/03/paper.pdf
 Some distributions allow for an easy extension to the anisotropic masking function, since they are invariant under stretching in the following sense:
 $$P_2(\bar{m},\alpha)=\frac{1}{\lambda_x\lambda_y}P_2(\frac{\bar{m}}{\lambda},\frac{\alpha}{\lambda}),\text{ for any } \lambda>0$$
@@ -330,7 +564,7 @@ Then if we look at parameter a, that we derived above, we should express it in n
 $$a=\frac{1}{\alpha_y\tan\theta'}=\frac{1}{\alpha_y{\sqrt{(\frac{\alpha_x}{\alpha_y}\sin\phi)^2+\cos^2\phi}\tan\theta}}=\frac{1}{{\sqrt{(\alpha_x\sin\phi)^2+(\alpha_y\cos\phi)^2}\tan\theta}}=\frac{1}{\alpha\tan\theta}$$
 In that case isotropic roughness $\alpha$ has the following value in terms of a roughness projected onto the outgoing direction $\omega_o$:
 $$\alpha=\sqrt{(\alpha_x\sin\phi)^2+(\alpha_y\cos\phi)^2}=\frac{|[\alpha_x\omega_x, \alpha_y\omega_y]|}{\sin\theta}$$
-### Unaligned stretching
+#### Unaligned stretching
 https://jcgt.org/published/0003/02/03/paper.pdf
 The stretching operation does not need to be axis aligned. We can define a matrix $Q$ that would describe the rule for a norm computation:
 $$|m|=\sqrt{m^TQm}$$
@@ -341,19 +575,21 @@ $$Q=\left[
 r\alpha_x\alpha_y & \alpha_y^2
 }
 \right]$$
-### Vertical Shearing and Non-Centered Distributions
+#### Vertical Shearing and Non-Centered Distributions
 https://jcgt.org/published/0003/02/03/paper.pdf
 Since all the results are derived from slope distribution $P_2$, we can also introduce average slope $\widetilde{m}$ distinct from zero. That would allow us to accurately represent normal and bump maps in our equations, frequently used to add detail. The surface created by off-center the average slope is called meso-surface, being intermediate between macro and micro representation. 
 Note that in the presence of meso-surface, the projected area of the micro-surface, as well as all other $\omega\cdot n$ factors, must be adjusted:
 $$\intop\nolimits_{H^2}(\boldsymbol v\cdot\omega)D\mathrm{d}\omega=\frac{v\cdot \widetilde m}{n\cdot \widetilde m}$$
-### Generalized Trowbridge–Reitz model
+#### Generalized Trowbridge–Reitz model
 https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf
 Lets consider a generic distribution of slopes, parametrized by power $\gamma$ and roughness $\alpha$:
 $$f(r)=\frac{1}{\pi(1+\frac{r^2}{\gamma-1})^\gamma}$$
 $$
 P_2(\bar{m})=\frac{1}{\pi\alpha^2\left(1+\frac{\left|\bar{m}\right|^2}{\alpha^2(\gamma-1)}\right)^\gamma}
 $$
+ 
 From it we can derive NDF and masking functions:
+https://research.nvidia.com/labs/rtr/student-beyond/publications/student-t-supplemental.pdf
 https://chatgpt.com/g/g-p-68d44deb91288191b966e95e66e2b07c/c/68dd4308-a02c-8329-a027-532937397d31
 $$D(m)=\frac{1}{\pi\alpha^2(m\cdot n)^4\left(1+\frac{\left|\bar{m}\right|^2}{\alpha^2(\gamma-1)}\right)^\gamma}$$
 $$\begin{aligned}
@@ -369,39 +605,100 @@ Works just fine, but hypergeometric term may be slow when implemented naively. F
 
 Note that with $\gamma\to\infty$ it approaches normal distribution, which is the basis for Beckmann distribution. For $\gamma=2$ it results in regular Trowbridge–Reitz model.
 
+chatgpt'd
+Also note that for $\gamma=\frac \beta 2, \beta\in\mathbb{N}$ we can derive closed forms for the hypergeometric term.
+
 Intuitively, $\gamma$ represents the proportion of steeper facets. Basically "what kind of roughness" the surface has. If a lot of facets are at extreme angles, practically all light will be trapped once it enters surface, because all its energy will dissipate while it bounces between facets.
 The higher values usually represent more polished surfaces like glass or ceramics.
-### Generic slope distribution
+#### Generic slope distribution
+https://diglib.eg.org/bitstream/handle/10.1111/cgf14590/v41i4pp105-116.pdf
 We can describe any distribution as a linear combination of shifted/scaled Trowbridge–Reitz distributions. For a set of distributions $P_i$ with weights $w_i$ that sum to 1 and their corresponding NDFs $D_i$ and $\Lambda_i$, we can define combined distribution $P$, NDF $D$ and $\Lambda$ as follows:
 $$P=\sum_{i}w_iP_i$$
 $$D=\sum_{i}w_iD_i$$
 $$\Lambda=\sum_{i}w_i\Lambda_i$$
 While not physically motivated, it is useful to have for application of measured data.
+### Microflake theory
 
-glints
-https://cseweb.ucsd.edu/~ravir/glints.pdf
-https://rgl.epfl.ch/publications/Zeltner2020Specular
-https://igg.unistra.fr/People/chermain/real_time_glint/
-https://rgl.epfl.ch/publications/Loubet2020Slope
-## Microflake theory
+https://rgl.epfl.ch/publications/Jakob2010Radiative
+Consider an isolated particle illuminated by incident radiance $L(\omega)$. We can characterize the particle using three functions: 
+1. $\sigma(\omega)$ is the area of the particle’s projection onto $\omega_{\bot}$. Probability of it hitting the particle.
+2. $\alpha(\omega) \in [0,1]$ is the albedo of the particle when illuminated from direction $\omega$. Probability that light is scattered rather than absorbed, conditioned on having hit the particle
+3. $p_p(\omega\to\omega')$ is the phase function exhibited by the particle when illuminated from direction $\omega$ and forms a probability density in the outgoing direction $\omega'$. Probability density for scattering to direction $\omega'$, conditioned on having scattered.
+
+Note that the particle phase function $p_p$ is not necessary reciprocal. Rather the whole chain of events from hitting to scattering in a particular direction that is reciprocal:
+$$f_p(\omega\to\omega')=\sigma(\omega)\alpha(\omega)p_p(\omega\to\omega')$$
+$$f_p(\omega\to\omega')=f_p(\omega'\to\omega)$$
+The properties of a volume containing many scattering particles depend on the characteristics of the particles—both their individual properties and the distribution of particle orientations that is present. We assume that particles are rotationally symmetric about some axis, so that their orientation can be entirely described by the direction of the axis. For the same reason we further assume that the particles are identical. A mixture of particle types can be accommodated easily by summing or integrating over the particles’ properties.
+
+Under these two assumptions we can characterize the volume in the neighborhood of a particular point by two quantities: 
+1. $\rho$ is the density of particles per unit volume. 
+2. $D(m)$, a probability density on the sphere, gives the probability for a particle to be oriented in direction $m$.
+
+With this we can define extinction and scattering coefficients $\sigma_t$, $\sigma_s$, and the phase function $p$:
+$$
+\sigma_t(\omega)=\rho\int_{S^2}\sigma(m, \omega)D(m)dm
+$$
+$$
+\sigma_s(\omega)=\rho\int_{S^2}\alpha(m,\omega')\sigma(m, \omega')D(m)dm
+$$
+$$
+p(\omega\to\omega')=\frac\rho{\sigma_s(\omega)}\int_{S^2}p_p(m, \omega'\to\omega)\alpha(m,\omega')\sigma(m, \omega')D(m)dm
+$$
+
+Now then lets proceed with defining these quantities for a particular type of particles. If we assume that particles are a planar, two-sided flakes, we can define $\sigma$ and $p_p$ as follows:
+$$
+\sigma(m, \omega)=a|\omega\cdot m|$$
+$$p_p(\omega\to\omega')=f_m(m,\omega\to\omega') + f_m(-m, \omega\to\omega')$$
+From which we can derive other relevant functions, except albedo. Free albedo allows us to adjust overall phase function to fit a particular model.
+
+#### Generalized SGGX distribution
+https://research.nvidia.com/sites/default/files/pubs/2015-08_The-SGGX-microflake/sggx.pdf
+We can extend the GGX distribution and its generalization to be usable in microflake theory.
+$$\sigma(\omega)=\sqrt {\omega^TS\omega}$$
+$$D(m)=\frac 1 {\pi \sqrt S(m^TS^{-1}m)^2}$$
+$$S=R[\alpha_x^2, \alpha_y^2, \alpha_z^2]R^T$$
+$$S^{-1}=R[\frac 1{\alpha_x^2}, \frac 1{\alpha_y^2}, \frac 1{\alpha_z^2}]R^T$$
+$$\bar{m}=R^Tm$$
+We can try extend it just like the Generalized Trowbridge–Reitz: 
+$$\begin{aligned}
+D(m)&=\frac 1 {\pi \sqrt S(m^TS^{-1}m)^{\gamma}}\\
+\end{aligned}$$
+But note that this naive extension does not produce gaussian distribution in the limit $\gamma\to\infty$. To allow that we need to transform the denominator such that it is in the form $(1+\frac {x^2} a )^a$:
+$$\begin{aligned}
+D(m)&=\frac 1 {\pi \sqrt S(m^TS^{-1}m)^{2}}\\
+&=\frac 1 {\pi \sqrt S (1 + m^TS^{-1}m - 1)^{2}}\\
+&=\frac 1 {\pi \sqrt S (1 + \frac {m^TS^{-1}m - 1} {2-1})^{2}}\\
+&=\frac 1 {\pi \sqrt S (1 + \frac {m^TS^{-1}m - 1} {\gamma-1})^{\gamma}}\\
+\end{aligned}$$
+Note that it also agrees with GTR when $S_{33}=1$.
+
+With that last thing we need is to derive $\sigma(\omega)$:
+$$
+\begin{aligned}
+\sigma(\omega)&=a\int_{S^2}|\omega\cdot m|D(m)dm\\
+&=a\int_{S^2}\frac {|\omega\cdot m|} {\pi \sqrt S (1 + \frac {m^TS^{-1}m - 1} {\gamma-1})^{\gamma}}dm\\
+\end{aligned}
+$$
+
+https://cseweb.ucsd.edu/~tzli/cse272/wi2023/lectures/11_microflake.pdf
+https://onrendering.com/data/papers/ms16/ms16.pdf
+https://cs.dartmouth.edu/~wjarosz/publications/seyb24from-small.pdf
+### Multibounce microfacets
+https://arxiv.org/pdf/2110.07145
+https://sites.cs.ucsb.edu/~lingqi/publications/paper_mbbrdf_arxiv.pdf
+https://d1qx31qr3h6wln.cloudfront.net/publications/Position_free_Smith.pdf
+https://arxiv.org/pdf/2302.03408
+
+We may consider full RTE at a surface boundary and its neighbouring volume. Given complex index of refraction we can compute absorption rate. If we interpreter surface as microflake volume, we may split flakes into front facing and backfacing and simulate light moving between under and above the surface together with absorption and refraction.
+
 Microfacet theory assumes the facets form a single surface. If we relax this assumption such that facets can be positioned arbitrarily in micro-volume, then we basically get small plane-like dielectric flakes, which opens a possibility for modeling small-scale multi-bounces and subsurface scattering in thin surface volumes.
 
-particle density $\sigma_p$
-albedo $\alpha$
-NDF $D$
-$$\sigma_a(\omega)=\sigma_p(1-\alpha)\intop\nolimits_{S^2}(m\cdot \omega)D(m)dm$$
-$$\sigma_s(\omega)=\sigma_p\alpha\intop\nolimits_{S^2}(m\cdot \omega)D(m)dm$$
-$$\rho(\omega_i\to\omega)=\frac{\alpha}{\sigma_s(\omega_i)}D(\frac{\omega_i+\omega}{|\omega_i+\omega|})D(-\frac{\omega_i+\omega}{|\omega_i+\omega|})$$
-https://cseweb.ucsd.edu/~tzli/cse272/wi2023/lectures/11_microflake.pdf
-https://research.nvidia.com/sites/default/files/pubs/2015-08_The-SGGX-microflake/sggx.pdf
-https://onrendering.com/data/papers/ms16/ms16.pdf
-https://arxiv.org/pdf/2110.07145
-## Multibounce microfacets
-https://arxiv.org/pdf/2110.07145
+But its origins are in participating media rendering. It was developed to provide a similar framework to microfacets that allows deriving a valid phase function from some particle distribution and interaction that they have with light.
+
 Fresnel equations and microfacets by themselves can't entirely approximate diffuse light, and I'm not even talking about approximating the rendering equation's output in its entirety. Diffuse light models absolute randomness in scattering distribution, making both $\omega_i$ and $\omega_o$ irrelevant.
 When light bounces multiple times, it decorrelates $\omega_i$ and $\omega_o$ directions, making it more and more diffuse. And if the surface is extremely rough and reflective, a lot of bounces will happen, until the ray exits the surface, making it diffuse in nature.
 
-We can evaluate the RTE over the microfacet's volume, bounded between upper and lower depth of the surface. The more bounces we simulate, the better the approximation becomes. Simulating it inside the volume via statistics is much cheaper than full raytracing per each facet, but still quite expensive considering the number of macrosurface intersections.
+We can evaluate the RTE over the microfacet's volume, bounded between upper and lower depth of the surface. The more bounces we simulate, the better the approximation becomes. Simulating it inside the volume via statistics is much cheaper than full raytracing per each facet, but still quite expensive considering the number of macro-surface intersections.
 
 Following [this paper](https://eheitzresearch.wordpress.com/240-2/) we can simulate random walks in microfacet volumes, and evaluate the RTE at each step. We treat rays that exit the volume as contributing to overall BSDF, and others as part of the random walk.
 
@@ -417,12 +714,50 @@ We still assume dielectric interactions for each microfacet, so the paper has on
 $$p(\omega_i\to\omega, n)=\frac{RD_{\omega_i}(h_r)}{4|\omega_i\cdot h_r|} + (\omega\cdot n)\frac{\eta_o^2TD_{\omega_i}(h_t)}{(\eta_i(\omega_i\cdot h_t)+\eta_o(\omega_o\cdot h_t))^2}$$
 
 There are some other models, like Oren-Nayar, Kulla–Conty or Burley, that can similarly restore energy from multiple bounces at the surface, but they are often heuristic or incomplete, which makes this model the most complete.
+## Nano-geometry
+A near-wavelength geometry detail, that is insignificant to BSDF, but contributes significant color-shifts due to wave-optics. Fine gratings of the surface distort BSDF per wavelength, which creates diffraction patterns.
+### Diffraction
+
+https://en.wikipedia.org/wiki/Diffraction
+
+When a wave passes through a slit, it will create interference with itself, whenever measured at some distance from the slit. We can see it by applying [Huygens–Fresnel principle](https://en.wikipedia.org/wiki/Huygens%E2%80%93Fresnel_principle) - each point at the wavefront of planar wave can be treated as a spherical wave. When such wavefront passes through a slit, most of these spherical waves get reflected back, and only those that are between the corners get through. With that there is no compensation for the interference of two spherical waves at the sides of slit, which eventually reveals them at significant distances.
+
+Once we considered how would a slit look, the same principles can be applied to arbitrary aperture. Further more, we can apply [Babinet’s Principle](https://en.wikipedia.org/wiki/Babinet%27s_principle), which basically means that the diffraction pattern for an object and an aperture of the same shape are the same. With that we can apply the diffraction results to any solid object.
+
+[Kirchhoff's diffraction integral](https://en.wikipedia.org/wiki/Kirchhoff%27s_diffraction_formula) is the most general treatment of this phenomena. A bit simpler formular can be obtained by assuming far- and near-field interactions. In particular, far-field result is called Fraunhofer diffraction integral, and is exactly the Fourier transform of the wave function over the aperture. The near-field diffraction is describe by Fresnel diffraction integral and is useful for describing diffraction at nanoscale.
+
+https://eugenedeon.com/
+https://ssteinberg.xyz/2024fsdbsdf/steinberg2024_fsd_paper.pdf
+
+Considering Babinet’s Principle, we can split the diffracted field into two parts, covering regions inside and outside aperture.
+
+chatgpt'd
+Happens due to wavelength-scale details in surface. For a thin layer, we get phase delay:
+$$\delta(\lambda, d, \eta, \theta_t)=\frac{4\pi\ \eta\ d \cos \theta_t}{\lambda }$$
+They scale polarized reflection and refraction as follows:
+
+$$r'=\frac{r_1+r_2e^{2i\delta}}{1+r_1 r_2e^{2i\delta}}$$
+where $r_1$ and $r_2$ are the entry and exit values for fresnel terms.
+
+iridescence
+https://hal.science/hal-01518344/file/paper-small%20%281%29.pdf
+
+https://ssteinberg.xyz/2023rtplt/2023_rtplt_paper.pdf
+https://developer.nvidia.com/gpugems/gpugems/part-i-natural-effects/chapter-8-simulating-diffraction
+microfacet diffraction
+https://inria.hal.science/hal-01515948/file/paper.pdf
+wave optics
+https://cseweb.ucsd.edu/~ravir/waveoptics.pdf
+https://backend.orbit.dtu.dk/ws/files/235458057/wptbsdf.pdf
+diffraction shaders
+https://www.dgp.toronto.edu/public_user/stam/reality/Research/pdf/diff.pdf
 # Layered Materials
 https://www.pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF
 https://www.pbr-book.org/4ed/Light_Transport_II_Volume_Rendering/Scattering_from_Layered_Materials
 https://rgl.s3.eu-central-1.amazonaws.com/media/papers/Jakob2014Comprehensive_2.pdf
 https://hal.science/hal-01785457/document
 https://arxiv.org/pdf/2110.07145
+https://diglib.eg.org/items/fe183de1-de86-41b7-baf3-1efe8521c8c0
 Until that point we only considered a uniform surface boundary. Having that foundation, we can extend it to multiple layers. 
 Let us model each layer as a thin participating media of depth $d$, with upper boundary described by BSDF $f_l$, and a phase function $p_l$, each carrying the necessary parameters to be described with models for a single surface interface above. 
 With this we can express radiance exiting a single layer as follows:
@@ -446,19 +781,6 @@ $$T^{top}=T^{top}_2(I-R^{bot}_1R^{top}_2)^{-1}T^{top}_1$$
 $$T^{bot}=T^{bot}_1(I-R^{top}_2R^{bot}_1)^{-1}T^{bot}_2$$
 Getting $T$ in general requires computing multiple bounces, which is expensive and often does not yield. We can get arbitrarily fine approximation by choosing finitely small $\Delta d$, where we can neglect multiple scattering, and apply *adding-doubling* algorithm to achieve desired layer depth.
 The only issue with this approach is that it disregards the volumetric scattering by phase functions, and essentially replaces them by iteration of reflections and transmittance over the depth of the layer, which may have a significant impact for thick layers.
-# Diffraction
-chatgpt'd
-https://eugenedeon.com/
-https://ssteinberg.xyz/2024fsdbsdf/steinberg2024_fsd_paper.pdf
-Happens due to wavelength-scale details in surface. For a thin layer, we get phase delay:
-$$\delta(\lambda, d, \eta, \theta_t)=\frac{4\pi\ \eta\ d \cos \theta_t}{\lambda }$$
-They scale polarized reflection and refraction as follows:
-
-$$r'=\frac{r_1+r_2e^{2i\delta}}{1+r_1 r_2e^{2i\delta}}$$
-where $r_1$ and $r_2$ are the entry and exit values for fresnel terms.
-
-iridescence
-https://hal.science/hal-01518344/file/paper-small%20%281%29.pdf
 
 # Emission
 chatgpt'd
@@ -490,6 +812,8 @@ f_e = \begin{cases}
     T(x,\omega) & \text{otherwise}
 \end{cases}
 $$
+https://inria.hal.science/hal-01818826/document
+https://www.reddit.com/r/GraphicsProgramming/s/nAGtEgcWPm
 ### Total emission
 
 We write down total re-emission for volumes and objects as follows:
@@ -499,9 +823,13 @@ $$Q_{surf}=(1-\eta_s)B_{\lambda}(T)+\eta_s\intop\nolimits_{S^2}(n\cdot\omega)f_e
 
 
 
-# Relativistic effects
-If we introduce time dependance into RTE, we can simulate effects predicted by general relativity, like phase shifts, time dilation and stretching. We may improve even further by tracing geodesics instead of regular rays, which would allow simulation of light bending in space.
-# Camera image rendering
+# Subsurface scattering
+A particular class of lighting effect permits reformulation, that allows for cheaper simulations.
+
+subsurface scattering
+https://users.cg.tuwien.ac.at/zsolnai/wp/wp-content/uploads/2014/12/ssss.pdf
+https://eugenedeon.com/pdfs/zv2020.pdf
+# Camera
 Overall
 Integrate over "sensor" area
 Sum over lenses
@@ -510,7 +838,7 @@ Integrate over exposure time
 Integrate over wavelengths (importance sample by photosensitivity)
 Apply bloom (diffraction pattern)
 Convert collected intensities for each wavelength to rgb
-### Eye photosensitivity
+### Spectrum to RGB
 
 https://larswander.com/writing/spectral-ray-tracing/
 Our definitions are wavelength-dependent, but our eyes have a different response for each of the wavelengths. Thus before displaying we need to compute the response for R, G, and B of our eyes.
@@ -540,9 +868,27 @@ $$\left[\array{r\cr g\cr b}\right]=\left[\matrix{0.49 & 0.31 & 0.2\cr 0.17697 & 
 ![[chrome_VOI1ndezrZ_1758182559.png]]
 https://youtu.be/wA1KVZ1eOuA?si=vBoEcSDCgD2pVAGd
 https://en.wikipedia.org/wiki/CIE_1931_color_space
+### RGB to spectrum
+https://graphics.geometrian.com/research/spectral-primaries.html
+We also need inverse transformations to transform an rgb material color into spectral distribution.
+We can implement it as a function that measures spectral power distribution for a given rgb value, evaluated at given wavelength.
 
-We also need inverse transformations to transform a material color into spectral reflectance distribution.
+Note, that there is no unique spectrum corresponding to each rgb value. To resolve this issue we can additionally constrain it to be varying as little as possible. That is motivated by observation that many materials, especially natural, have smooth spectrum.
 
+To construct such distribution from the rgb value, we should consider the effect of illuminating surface with that color with white light. The "white light" is standardized to be described by a $D_{65}$ distribution, the [standard daylight illuminant](https://en.wikipedia.org/wiki/Standard_illuminant#Illuminant_series_D). Thus, by definition, the white color must correspond to $D_{65}$'s distribution.
+
+Now, given a distribution $S$ for some rgb value, the observed XYZ color for that rgb color under white light is computed as the sum over all wavelengths:
+$$
+\left[\array{X\cr Y\cr Z}\right]=\sum_{\lambda}
+\left[\array{\bar x(\lambda)\cr \bar y(\lambda)\cr \bar z(\lambda)}\right]D_{65}(\lambda)S(\lambda)
+$$
+To then convert it to the linear rgb space we use the transformation formula:
+$$
+\left[\array{r\cr g\cr b}\right]=M^{-1}\left(\frac 1 {Y_{D_{65}}}
+\left[\array{X\cr Y\cr Z}\right]\right)
+$$
+
+  
 ### Antialiasing
 https://www.iryoku.com/aacourse/
 https://www.reddit.com/r/GraphicsProgramming/s/f26q2kQi56
@@ -567,12 +913,13 @@ https://www.researchgate.net/publication/220795340_Pannini_A_New_Projection_for_
 
 [(PDF) Essential Ray Generation Shaders](https://www.researchgate.net/publication/354065227_Essential_Ray_Generation_Shaders)
 
-# Measurement fitting
+# Photometry
+Analytic models are very useful, but often fail to fully capture the material's behavior. For that purpose we must include data-driven models that allow applying real-world measurements to the rendering and achieving faithful results.
+
 god damn its so hard
+BTFs
+https://www.cemyuksel.com/research/stitchmeshes/
 # Artistic parametrization
 https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf
 Reformulation with a different set of parameters, that is much more artist-friendly.
-# more
 
-subsurface scattering
-https://users.cg.tuwien.ac.at/zsolnai/wp/wp-content/uploads/2014/12/ssss.pdf
