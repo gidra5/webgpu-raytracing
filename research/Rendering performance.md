@@ -16,6 +16,7 @@ By computing the face coverage for a particular pixel square, we could improve o
 
 Non-Euclidean rendering. Since in such geometries the light does not follow straight lines, usual techniques can't be applied. But since all medium are scattering to some degree, we can "keep lines straight" by continuously scattering in the direction of straight lines. That basically just scales light contribution along the path stronger than predicted by Beer's law, but other than that it allows us to reuse all knowledge from a standard Euclidean raytracing.
 
+https://www.cemyuksel.com/research/papers/fuzzy_boolean-SIGGRAPH24.pdf
 cone tracing
 https://ssteinberg.xyz/2025/08/28/elliptical_cone_tracing_ads/
 
@@ -26,6 +27,12 @@ sampling
 https://blog.demofox.org/2022/03/02/sampling-importance-resampling/
 https://eheitzresearch.wordpress.com/792-2/
 https://eheitzresearch.wordpress.com/749-2/
+https://graphics.cs.utah.edu/research/projects/gris/
+https://graphics.cs.utah.edu/research/projects/virtual-blue-noise-lighting/
+https://graphics.cs.utah.edu/research/projects/virtual-blue-noise-lighting/
+https://graphics.cs.utah.edu/research/projects/ray-tracing-hw-adaptive-lod/
+https://graphics.cs.utah.edu/research/projects/area-restir/
+https://www.cemyuksel.com/research/
 
 depth function:
 https://youtu.be/h1ocYFrtsM4?t=868
