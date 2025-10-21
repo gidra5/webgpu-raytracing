@@ -1,3 +1,5 @@
+https://perso.crans.org/sylvainrey/Biblio%20Physique/Physique/Optique/%5BMax%20Born%5D%20Principles%20of%20Optics%20-%20Electromagnetic%20Theory%20of%20Propagation%2C%20Interference%20and%20Diffraction%20of%20Light.pdf?utm_source=chatgpt.com
+
 To describe visual appearance of the scene we have to first define ground rules - what are we actually trying to simulate. Any rendered scene is characterized by scattering events, that happen on the way between a light source and camera sensor. Thus we need to consider when scattering happens and what happens during and in-between scattering.
 
 This process can be view in multiple different perspectives:
@@ -9,46 +11,65 @@ This process can be view in multiple different perspectives:
 Each formulation is suitable to a different rendering problem domain, thus a combination of such formulations if usually required for closed form solutions and efficient evaluation.
 
 When it is known a function depends on more arguments than shown, assume it is explicitly passed through.
+
+Ideally we want to evaluate such wave-optical effects, [like](https://imadr.me/pbr/): 
+- Reflection / Refraction / Transmission
+- Diffraction
+- Interference
+- Polarization
+- Dispersion
+- Fluorescence
+- Phosphorescence
 # Physical Formulations
 https://www.youtube.com/watch?v=FS8NotZ3diY
 https://en.wikipedia.org/wiki/Radiative_transfer
 https://math.stanford.edu/~papanico/pubftp/TRANSPORT.pdf
-
-The process raytracing simulates is based on Radiative Transfer Equation (RTE). 
-
-Let's consider a radiosity at a point $x$ received from a given direction $\omega$. 
-It is a simplification of a more generic Radiative Transfer Equation (differential form):
+https://habr.com/ru/articles/958088/
 https://www.pbr-book.org/4ed/Light_Transport_II_Volume_Rendering/The_Equation_of_Transfer
 https://d38rqfq1h7iukm.cloudfront.net/media/papers/Jakob2010Radiative.pdf
-$$\frac 1 c \frac {\partial L}{\partial t}+\omega\cdot\nabla_{x} L+\sigma_{t}L=V$$
-$$V(\omega)=V_{e}(\omega)+\sigma_a(\omega)Q_a\left(\omega\right) +\sigma_{s}
-(\omega)\intop\nolimits_{S^2} p\left(\omega_{i}\to\omega\right)L\left(\omega_{i}\right)\mathrm{d}\omega_{i}$$
+https://hal.science/hal-00002848/file/RTVI_OC_Revised.pdf
+https://arxiv.org/pdf/2001.10050
+https://arxiv.org/pdf/2401.09511
+https://arxiv.org/pdf/1412.4371
+
+The process raytracing simulates is based on Radiative Transfer Equation (RTE). 
+Let's consider a radiosity along fragment of the ray $x(s)$. From energy conservation we have that the change in radiance is equal to the energy source input and scattered radiance minus absorbed fraction of current radiance:
+$$\partial_sL=L_e+\sigma_sS-\sigma_aL$$
 Where
-* $\boldsymbol x$ is the ray origin
-* $\omega$ is the ray direction
-* $L$ the incoming radiance from the direction $\omega$
-* $V_e$ is the emission of light in the direction $\omega$
-* $Q_a$ is the re-emission of absorbed light in the direction $\omega$
-* $p$ is the phase function - probability density for scattering from the direction $\omega_{i}$ in the direction $\omega$
-* $\sigma_{a}$, $\sigma_{s}$, $\sigma_{t}=\sigma_{a}+\sigma_{s}$ are the absorption, scattering, and extinction coefficients respectively for a given point $\boldsymbol x$ along the direction $\omega$.
-* $V$ is a source term for the light coming from the direction $\omega$.
+* $\partial_sL$ is the change in radiance along the ray.
+* $L_e$ is the emission of radiance in direction of the ray.
+* $S$ is the change in radiance due to scattering.
+* $\sigma_{a}$, $\sigma_{s}$, $\sigma_{t}=\sigma_{a}+\sigma_{s}$ are the absorption, scattering, and extinction coefficients along the ray respectively.
+We can split scattering term into in-scattering and out-scattering. Since the in-scattering at one point is part of out-scattering at the other, the coefficient for both of these terms is $\sigma_s$. We can think of it as the in-scattered energy completely replacing the out-scattered, keeping the overall flow of energy due to scattering zero. 
+The out-scattering is proportional to the current radiance, which gives us:
+$$S=S_{in}-L$$
+With this we can group out-scattered and absorbed radiance into an extinction term:
+$$\partial_sL=L_e+\sigma_s(S_{in}-L)-\sigma_aL=L_e+\sigma_sS_{in}-(\sigma_a+\sigma_s)L=L_e+\sigma_sS_{in}-\sigma_tL$$
+The in-scattering term can be expressed as an integral over all incoming radiance:
+$$S_{in}=\intop\nolimits_{S^2} p\left(\omega_{i}\to\omega\right)L\left(\omega_{i}\right)\mathrm{d}\omega_{i}$$
+Where the function $p$ is often called phase function, and it describes what portion the incoming light from a particular direction is scattered into the current one.
 
 The $p$ must obey normalization constraint:
 $$\intop\nolimits_{S^2}p\left(\omega_{i}\to\omega\right)\mathrm{d}\omega_{}=1$$
-Radiative Transfer Equation in integral form:
-$$L\left(\boldsymbol x,\omega\right)=T(\boldsymbol x \to \boldsymbol x_{surf})L_{surf}(\boldsymbol x_{surf}, \omega)+\int_{0}^{t_{surf}}T\left(\boldsymbol x\to \boldsymbol x_{t}\right) V(\boldsymbol x_t,\omega)\mathrm{d}t$$
-Where $\boldsymbol x_{surf}$ and $\boldsymbol x_{t}$ are shorthand for $\boldsymbol x_{t}=\boldsymbol x+t\omega$ and $\boldsymbol x_{surf}=\boldsymbol x+t_{surf}\omega$, and transmittance $T\left(x\to x_{t}\right)$ is the following:
-https://www.pbr-book.org/4ed/Volume_Scattering/Transmittance
-$$T\left(x\to x_{t}\right)=e^{-\intop\nolimits_0^{t}\sigma_{t}\left(x_{u}, \omega\right)\mathrm{d}u}$$
-It also satisfies some properties such as:
+
+The ray $x(s)$ in general depends on refractive index, spacetime metric/curvature, polarization, free-space light speed and frequency of the ray, besides the regular position and direction. Direction, refractive index, and frequency can be combined into a wave-vector. If we also introduce uncertainty, position and wave-vector also gain variance.
+All of these parameters' evolution depend on each other, which means the ray's path is inherently defined by all of them, basically tracing a ray in the whole phase space, not only in regular space.
+
+Solving RTE in terms of the ray parametrization we get the integral form:
+$$L\left(x\right)=T(x\to x_{surf})L_{surf}( x_{surf})+\int_{0}^{t_{surf}}T\left( x\to x_{t}\right) [L_e+\sigma_sS_{in}]( x_t)\mathrm{d}t$$
+Where $\boldsymbol x_{surf}$ and $\boldsymbol x_{t}$ are shorthand for $x_{t}=x(s+t)$ and $x_{surf}=x(s+t_{surf})$, and [transmittance](https://www.pbr-book.org/4ed/Volume_Scattering/Transmittance) $T\left(x\to x_{t}\right)$ is the following:
+$$T\left(x\to x_{t}\right)=e^{-\intop\nolimits_0^{t}\sigma_{t}\left(x_{u}\right)\mathrm{d}u}$$
+
+$t_{surf}$ is the boundary condition for the surface hit of a ray and entirely depends on the actual scene.
+
+The transmittance also satisfies some properties such as:
 $$T(x\to x)=1$$
 $$T(x\to z)=T(x\to y)T(y\to z)$$
 $$T(x\to z)=T(z\to x)$$
 
 The $L_{surf}$ term is the one expressed in a standard rendering equation. But it is usually simplified to only consider reflected light. The exact form is as follows:
-$$L_{surf}\left(\omega\right)=L_{e}(\omega) + (1-\sigma_{r}
-(\omega))Q_{surf}(\omega)+\sigma_{r}
-(\omega)\intop\nolimits_{S^2}f(\omega_{i} \to \omega)(\boldsymbol n\cdot\omega_{i})L(\omega_{i})\mathrm{d}\omega_{i}$$
+$$L_{surf}\left(x\right)=L_{e} + (1-\sigma_{r})
+Q_{surf}+\sigma_{r}\intop\nolimits_{S^2}f(x_{i} \to x)(n\cdot\omega_{i})L(x_{i})\mathrm{d}x_{i}$$
 Where
 * $\boldsymbol x$ is the ray origin
 * $\omega$ is the ray direction
@@ -57,17 +78,34 @@ Where
 * $\boldsymbol n$ is the normal of the surface.
 * $f$ is the bidirectional scattering distribution function - probability density for scattering from the direction $\omega_{i}$ in the direction $\omega$.
 * $Q_{surf}$ is the re-emitted absorbed light in the direction $\omega$.
-* $\sigma_{r}\in[0,1]$  is the absorption factor in the direction $\omega$.
+* $\sigma_{r}\in[0,1]$ is the absorption factor in the direction $\omega$.
 
 The $f(\boldsymbol x,\omega_{i}\to\omega)$ must also obey normalization constraint:
 $$\intop\nolimits_{S^2}f\left(\omega_{i}\to\omega\right)(\boldsymbol n\cdot\omega_{i})\mathrm{d}\omega_{}=1$$
+We may further collapse recursive integral form above into a [path integral](https://graphics.stanford.edu/papers/veach_thesis/thesis.pdf):
+$$
+L=\int_Pf(\bar x)d\mu(\bar x)
+$$
+Where:
+* $P$ is the space of all paths between sensor and light source
+* $\bar x$ is a single path
+* $f(\bar x)$ is path throughput
+* and $\mu$ is the path measure that encodes different differential terms.
 
-Notice that the surface point is explicit and integration domain is the whole sphere of directions.
-For simplicity sake, we could omit the parameters for each of the functions to simplify equations visually. If unclear assume we refer to the equations above.
+The path throughput is calculated based on the intermediate nodes:
+$$
+f(\bar x)=\sum_{i=0}^{k-1} L_e(x_i\to x_{i+1})\left[
+\prod_{j=i}^{k-1}T_v(x_j\to x_{j+1})f_{j+1}
+\right]T_v(x_{k-1}\to x_k)$$
+$$T_v(x_i\to x_j)=G(x_i\to x_j)T(x_i\to x_j)$$
+$$L_e(x_i\to x_j)=\int_{x_i}^{x_j} L_e(x)T(x\to x_j)dx$$
+Where $f_j$ is the interaction function corresponding to the scattering at $x_j$ and $G$ is the geometry term encoding cosine attenuation factors.
 
-All the equations above are also parametrized by time, ray origin and wavelength. Only parameters relevant for the un-ambiguation of the equation are written, others are implicitly passed through.
-$t_{surf}$ is the boundary condition for the surface hit of a ray and entirely depends on the actual scene. 
-https://graphics.stanford.edu/papers/veach_thesis/thesis.pdf
+[Helmholtz principle](https://en.wikipedia.org/wiki/Helmholtz_reciprocity) also states that rays following the same path in opposite directions experience the same events. This allows us to choose which way do we measure light - from camera to source or the other way around.
+There are only two functions that depend both on incoming and outgoing light directions - $p(\omega_{i}\to\omega)$ and $f(\omega\to\omega_{i})$. Thus we impose additional constraints on these functions:
+$$\sigma_s(\omega_i)p\left(\omega_{i}\to\omega\right)=\sigma_s(\omega)p\left(\omega\to\omega_{i}\right)$$
+$$\sigma_r(\omega_i)f\left(\omega_{i}\to\omega\right)=\sigma_r(\omega)f\left(\omega\to\omega_{i}\right)$$
+## Ray parameters
 ### Polarization
 https://en.wikipedia.org/wiki/Polarization_(waves)
 
@@ -89,15 +127,15 @@ s_x\bar{s}_x\ s_x\bar{s}_y\atop
 s_y\bar{s}_x\ s_y\bar{s}_y
 \right]$$
 Equivalently, we can represent this matrix as 4 parameters called Stokes vector:
-$$S_1=J_{11}+J_{22}$$
-$$S_2=J_{11}-J_{22}$$
-$$S_3=J_{12}+J_{21}$$
-$$S_3=i(J_{12}-J_{21})$$
+$$S=\left[\array{J_{11}+J_{22} \cr J_{11}-J_{22}\cr J_{12}+J_{21}\cr i(J_{12}-J_{21})}\right]$$
 This representation allows for easier visualization and computations. Additionally, the $S_1$ parameter represents total intensity of the ray, which is convenient for rendering.
 
 The light may also be partially polarized, with a fraction of purely polarized light $p$. The other fraction is unpolarized light, that is described by the average coherence matrix. We may assume that unpolarized light has absolutely no correlations, which makes $S_{1,2,3}=0$, and allows us to split the stokes vector into polarized and unpolarized parts. Otherwise we need 3 more values describing which fractions of each parameter belong to unpolarized matrix' parameters. Or we can literally track two such vectors.
 
 One useful basis is based on the plane of incidence, which is the plane defined by incoming propagation direction and surface normal. The term that is parallel to the plane is called *p-like*, and the perpendicular one is *s-like*. Refracted and reflected amount of polarized light from Fresnel equations are defined in terms of this basis.
+
+With this the radiance function $L$ is a Stokes vector, and the RTE now involves matricies instead of simple coefficients:
+
 
 ### Wave equation
 https://ssteinberg.xyz/2023/03/27/rtplt/
@@ -160,12 +198,53 @@ $$\beta'^2=\beta^2 + \bar z(2\rho+2\bar z\sigma_k)$$
 $$\rho'=\rho+2\bar z\sigma_k$$
 $$\sigma_k=\frac {1+\rho^2}{2\beta^2}$$
 Where $z$ is the propagation distance.
+
+With that, rays have the following state:
+* Mean wave-vector + variance
+* Mean position + variance
+* Polarization state (Stokes vector)
+
+In general, any interaction that happens between rays and the scene can depend on all of them. But primarily it depends on wavelength, direction and polarization.
+
+Reflection/refraction distribution s for angular extent
+### Index of Refraction
+Any material's optical response is fundamentally described by an index of refraction (IoR), which is a complex number $\eta(x, \omega, \lambda)=n+ik$ encoding both refraction ratio $n$ and extinction coefficient $k$. The real and complex parts are not independent, they follow [Kramers–Kronig relations](https://en.wikipedia.org/wiki/Kramers%E2%80%93Kronig_relations), since it is the result of a physical process, which makes it a [linear response function](https://en.wikipedia.org/wiki/Linear_response_function). That also means we can derive imaginary part from real, and vice versa. The absorption coefficient used in RTE can be expressed in terms of $k$:
+https://en.wikipedia.org/wiki/Refractive_index#Complex_refractive_index
+$$\sigma_a=\frac{4\pi k}{\lambda}$$
+It is not unphysical if we also include explicit surface reemission, as long as we scale it down proportional to absorption coefficient. That way, whatever reemission happens due to volumetric absorption, it is not double counted.
+
+IoR is [related](https://en.wikipedia.org/wiki/Refractive_index#Relative_permittivity_and_permeability) to a physical measures called electric permittivity and permeability:
+$$\eta=\sqrt {\varepsilon\mu}$$
+For non-magnetic materials $\mu$ can be ignored, simplifying relation to:
+$$\eta=\sqrt {\varepsilon}$$
+Since light is an electromagnetic wave, it directly interacts with electrons in the material. When there are free electrons, like in conductors, they absorb the wave and create current, which then dissipates into heat or gets reemitted. Thus, materials that absorb light are called conductors, and non-absorbing ones are dielectrics.
+
+Permittivity, just like IoR, is a complex number, generally modeled as follows:
+$$\varepsilon=\varepsilon'-i\sigma\lambda\kappa$$
+Where $\sigma$ is conductivity, and $\kappa$ is a [constant](https://en.wikipedia.org/wiki/Relative_permittivity#Lossy_medium) depending on speed of light and permeability.
+
+Following [Drude-Lorentz model](https://www.mdpi.com/2076-3417/11/21/9902), we can also describe permittivity as follows:
+$$
+\varepsilon=1-\frac {f_0\omega_p^2}{\omega(1-i\Gamma_0)}+\sum\frac {f_i\omega_p^2}{\omega_i^2-\omega^2-i\omega\Gamma_i}=1-\frac {f_0\omega_p^2\lambda}{2\pi-i2\pi\Gamma_0}+\sum\frac {f_i\omega_p^2\lambda^2}{(\omega_i\lambda)^2-i2\pi\lambda\Gamma_i-4\pi^2}
+$$
+Where $\Gamma_i$ is the damping constant related to the electron collision frequency, $f_i$ is the free-electron oscillator strength, $\omega_p$ is the plasma frequency, $\omega_i$ are the oscillation frequencies of the bound electrons.
+We can compress all constants into single coefficients, and get the following relation in terms of wavelength:
+$$\varepsilon=1-f_0\lambda+\sum\frac {f_i}{\lambda-\gamma_i}-\frac {f_i}{\lambda-i\Gamma_i}$$
+That showcases that at large wavelengths permittivity is dominated by a linear term, but requires inverse proportional corrections at smaller values.
+
+Fermat's principle - light travels shortest-time path
+
+https://perso.crans.org/sylvainrey/Biblio%20Physique/Physique/Optique/%5BMax%20Born%5D%20Principles%20of%20Optics%20-%20Electromagnetic%20Theory%20of%20Propagation%2C%20Interference%20and%20Diffraction%20of%20Light.pdf?utm_source=chatgpt.com
 ### Birefringence
 https://en.wikipedia.org/wiki/Birefringence
 https://en.wikipedia.org/wiki/Huygens_principle_of_double_refraction
 Dependance of refractive index on direction of the ray and its polarization.
 ### General relativity
 https://docs.google.com/document/d/1Ueo_gLj2LiP7dUPGt_-ERMB3dszPQkrqaGAIKRV7omc/edit?tab=t.0
+
+Gr describes relation between energy and space curvature.
+For raytracing we only need to be able to evaluate metric tensor at a sample point, which allows us to follow geodesics.
+
 If we introduce time dependance into RTE, we can simulate effects predicted by general relativity, like lensing, phase redshifts, time dilation and stretching. We may improve even further by tracing geodesics instead of regular rays, which would allow simulation of light bending in space.
 
 https://en.wikipedia.org/wiki/Metric_tensor
@@ -196,13 +275,25 @@ $$T_{\mu\nu}=T^{\alpha\beta}g_{\alpha\mu}g_{\beta\nu}=?$$
 $$\kappa=\frac {8\pi G}{c^4}$$
 Stress-energy tensor $T$, ricci curvature tensor $R$.
 
+GR RTE:
+https://arxiv.org/pdf/1612.02828
+$$
+\frac {dL'}{ds}(\lambda_0)-\sigma_t'(\lambda_0)L'(\lambda_0)=V'(\lambda_0)
+$$
+$$L'(\lambda_0)=G^3\lambda_0^3L(\lambda_0G)$$
+$$V'(\lambda_0)=G^2\lambda_0^2RV(\lambda_0G)$$
+$$\sigma_t'(\lambda_0)=G\lambda_0R\sigma_t(\lambda_0G)R^{-1}$$
+
+special relativity is the general relativity with minkowski metric
 minkowski metric:
-$$G=\left[
-1 0 0 0
-0 1 0 0
-0 0 1 0
-0 0 0 -1
+$$G=\left[\matrix{
+1& 0& 0& 0\cr
+0& 1& 0& 0\cr
+0& 0& 1& 0\cr
+0& 0& 0& -1\cr
+}
 \right]$$
+
 
 general relativity renderers
 https://iopscience.iop.org/article/10.3847/0004-637X/820/2/105/pdf
@@ -216,18 +307,11 @@ https://arxiv.org/html/2507.16165v1?utm_source=chatgpt.com
 https://github.com/ABHModels/raytransfer?utm_source=chatgpt.com
 https://arxiv.org/pdf/2407.10431
 
-special relativity is the general relativity with minkowski metric
 
 special relativity
 https://www.linkedin.com/pulse/rendering-relativity-webgl-javascript-dmitry-lavrov?utm_source=chatgpt.com
 https://github.com/freemeson/specRelTrace?utm_source=chatgpt.com
 
-### Reciprocity
-chatgpt'd
-It is a common assumption that it does not matter in which direction we measure light - from camera to light or the other way.
-There are only two functions that depend both on incoming and outgoing light directions - $p(\omega_{i}\to\omega)$ and $f(\omega\to\omega_{i})$. Thus we impose additional constraints on these functions:
-$$\sigma_s(\omega_i)p\left(\omega_{i}\to\omega\right)=\sigma_s(\omega)p\left(\omega\to\omega_{i}\right)$$
-$$\sigma_r(\omega_i)f\left(\omega_{i}\to\omega\right)=\sigma_r(\omega)f\left(\omega\to\omega_{i}\right)$$
 # BSDF
 
 https://blog.demofox.org/2020/05/25/casual-shadertoy-path-tracing-1-basic-camera-diffuse-emissive/
@@ -235,11 +319,11 @@ We define BSDF as the function that describes radiance transfer across a surface
 
 https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf
 https://blog.selfshadow.com/publications/s2015-shading-course/burley/s2015_pbs_disney_bsdf_notes.pdf
-### Dielectrics and conductors
-chatgpt'd
-We use the research dielectrics and conductors as the base for any other materials. So we assume that any material is a mixture of such materials and local geometric properties of the surface.
 
-They are described by an index of refraction (IoR), which is a complex number $\eta(x, \omega, \lambda)=n+ik$. If $k$ is zero, then it is considered a dielectric, otherwise a conductor. $k$ represents absorption rate of the material.
+### Reflection and Refraction
+chatgpt'd
+Dielectrics and conductors are the base for any other materials. So we assume that any material is a mixture of such materials and local geometric properties of the surface.
+
 We assume polarization ratios are $w_s$ and $w_p$, such that $w_s+w_p=1$.
 First we compute the incidence angle $\theta_i$:
 $$\cos\theta_{i}=\left|\omega_{i}\cdot n\right|$$
@@ -278,12 +362,6 @@ f_{s}\left(x,\omega_{i}\to\omega_{o},\lambda\right)
 
 &+T_{BSDF}\left(\lambda,\omega_{i}, n\right)\delta(\omega_o-refract(\omega_{i}, \eta(x, \omega_{i}, \lambda), n))
 \end{aligned}$$
-### Absorption
-chatgpt'd
-The absorption rate can be expressed in terms of $k$:
-$$\sigma_a=\frac{4\pi k}{\lambda}$$
-It is not unphysical if we also include explicit surface reemission, as long as we scale it down proportional to absorption coefficient. That way, whatever reemission happens due to volumetric absorption, it is not double counted.
-
 # Phase function
 chatgpt'd
 https://miepython.readthedocs.io/en/v2.3.1/01_basics.html
@@ -783,35 +861,49 @@ Getting $T$ in general requires computing multiple bounces, which is expensive a
 The only issue with this approach is that it disregards the volumetric scattering by phase functions, and essentially replaces them by iteration of reflections and transmittance over the depth of the layer, which may have a significant impact for thick layers.
 
 # Emission
-chatgpt'd
+https://www.taylorfrancis.com/books/edit/10.1201/9781003098690/phosphor-handbook-ru-shi-liu-xiaojun-wang?utm_source=chatgpt.com
+https://www.cambridge.org/core/books/abs/classical-optics-and-its-applications/ewaldoseen-extinction-theorem/71F7EF2196FBAEF30C650A38E3C69FDF?utm_source=chatgpt.com
+Generally emission is a distribution over the ray state.
+We can split total emission $L_e$ by the nature of energy used for [emission](https://en.wikipedia.org/wiki/Luminescence):
+* $L_h$ emission due to [temperature](https://en.wikipedia.org/wiki/Black-body_radiation) or its [change](https://en.wikipedia.org/wiki/Thermoluminescence).
+* $L_a$ emission due to [earlier absorption of light](https://en.wikipedia.org/wiki/Photoluminescence), including [ionization](https://en.wikipedia.org/wiki/Radioluminescence).
+* $L_m$ emission due to [mechanical action](https://en.wikipedia.org/wiki/Mechanoluminescence).
+* $L_c$ emission due to [chemical reaction](https://en.wikipedia.org/wiki/Chemiluminescence).
+* $L_s$ emission due to static electric field, including [electric current](https://en.wikipedia.org/wiki/Electroluminescence) and [Cherenkov radiation](https://en.wikipedia.org/wiki/Cherenkov_radiation).
+These categories can be split further, based on particular scale (high/low energy interaction) or mechanism.
+Thus we can split the total emission by its nature:
+$$L_e = L_h+L_a+L_m+L_c+L_s$$
+Almost all of the emission sources are defined as a distribution over ray state (wavelength, polarization, direction), and heavily depend on material properties and are time-varying.
+
+###  Thermal emission
+
 If we want to be even more physically accurate, we can define the $L_e$ and $Q$ functions based on thermal equilibrium or radiative equilibrium, which is "the total thermal radiation leaving an object is equal to the total thermal radiation entering it". Thus we can define them as follows:
-$$Q_a=B_{\lambda}\left(T\right)$$
-$$Q_{surf}=B_{\lambda}\left(T\right)$$
-Where $B_{\lambda}(T)$ is the blackbody radiance of the object, where $T$ is the temperature of the object. Since we assume equilibrium it is equal to the environment's thermal radiance, which we can assume anything. 
-The $B_{\lambda}(T)$ itself is defined as:
-$$B_{\lambda}(T)=\frac{2hc^2}{\lambda^5}\cdot\frac{1}{e^{\frac{hc}{\lambda k_{B}T}}-1}$$
+$$L_h=B\left(\lambda, T\right)$$
+Where $B(\lambda,T)$ is the blackbody radiance of the object, where $T$ is the temperature of the object. Since we assume equilibrium it is equal to the environment's thermal radiance, which we can assume anything. 
+The $B(\lambda,T)$ itself is defined as:
+$$B(\lambda,T)=\frac{2hc^2\lambda^{-5}}{e^{\frac{hc}{\lambda k_{B}T}}-1}=\frac{a\lambda^{-5}}{e^{b(\lambda T)^{-1}}-1}, a=2hc^2, b=\frac {hc}{k_B}$$
+
+Of them only $L_h$ depends on temperature $T$ and its gradient.
+### Chemical emission
+### Mechanical emission
+### Electric emission
 ### Photoluminescence
 
+chatgpt'd
+
+$$\int_0^{t} \int_0^{\infty} f_e(\lambda, \lambda_{in}, t, P, \omega) d\lambda_{in} dt$$
+
+Of them only $L_a$ are due to almost instantaneous interaction.
+Of them only $L_a$ is dependent on incoming light, and thus need to preserve energy.
+
 We may also add physically accurate light emission for volumes and surfaces due to absorption of the incoming light. The definition of radiance due to photoluminescence:
-$$Q_{PL}(x,\omega_{out},\lambda_{out})=\intop\nolimits_{S^2}\intop_{0}^{\infty}\eta_{PL}(x,\omega_{out},\lambda_{in}\to\lambda_{out})\sigma_{PL}(x,\omega_{out},\lambda_{in})L(x,\omega,\lambda_{in})d\lambda_{in}d\omega$$
+$$L_p(x,\omega_{out},\lambda_{out})=\intop\nolimits_{S^2}\intop_{0}^{\infty}\eta_{PL}(x,\omega_{out},\lambda_{in}\to\lambda_{out})\sigma_{PL}(x,\omega_{out},\lambda_{in})L(x,\omega,\lambda_{in})d\lambda_{in}d\omega$$
 Where:
 * $\eta_{PL}(x,\lambda_{in}\to\lambda_{out})$ is the conversion rate at point $x$ from wavelength $\lambda_{in}$ to $\lambda_{out}$.
 * $\sigma_{PL}(x,\lambda_{in})$ is the absorption rate at point $x$ for a wavelength $\lambda_{in}$.
 
 $\eta_{PL}$ also has normalization constraint:
 $$\intop_0^{\infty}\frac{\lambda_{in}}{\lambda_{out}}\eta_{PL}\left(\lambda_{in}\to\lambda_{out}\right)d\lambda_{out}\le1$$
-Generally it depends on the wavelength of the incoming and outgoing light, as in the definition above, but for simplification we could consider "single wavelength" definition:
-$$Q_a(x,\omega)=\eta(x,\omega)\intop\nolimits_{S^2}L(x,\omega_{in})d\omega_{in}$$
-In the same manner is defined a surface emission term:
-$$Q_{surf}(x,\omega)=\eta(x,\omega)\intop\nolimits_{S^2}f_e(x,\omega,\omega_{in})L(x,\omega_{in})(n\cdot\omega_{in})d\omega$$
-The $f_e$ term is responsible for "accepting" the radiance from a particular direction, that escapes outwards.
-Basically we can define it as follows:
-$$
-f_e = \begin{cases}
-    R(x,\omega) & \text{if } \omega\cdot n>0 \\
-    T(x,\omega) & \text{otherwise}
-\end{cases}
-$$
 https://inria.hal.science/hal-01818826/document
 https://www.reddit.com/r/GraphicsProgramming/s/nAGtEgcWPm
 ### Total emission
@@ -835,8 +927,8 @@ Integrate over "sensor" area
 Sum over lenses
 Integrate over aperture
 Integrate over exposure time
-Integrate over wavelengths (importance sample by photosensitivity)
-Apply bloom (diffraction pattern)
+Integrate over ray state (importance sample by photosensitivity)
+Apply bloom (near-field diffraction pattern)
 Convert collected intensities for each wavelength to rgb
 ### Spectrum to RGB
 
@@ -893,6 +985,9 @@ $$
 https://www.iryoku.com/aacourse/
 https://www.reddit.com/r/GraphicsProgramming/s/f26q2kQi56
 ### Depth of field
+
+Depth of Field (DoF) is lens artifact, caused by misplaced imaging plane relative to focus point.
+Due to that we see a blurred image.
 https://blog.demofox.org/2018/07/04/pathtraced-depth-of-field-bokeh/
 ### Motion blur
 In addition to sensor area, aperture and wavelength integrals required for wavelength-to-rgb conversion for a camera, we also need to integrate over exposure time to get motion blur effects, and... well... total exposure.

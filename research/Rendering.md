@@ -72,3 +72,7 @@ https://habr.com/en/articles/440488/
 https://casual-effects.blogspot.com/2014/04/fast-terrain-rendering-with-continuous.html
 https://yehar.com/blog/?p=1495
 https://www.realtimerendering.com/#books-small-table
+
+Volume Interpolation scheme
+Map uv to a cube surface uv
+Interpolate 3d cube data
