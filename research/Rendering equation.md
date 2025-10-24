@@ -20,7 +20,7 @@ Ideally we want to evaluate such wave-optical effects, [like](https://imadr.me/p
 - Dispersion
 - Fluorescence
 - Phosphorescence
-# Physical Formulations
+# Radiative Transfer Equation
 https://www.youtube.com/watch?v=FS8NotZ3diY
 https://en.wikipedia.org/wiki/Radiative_transfer
 https://math.stanford.edu/~papanico/pubftp/TRANSPORT.pdf
@@ -47,41 +47,37 @@ With this we can group out-scattered and absorbed radiance into an extinction te
 $$\partial_sL=L_e+\sigma_s(S_{in}-L)-\sigma_aL=L_e+\sigma_sS_{in}-(\sigma_a+\sigma_s)L=L_e+\sigma_sS_{in}-\sigma_tL$$
 The in-scattering term can be expressed as an integral over all incoming radiance:
 $$S_{in}=\intop\nolimits_{S^2} p\left(\omega_{i}\to\omega\right)L\left(\omega_{i}\right)\mathrm{d}\omega_{i}$$
-Where the function $p$ is often called phase function, and it describes what portion the incoming light from a particular direction is scattered into the current one.
-
-The $p$ must obey normalization constraint:
+Where the function $p$ is often called phase function, and it describes what portion the incoming light from a particular direction is scattered into the current one. The $p$ must obey normalization constraint:
 $$\intop\nolimits_{S^2}p\left(\omega_{i}\to\omega\right)\mathrm{d}\omega_{}=1$$
-
-The ray $x(s)$ in general depends on refractive index, spacetime metric/curvature, polarization, free-space light speed and frequency of the ray, besides the regular position and direction. Direction, refractive index, and frequency can be combined into a wave-vector. If we also introduce uncertainty, position and wave-vector also gain variance.
-All of these parameters' evolution depend on each other, which means the ray's path is inherently defined by all of them, basically tracing a ray in the whole phase space, not only in regular space.
-
+## RTE Integral form
 Solving RTE in terms of the ray parametrization we get the integral form:
-$$L\left(x\right)=T(x\to x_{surf})L_{surf}( x_{surf})+\int_{0}^{t_{surf}}T\left( x\to x_{t}\right) [L_e+\sigma_sS_{in}]( x_t)\mathrm{d}t$$
-Where $\boldsymbol x_{surf}$ and $\boldsymbol x_{t}$ are shorthand for $x_{t}=x(s+t)$ and $x_{surf}=x(s+t_{surf})$, and [transmittance](https://www.pbr-book.org/4ed/Volume_Scattering/Transmittance) $T\left(x\to x_{t}\right)$ is the following:
+$$L\left(s\right)=\int_{0}^{\infty}e^{-\intop\nolimits_0^{t}\sigma_{t}\left(x_{u}\right)\mathrm{d}u} [L_e+\sigma_sS_{in}]( x_t)\mathrm{d}t$$
+
+First, lets introduce the [transmittance](https://www.pbr-book.org/4ed/Volume_Scattering/Transmittance) $T\left(x\to x_{t}\right)$ function defined by:
 $$T\left(x\to x_{t}\right)=e^{-\intop\nolimits_0^{t}\sigma_{t}\left(x_{u}\right)\mathrm{d}u}$$
-
-$t_{surf}$ is the boundary condition for the surface hit of a ray and entirely depends on the actual scene.
-
+Which yields a bit simpler form:
+$$L\left(s\right)=\int_{0}^{\infty}T\left(x\to x_{t}\right) [L_e+\sigma_sS_{in}]( x_t)\mathrm{d}t$$
+We can split it at discontinuities (surface boundary) to get a form suitable to evaluation in complex scenes:
+$$L\left(x\right)=T\left(x\to x_{surf}\right)L_{surf}( x_{surf})+\int_{0}^{t_{surf}}T\left(x\to x_{t}\right)[L_e+\sigma_sS_{in}]( x_t)\mathrm{d}t$$
+Where $\boldsymbol x_{surf}$ and $\boldsymbol x_{t}$ are shorthand for $x_{t}=x(s+t)$ and $x_{surf}=x(s+t_{surf})$, and $L_{surf}$ is the radiance at the surface. $t_{surf}$ is the boundary condition for the surface hit of a ray and entirely depends on the actual scene.
+## Transmittance
 The transmittance also satisfies some properties such as:
 $$T(x\to x)=1$$
 $$T(x\to z)=T(x\to y)T(y\to z)$$
 $$T(x\to z)=T(z\to x)$$
-
+## Surface term
 The $L_{surf}$ term is the one expressed in a standard rendering equation. But it is usually simplified to only consider reflected light. The exact form is as follows:
-$$L_{surf}\left(x\right)=L_{e} + (1-\sigma_{r})
-Q_{surf}+\sigma_{r}\intop\nolimits_{S^2}f(x_{i} \to x)(n\cdot\omega_{i})L(x_{i})\mathrm{d}x_{i}$$
+$$L_{surf}\left(x\right)=L_{e}+\sigma_{r}\intop\nolimits_{S^2}p_{surf}(x_{i} \to x)L(x_{i})\mathrm{d}x_{i}$$
 Where
 * $\boldsymbol x$ is the ray origin
 * $\omega$ is the ray direction
-* $L$ the incoming radiance from the direction $\omega$
 * $L_e$ the emitted radiance in the direction $\omega$
 * $\boldsymbol n$ is the normal of the surface.
-* $f$ is the bidirectional scattering distribution function - probability density for scattering from the direction $\omega_{i}$ in the direction $\omega$.
-* $Q_{surf}$ is the re-emitted absorbed light in the direction $\omega$.
-* $\sigma_{r}\in[0,1]$ is the absorption factor in the direction $\omega$.
+* $p_{surf}$ is the surface' phase function.
+* $\sigma_{r}\in[0,1]$ is the surface scattering factor.
 
-The $f(\boldsymbol x,\omega_{i}\to\omega)$ must also obey normalization constraint:
-$$\intop\nolimits_{S^2}f\left(\omega_{i}\to\omega\right)(\boldsymbol n\cdot\omega_{i})\mathrm{d}\omega_{}=1$$
+The $p_{surf}(\omega_{i}\to\omega)$ must also obey the same normalization constraint, as the regular phase function.
+## Path integral
 We may further collapse recursive integral form above into a [path integral](https://graphics.stanford.edu/papers/veach_thesis/thesis.pdf):
 $$
 L=\int_Pf(\bar x)d\mu(\bar x)
@@ -100,12 +96,14 @@ f(\bar x)=\sum_{i=0}^{k-1} L_e(x_i\to x_{i+1})\left[
 $$T_v(x_i\to x_j)=G(x_i\to x_j)T(x_i\to x_j)$$
 $$L_e(x_i\to x_j)=\int_{x_i}^{x_j} L_e(x)T(x\to x_j)dx$$
 Where $f_j$ is the interaction function corresponding to the scattering at $x_j$ and $G$ is the geometry term encoding cosine attenuation factors.
-
-[Helmholtz principle](https://en.wikipedia.org/wiki/Helmholtz_reciprocity) also states that rays following the same path in opposite directions experience the same events. This allows us to choose which way do we measure light - from camera to source or the other way around.
+## Reciprocity
+[Helmholtz principle](https://en.wikipedia.org/wiki/Helmholtz_reciprocity) states that rays following the same path in opposite directions experience the same events, which is often called the reciprocity constraint. This allows us to choose which way do we measure light - from camera to source or the other way around.
 There are only two functions that depend both on incoming and outgoing light directions - $p(\omega_{i}\to\omega)$ and $f(\omega\to\omega_{i})$. Thus we impose additional constraints on these functions:
 $$\sigma_s(\omega_i)p\left(\omega_{i}\to\omega\right)=\sigma_s(\omega)p\left(\omega\to\omega_{i}\right)$$
 $$\sigma_r(\omega_i)f\left(\omega_{i}\to\omega\right)=\sigma_r(\omega)f\left(\omega\to\omega_{i}\right)$$
-## Ray parameters
+## Ray path and state
+The ray $x(s)$ in is defined by polarization, light speed and frequency, besides the regular position and direction. It's path is constrained by refractive index and spacetime metric/curvature. Direction, speed and frequency can be combined into a wave-vector. If we also introduce uncertainty, position and wave-vector also gain variance.
+All of these parameters' evolution depend on each other, which means the ray's path is inherently defined by all of them, basically tracing a ray in the whole phase space, not only in regular space.
 ### Polarization
 https://en.wikipedia.org/wiki/Polarization_(waves)
 
@@ -137,76 +135,6 @@ One useful basis is based on the plane of incidence, which is the plane defined 
 With this the radiance function $L$ is a Stokes vector, and the RTE now involves matricies instead of simple coefficients:
 
 
-### Wave equation
-https://ssteinberg.xyz/2023/03/27/rtplt/
-https://en.wikipedia.org/wiki/Wave_equation
-https://dl.acm.org/doi/pdf/10.1145/3450626.3459791
-We can also look at this as a wave propagation problem in an absorbing and emitting medium. Let's consider a function $\psi(x, t)$ in electromagnetic field, satisfying the wave equation:
-$$\frac 1 {c^2} \frac {\partial^2\psi}{\partial t^2}+n \frac {\partial\psi}{\partial t}=\nabla^2\psi+S$$
-It is *damped*, which describes absorption with rate $n$, and has a source $S$, describing emission. 
-From the wave function $\psi$ we can define a Wigner distribution function (WDF):
-$$W(x,k)=\frac 1 {(2\pi)^3}\int\bar{\psi}(x-\frac 1 2x')\psi(x+\frac 1 2x')e^{-ix'\cdot k}dx'$$
-Where a new parameter $k$ is the wave-vector.
-
-A [wave-vector](https://en.wikipedia.org/wiki/Wave_vector) encodes a direction and a frequency of the wave at some point. We can define it as follows:
-$$k=\omega\frac {2\pi\eta} {\lambda}=\omega\ 2\pi\nu\ \eta$$
-Where $\omega$ is the direction of propagation, $\nu$ is the frequency, $\eta$ is the refractive index of the medium.
-With that, WDF describes the direction spread of $\omega$ for a particular frequency $\nu$ at a given position $x$. We can recover the wave function $\psi$ from it up to a global phase shift, which gives a complete description of light.
-
-We can use a gaussian WDF with the following shape:
-$$g_{\beta,\rho}(x, k;x_0, k_0)=\frac 1 {\pi^3}e^{\frac {q(x-x_0,k-k_0)} {\beta^2}}$$
-$$q(x,k)=\beta^2(\beta|k|-\rho|x|)^2+|x|^2$$
-Where $x_0$, $k_0$ are the mean position and wave-vector, $\beta$ is the initial spatial variance of the distribution, and $\rho$ is the correlation parameter, encoding polarizations state. In general, $\rho$ and $\beta$ can be matrices, encoding anisotropy.
-It is also normalized: $\int g(x,k)dx\ dk=1$
-This distribution represents a *generalized ray*, which allows us to apply regular raytracing approaches, while still getting wave-optics accurate result.
-
-We can derive a corresponding wave function for a given $g_{\beta,\rho}$:
-$$\psi_{\beta,\rho}(x;x_0,k_0)=\frac 1 {(\pi\beta^2)^{3/4}}e^{q'(x-x_0,k_0)}$$
-$$q'(x,k)=ik\cdot x-\frac 1 {2\beta^2}(1-i\rho)|x|^2$$
-With that the measured intensity is computed as follows:
-$$L=\int W(x,k)W_D(x,k)dx\ dk$$
-Where $W_D$ is the detector's WDF.
-If we assume our detectors are classical photoelectric detectors, the $\rho$ is 0. Then detector's WDF is computed as follows:
-$$W_D(x,k)=\int_D \alpha(x_0) g_{\beta,0}(x,k;x_0)dx_0$$
-Where $\alpha$ is the detection efficiency, and $D$ is the spatial extent of the detector.
-
-Substituting into $L$ and swapping order of integration we get the following expression:
-$$L=\int \alpha(x_0) \int W(x,k)g_{\beta,0}(x,k;x_0)dx\ dk\ dx_0$$
-
-We can then apply the ordinary approach of measuring backwards by evolving $W_D$ under time-reversed dynamics. That approach can be characterized as *weakly local* (not a point, but a gaussian in phase space), *linear* (the "rays" do not interfere) and *complete* (fully describes wave-optics).
-
-Consider the WDF $W_s$ of the light source. It interacts with the scene, until it reaches the detector. At that point the WDF transformed into $K\{W_s\}$ by the interaction kernel $K$ as follows:
-$$K\{W_s\}(x,k)=\int K(x',k',x,k)W_s(x',k')dx'dk'$$
-Where $K$ is a kernel representing the change in light distribution.
-
-Since we want to apply this transform in reverse time, the directions change $k\to-k$, and phases get conjugated. Which means that we can express $L$ equivalently as follows:
-$$L=\int \alpha(x_0) \int W(x,k)K^{-1}\{g_{\beta,0}\}(x,k;x_0)dx\ dk\ dx_0$$
-Then we further integrate over $k_0$, $\beta$ and $\rho$.
-For a given WDF $W$ and light source WDF $W_s$ we can compute measured light as follows:
-$$L_s=\int W(x,k)W_s(x,k)dx\ dk=\int g_{\beta,\rho}(x,k)W_s(x,k)dx\ dk=\frac 1 {(2\pi)^3}\left|\int \psi_s(x)\bar{\psi}_{\beta,\rho}(x)dx\right|^2$$
-
-The interaction kernels can be classified in two categories:
-* Simple linear optics interactions. The same interactions that are simulated by classical raytracing following RTE.
-* Diffractive interactions. These are the interactions that heavily depend on interference of the waves, such as scattering by rough surfaces.
-
-Reflection/refraction and free-space propagation fall under simple interactions, which makes them easy to define:
-$$K_{free}\{g_{\beta,\rho}(x_0, k_0)\}=g_{\beta',\rho'}(x_0+\bar zk_0, k_0)$$
-$$K_{r}\{g_{\beta,\rho}(k_0)\}=Rg_{\beta,\rho}(reflect(k_0))$$
-$$K_{t}\{g_{\beta,\rho}(k_0)\}=(1-R)g_{\beta,\rho}(refract(k_0))$$
-$$\bar z = z /|k_0|$$
-$$\beta'^2=\beta^2 + \bar z(2\rho+2\bar z\sigma_k)$$
-$$\rho'=\rho+2\bar z\sigma_k$$
-$$\sigma_k=\frac {1+\rho^2}{2\beta^2}$$
-Where $z$ is the propagation distance.
-
-With that, rays have the following state:
-* Mean wave-vector + variance
-* Mean position + variance
-* Polarization state (Stokes vector)
-
-In general, any interaction that happens between rays and the scene can depend on all of them. But primarily it depends on wavelength, direction and polarization.
-
-Reflection/refraction distribution s for angular extent
 ### Index of Refraction
 Any material's optical response is fundamentally described by an index of refraction (IoR), which is a complex number $\eta(x, \omega, \lambda)=n+ik$ encoding both refraction ratio $n$ and extinction coefficient $k$. The real and complex parts are not independent, they follow [Kramers–Kronig relations](https://en.wikipedia.org/wiki/Kramers%E2%80%93Kronig_relations), since it is the result of a physical process, which makes it a [linear response function](https://en.wikipedia.org/wiki/Linear_response_function). That also means we can derive imaginary part from real, and vice versa. The absorption coefficient used in RTE can be expressed in terms of $k$:
 https://en.wikipedia.org/wiki/Refractive_index#Complex_refractive_index
@@ -238,6 +166,8 @@ https://perso.crans.org/sylvainrey/Biblio%20Physique/Physique/Optique/%5BMax%20B
 ### Birefringence
 https://en.wikipedia.org/wiki/Birefringence
 https://en.wikipedia.org/wiki/Huygens_principle_of_double_refraction
+https://www.ijfcc.org/papers/150-K00012.pdf
+https://dc.etsu.edu/cgi/viewcontent.cgi?article=1436&context=honors
 Dependance of refractive index on direction of the ray and its polarization.
 ### General relativity
 https://docs.google.com/document/d/1Ueo_gLj2LiP7dUPGt_-ERMB3dszPQkrqaGAIKRV7omc/edit?tab=t.0
@@ -312,6 +242,76 @@ special relativity
 https://www.linkedin.com/pulse/rendering-relativity-webgl-javascript-dmitry-lavrov?utm_source=chatgpt.com
 https://github.com/freemeson/specRelTrace?utm_source=chatgpt.com
 
+### Wave equation
+https://ssteinberg.xyz/2023/03/27/rtplt/
+https://en.wikipedia.org/wiki/Wave_equation
+https://dl.acm.org/doi/pdf/10.1145/3450626.3459791
+We can also look at this as a wave propagation problem in an absorbing and emitting medium. Let's consider a function $\psi(x, t)$ in electromagnetic field, satisfying the wave equation:
+$$\frac 1 {c^2} \frac {\partial^2\psi}{\partial t^2}+n \frac {\partial\psi}{\partial t}=\nabla^2\psi+S$$
+It is *damped*, which describes absorption with rate $n$, and has a source $S$, describing emission. 
+From the wave function $\psi$ we can define a Wigner distribution function (WDF):
+$$W(x,k)=\frac 1 {(2\pi)^3}\int\bar{\psi}(x-\frac 1 2x')\psi(x+\frac 1 2x')e^{-ix'\cdot k}dx'$$
+Where a new parameter $k$ is the wave-vector.
+
+A [wave-vector](https://en.wikipedia.org/wiki/Wave_vector) encodes a direction and a frequency of the wave at some point. We can define it as follows:
+$$k=\omega\frac {2\pi\eta} {\lambda}=\omega\ 2\pi\nu\ \eta$$
+Where $\omega$ is the direction of propagation, $\nu$ is the frequency, $\eta$ is the refractive index of the medium.
+With that, WDF describes the direction spread of $\omega$ for a particular frequency $\nu$ at a given position $x$. We can recover the wave function $\psi$ from it up to a global phase shift, which gives a complete description of light.
+
+We can use a gaussian WDF with the following shape:
+$$g_{\beta,\rho}(x, k;x_0, k_0)=\frac 1 {\pi^3}e^{\frac {q(x-x_0,k-k_0)} {\beta^2}}$$
+$$q(x,k)=\beta^2(\beta|k|-\rho|x|)^2+|x|^2$$
+Where $x_0$, $k_0$ are the mean position and wave-vector, $\beta$ is the initial spatial variance of the distribution, and $\rho$ is the correlation parameter, encoding polarizations state. In general, $\rho$ and $\beta$ can be matrices, encoding anisotropy.
+It is also normalized: $\int g(x,k)dx\ dk=1$
+This distribution represents a *generalized ray*, which allows us to apply regular raytracing approaches, while still getting wave-optics accurate result.
+
+We can derive a corresponding wave function for a given $g_{\beta,\rho}$:
+$$\psi_{\beta,\rho}(x;x_0,k_0)=\frac 1 {(\pi\beta^2)^{3/4}}e^{q'(x-x_0,k_0)}$$
+$$q'(x,k)=ik\cdot x-\frac 1 {2\beta^2}(1-i\rho)|x|^2$$
+With that the measured intensity is computed as follows:
+$$L=\int W(x,k)W_D(x,k)dx\ dk$$
+Where $W_D$ is the detector's WDF.
+If we assume our detectors are classical photoelectric detectors, the $\rho$ is 0. Then detector's WDF is computed as follows:
+$$W_D(x,k)=\int_D \alpha(x_0) g_{\beta,0}(x,k;x_0)dx_0$$
+Where $\alpha$ is the detection efficiency, and $D$ is the spatial extent of the detector.
+
+Substituting into $L$ and swapping order of integration we get the following expression:
+$$L=\int \alpha(x_0) \int W(x,k)g_{\beta,0}(x,k;x_0)dx\ dk\ dx_0$$
+
+We can then apply the ordinary approach of measuring backwards by evolving $W_D$ under time-reversed dynamics. That approach can be characterized as *weakly local* (not a point, but a gaussian in phase space), *linear* (the "rays" do not interfere) and *complete* (fully describes wave-optics).
+
+Consider the WDF $W_s$ of the light source. It interacts with the scene, until it reaches the detector. At that point the WDF transformed into $K\{W_s\}$ by the interaction kernel $K$ as follows:
+$$K\{W_s\}(x,k)=\int K(x',k',x,k)W_s(x',k')dx'dk'$$
+Where $K$ is a kernel representing the change in light distribution.
+
+Since we want to apply this transform in reverse time, the directions change $k\to-k$, and phases get conjugated. Which means that we can express $L$ equivalently as follows:
+$$L=\int \alpha(x_0) \int W(x,k)K^{-1}\{g_{\beta,0}\}(x,k;x_0)dx\ dk\ dx_0$$
+Then we further integrate over $k_0$, $\beta$ and $\rho$.
+For a given WDF $W$ and light source WDF $W_s$ we can compute measured light as follows:
+$$L_s=\int W(x,k)W_s(x,k)dx\ dk=\int g_{\beta,\rho}(x,k)W_s(x,k)dx\ dk=\frac 1 {(2\pi)^3}\left|\int \psi_s(x)\bar{\psi}_{\beta,\rho}(x)dx\right|^2$$
+
+The interaction kernels can be classified in two categories:
+* Simple linear optics interactions. The same interactions that are simulated by classical raytracing following RTE.
+* Diffractive interactions. These are the interactions that heavily depend on interference of the waves, such as scattering by rough surfaces.
+
+Reflection/refraction and free-space propagation fall under simple interactions, which makes them easy to define:
+$$K_{free}\{g_{\beta,\rho}(x_0, k_0)\}=g_{\beta',\rho'}(x_0+\bar zk_0, k_0)$$
+$$K_{r}\{g_{\beta,\rho}(k_0)\}=Rg_{\beta,\rho}(reflect(k_0))$$
+$$K_{t}\{g_{\beta,\rho}(k_0)\}=(1-R)g_{\beta,\rho}(refract(k_0))$$
+$$\bar z = z /|k_0|$$
+$$\beta'^2=\beta^2 + \bar z(2\rho+2\bar z\sigma_k)$$
+$$\rho'=\rho+2\bar z\sigma_k$$
+$$\sigma_k=\frac {1+\rho^2}{2\beta^2}$$
+Where $z$ is the propagation distance.
+
+With that, rays have the following state:
+* Mean wave-vector + variance
+* Mean position + variance
+* Polarization state (Stokes vector)
+
+In general, any interaction that happens between rays and the scene can depend on all of them. But primarily it depends on wavelength, direction and polarization.
+
+Reflection/refraction distribution s for angular extent
 # BSDF
 
 https://blog.demofox.org/2020/05/25/casual-shadertoy-path-tracing-1-basic-camera-diffuse-emissive/
@@ -928,7 +928,8 @@ Sum over lenses
 Integrate over aperture
 Integrate over exposure time
 Integrate over ray state (importance sample by photosensitivity)
-Apply bloom (near-field diffraction pattern)
+Apply bloom (far-field diffraction pattern)
+lens diffraction? (near-field diffraction pattern)
 Convert collected intensities for each wavelength to rgb
 ### Spectrum to RGB
 
@@ -938,49 +939,107 @@ Given some intensity distribution $L(\lambda)$, we need to compute spectral powe
 chatgpt'd
 $$S(\lambda)=\int_{A}\int_{\Omega} L(x,\omega,\lambda)(\omega\cdot n)d\omega dx$$
 Where $A$ is the area of the pixel, $\Omega$ is aperture area, and $n$ is the direction of view.
+This incoming spectra, according to [Grassmann's laws](https://en.wikipedia.org/wiki/Grassmann%27s_laws_(color_science)), can be projected into some basis $\bar c_i(\lambda)$, where each basis function corresponds to the photosensitivity of each sensor $i$. The color component $C_i$ is then the projection, defined via the integral inner product:
+$$C_i=\int_0^{\infty}S(\lambda)\bar{c}_i\left(\lambda\right)d\lambda$$
+The $\bar c_i(\lambda)$ functions itself must be normalized to have equal area:
+$$\int_0^{\infty}\bar{c}_i\left(\lambda\right)d\lambda=\int_0^{\infty}\bar{c}_j\left(\lambda\right)d\lambda$$
 
-Then we can compute RGB response with $\overline{r}\left(\lambda\right)$, $\overline{b}\left(\lambda\right)$, $\overline{b}\left(\lambda\right)$ functions that correspond to sensor response of each color sensor:
-$$R=\int_0^{\infty}S(\lambda)\overline{r}\left(\lambda\right)d\lambda$$
-$$G=\int_0^{\infty}S(\lambda)\overline{g}\left(\lambda\right)d\lambda$$
-$$B=\int_0^{\infty}S(\lambda)\overline{b}\left(\lambda\right)d\lambda$$
-The $\overline{r}\left(\lambda\right)$, $\overline{b}\left(\lambda\right)$, $\overline{b}\left(\lambda\right)$ functions itself are normalized to have equal area:
-$$\int_0^{\infty}\overline{r}\left(\lambda\right)d\lambda=\int_0^{\infty}\overline{g}\left(\lambda\right)d\lambda=\int_0^{\infty}\overline{b}\left(\lambda\right)d\lambda$$
-These function can be approximated through XYZ color space as a mixture of two-sided Gaussians $g$:
-$$\tau(x,\mu,\tau_1,\tau_2)=\begin{cases}
-    \tau_1 & \text{if } x<\mu \\
-    \tau_2 & \text{otherwise}
-\end{cases}$$
-$$g(x,\mu,\tau_1,\tau_2)=e^{-\frac{\tau^2(x-\mu)^2}{2}}$$
+The basis usually corresponds to RGB space, denoted as $\overline{r}\left(\lambda\right)$, $\overline{g}\left(\lambda\right)$, $\overline{b}\left(\lambda\right)$.
+RGB basis functions can be approximated through XYZ color space as a mixture of two-sided Gaussians $g$:
 $$\begin{aligned}\overline{x}\left(\lambda\right)&=1.056g(\lambda,599.8,0.0264,0.0323)\\
 &+0.362g(\lambda,422,0.0624,0.0374)\\
 &-0.065g(\lambda,501.1,0.049,0.0382)\end{aligned}$$
 $$\overline{y}\left(\lambda\right)=0.821g(\lambda,568.8,0.0213,0.0247)+0.286g(\lambda,530.9,0.0613,0.0322)$$
 $$\overline{z}\left(\lambda\right)=1.217g(\lambda,437,0.0845,0.0278)+0.681g(\lambda,459,0.0385,0.0725)$$
-$$\left[\array{r\cr g\cr b}\right]=\left[\matrix{0.49 & 0.31 & 0.2\cr 0.17697 & 0.8124 & 0.01063\cr 0 & 0 & 0.99}\right]^{-1}\left[\array{x\cr y\cr z}\right]$$
+Where the $g$ gaussians are defined as follows:
+$$\tau(x,\mu,\tau_1,\tau_2)=\begin{cases}
+    \tau_1 & \text{if } x<\mu \\
+    \tau_2 & \text{otherwise}
+\end{cases}$$
+$$g(x,\mu,\tau_1,\tau_2)=e^{-\frac{\tau^2(x-\mu)^2}{2}}$$
+They directly correspond to the photosensitivity of our eyes. They need to be linearly transformed into RGB space:
+$$\left[\array{\bar r\cr \bar g\cr \bar b}\right]=\left[\matrix{0.49 & 0.31 & 0.2\cr 0.17697 & 0.8124 & 0.01063\cr 0 & 0 & 0.99}\right]^{-1}\left[\array{\bar x\cr \bar y\cr \bar z}\right]$$
+
 ![[chrome_VOI1ndezrZ_1758182559.png]]
 https://youtu.be/wA1KVZ1eOuA?si=vBoEcSDCgD2pVAGd
 https://en.wikipedia.org/wiki/CIE_1931_color_space
 ### RGB to spectrum
 https://graphics.geometrian.com/research/spectral-primaries.html
-We also need inverse transformations to transform an rgb material color into spectral distribution.
-We can implement it as a function that measures spectral power distribution for a given rgb value, evaluated at given wavelength.
+https://arxiv.org/pdf/2306.11464
+https://dl.acm.org/doi/10.1145/3588432.3591565
+https://cg.ivd.kit.edu/publications/2015/spectrum/paper-preprint.pdf
 
-Note, that there is no unique spectrum corresponding to each rgb value. To resolve this issue we can additionally constrain it to be varying as little as possible. That is motivated by observation that many materials, especially natural, have smooth spectrum.
+We also need inverse transformations to transform an rgb material color into spectral distribution. But it is inherently underdetermined problem, since multiple spectra can result in the exact same measured color, which is called metamerism. Thus we can transform an rgb value into spectra only up to some metamerism parameter $m$. Lets say the operator $S\{C\}$ transforms the rgb value $C=[r,g,b]$ into a family of spectra $S(\lambda; m)$, such that:
+$$\int_{0}^{\infty}S(\lambda;m)\bar c_i(\lambda)d\lambda=C_i$$
+Since metamers produce the same color, while having different spectra, for two metamers $m_1$ and $m_2$ we have the constraints:
+$$\int_{0}^{\infty}S(\lambda;m_1)\bar c_i(\lambda)d\lambda=\int_{0}^{\infty}S(\lambda;m_2)\bar c_i(\lambda)d\lambda$$
+$$S(\lambda, m_1)\neq S(\lambda, m_2) \text{, for any } m_1\neq m_2$$
+It is also required that, in vicinity of $C$ for some constant $m$ the spectra varies smoothly.
 
-To construct such distribution from the rgb value, we should consider the effect of illuminating surface with that color with white light. The "white light" is standardized to be described by a $D_{65}$ distribution, the [standard daylight illuminant](https://en.wikipedia.org/wiki/Standard_illuminant#Illuminant_series_D). Thus, by definition, the white color must correspond to $D_{65}$'s distribution.
+We can represent correlation between the basis functions with Gram matrix:
+$$G_{ij}=\int_{0}^{\infty} \bar c_i(\lambda)\bar c_j(\lambda)d\lambda$$
+In case of completely orthogonal basis, it will be a diagonal matrix.
+With this we can represent all metameric as follows:
+$$S(\lambda;m)=\bar c^TG^{-1}C+m(\lambda)$$
+Where $m(\lambda)$ represents the metameric component of the spectra. It must be orthogonal to all basis functions, so that it does not change the projections:
+$$\int_{0}^{\infty}m(\lambda)\bar c_i(\lambda)d\lambda=0$$
+Since $m(\lambda)$ is still a continuous function, it requires an infinite dimensional basis to be represented exactly by some parametric model. Lets say we want to represent that residue as a sum over orthogonal basis functions $\phi_k$, with arbitrary weights $a_k$:
+$$m(\lambda)=\sum_{i=0}^{k} a_i\phi_i(\lambda)$$
+We can construct such a basis from an arbitrary initial basis $\bar \phi_k$:
+$$\phi_k=\bar \phi_k-(G^{-1}\int_0^{\infty}\bar c(\lambda)\bar \phi_k(\lambda)d\lambda)\cdot \bar c$$
+For exact precision we need $k\to\infty$. To avoid limiting case, we must restrict ourselves to some subdomain of metameric spectra, that is covered by first $k$ terms of our sum. 
 
-Now, given a distribution $S$ for some rgb value, the observed XYZ color for that rgb color under white light is computed as the sum over all wavelengths:
-$$
-\left[\array{X\cr Y\cr Z}\right]=\sum_{\lambda}
-\left[\array{\bar x(\lambda)\cr \bar y(\lambda)\cr \bar z(\lambda)}\right]D_{65}(\lambda)S(\lambda)
-$$
-To then convert it to the linear rgb space we use the transformation formula:
-$$
-\left[\array{r\cr g\cr b}\right]=M^{-1}\left(\frac 1 {Y_{D_{65}}}
-\left[\array{X\cr Y\cr Z}\right]\right)
-$$
+We can derive a value $k$ for a given quantization step $\Delta_\lambda$, that is exactly representable with some numeric datatype, like `uint8`. Lets say we use Fourier basis as initial to represent $m$:
+$$\bar \phi_k(\lambda)=a_k\sin(2\pi k\lambda)$$
+If we require to only represent wavelengths in an interval $\lambda\in[\lambda_{min},\lambda_{max}]$, we can make basis normalized:
+$$\bar \phi_k(\lambda)=a_k\sin(2\pi k\frac {\lambda-\lambda_{min}} {L})$$
+$$L=\lambda_{max}-\lambda_{min}$$
+Span of relevant wavelengths is defined by the original basis functions, such that they have at least $p$% of mass in that span. Given some mass function $w_i$ for each $c_i$, we can define normalized mass distribution function $f_i$:
+$$f_i(\lambda)=\frac {w_i(\lambda)}{\int_0^{\infty}|w_i(\lambda')|d\lambda'}$$
+Then we can define a set of highest density regions $H_{p,i}$ as follows:
+$$\int_{H_p}|f_i(\lambda)|d\lambda=p$$
+Then the span is defined as $\left[min \bigcup_{i} H_{p,i}, max \bigcup_{i} H_{p,i}\right]$. Or if we are ok with disjoint span, we can pick the union itself as the span. For RGB basis, [span](https://en.wikipedia.org/wiki/Visible_spectrum) is $[380,750]$ nm.
 
-  
+We can resolve frequency only up to quantization in $\lambda$, which gives a Nyquist relation between $\Delta_\lambda$ and $k$:
+$$k<\frac L {2\Delta_\lambda}$$
+For values of $C_i$, we can resolve oscillation only if samples differ by at least that quantization step $\Delta_c$:
+$$
+|w'(\lambda)|_{max}\Delta_\lambda>\Delta_c
+$$
+$$|w'(\lambda)|_{max}=\frac {2\pi k|a_k|} {L}$$
+$$k>\frac {L\Delta_c}{2\pi |a_k|\Delta_\lambda}$$
+Which means representable $k$ band is:
+$$\frac {L\Delta_c}{2\pi |a_k|\Delta_\lambda} <k<\frac L {2\Delta_\lambda}$$
+Labeling $A_{max}$ as supremum of the sequence $|a_k|$, we get:
+$$\frac {L\Delta_c}{2\pi A_{max}\Delta_\lambda} <\frac {L\Delta_c}{2\pi |a_k|\Delta_\lambda} <k<\frac L {2\Delta_\lambda}$$
+Assuming that sequence $a_k$ is monotonically decreasing, we can safely ignore the $k$ term if it is too small to be representable. Thus for any $a_i$ for $i$ below $k$:
+$$|a_i|>\frac {\Delta_c} 2$$
+Which we can reuse for $k$ bounds:
+$$\frac {L\Delta_c}{2\pi A_{max}\Delta_\lambda} <\frac {L\Delta_c}{2\pi |a_k|\Delta_\lambda} <\frac {L}{\pi\Delta_\lambda} <k<\frac L {2\Delta_\lambda}$$
+Thus we can pick one of two middle points as compromise between frequency accuracy, slope accuracy, and performance:
+$$k=\frac {L\Delta_c}{4\pi A_{max}\Delta_\lambda}+\frac L {4\Delta_\lambda}
+=\frac L {4\Delta_\lambda}(\frac {\Delta_c}{\pi A_{max}}+1)$$
+$$k=\frac {L}{2\pi\Delta_\lambda}+\frac L {4\Delta_\lambda}
+=\frac L {\Delta_\lambda}\frac {2+\pi}{4\pi}$$
+Or, equivalently, we can fix number $k$ and derive suitable $\Delta_\lambda$ for discretization on interval $L$:
+$$\Delta_\lambda=\frac L {k}\frac {2+\pi}{4\pi}$$
+For `f32` and `uint8`, two most common formats on GPU, quantization error is the following:
+$$\Delta_{f32}=1.175*10^{-38}$$
+$$\Delta_{uint8}=\frac 1 {2^{8}-1}$$
+#### Reflectance spectra
+If the rgb value describes reflectance additional constraints are required:
+* Spectra must be energy preserving:
+$$S(\lambda; m)\in [0,1]$$
+* For some unpolarized white light illumination spectra $S_w$ we get the corresponding reflected color spectrum:
+$$\int_{0}^{\infty}S(\lambda;m)S_w(\lambda)\bar c_i(\lambda)d\lambda=C_i$$
+
+The transform $S$ may just map $C$ to some other parameter space describing the spectra in a more complete sense, in which case we would prefer it to be linear, so that we can interpolate in this space and expect the interpolated spectra to correspond to interpolated color.
+
+The "white light" is standardized to be described by a $D_{65}$ distribution, the [standard daylight illuminant](https://en.wikipedia.org/wiki/Standard_illuminant#Illuminant_series_D). Thus, by definition, the white color must correspond to $D_{65}$'s distribution.
+
+To pick some metamer $m$ we can additionally constrain it to be varying as little as possible. That is motivated by observation that many materials, especially natural, have smooth spectrum.
+#### Emission spectra?
+
 ### Antialiasing
 https://www.iryoku.com/aacourse/
 https://www.reddit.com/r/GraphicsProgramming/s/f26q2kQi56

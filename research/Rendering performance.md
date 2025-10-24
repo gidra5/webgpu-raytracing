@@ -23,6 +23,9 @@ https://ssteinberg.xyz/2025/08/28/elliptical_cone_tracing_ads/
 
 ReGIR - An advanced implementation for many-lights offline rendering | Tom Clabault
 https://tomclabault.github.io/blog/2025/regir/
+https://research.nvidia.com/labs/rtr/publication/kettunen2023conditional/kettunen2023conditional.pdf
+https://www.semanticscholar.org/paper/Joint-importance-sampling-of-low-order-volumetric-Georgiev-K%C5%99iv%C3%A1nek/1080f963b55003b635862799d4e68c81aec53c41
+https://www.semanticscholar.org/paper/Multi-Scale-3D-Gaussian-Splatting-for-Anti-Aliased-Yan-Low/6fc4869263ea4e9dde902d7cd9899436d9826dcc
 
 spectral
 https://inria.hal.science/hal-03331619/file/Efficient%20Spectral%20Rendering%20on%20the%20GPU.pdf
@@ -191,3 +194,4 @@ https://shuangz.com/projects/psdr-aq-sg22/psdr-aq-sg22.pdf
 https://inria.hal.science/hal-02497191/file/differentiable-pt-cov.pdf
 https://shuangz.com/projects/psdr-pixel-sa22/psdr-pixel-sa22.pdf
 https://shuangz.com/projects/psdr-sdf-sg24/psdr-sdf-sg24.pdf
+https://imaging.cs.cmu.edu/path_sampling_differentiable_rendering/index_files/paper.pdf
