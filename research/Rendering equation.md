@@ -12,13 +12,13 @@ Each formulation is suitable to a different rendering problem domain, thus a com
 
 When it is known a function depends on more arguments than shown, assume it is explicitly passed through.
 
-Ideally we want to evaluate such wave-optical effects, [like](https://imadr.me/pbr/): 
-- Reflection / Refraction / Transmission
-- Diffraction
+Ideally we want to be able, at least in theory, to evaluate such wave-optical effects, [like](https://imadr.me/pbr/): 
+- Reflection / Refraction / Transmission (Ray Optics)
+- Diffraction (Wave Optics)
 - Interference
-- Polarization
+- Polarization (EM Optics)
 - Dispersion
-- Fluorescence
+- Fluorescence (Quantum Optics)
 - Phosphorescence
 # Radiative Transfer Equation
 https://www.youtube.com/watch?v=FS8NotZ3diY
@@ -45,10 +45,12 @@ The out-scattering is proportional to the current radiance, which gives us:
 $$S=S_{in}-L$$
 With this we can group out-scattered and absorbed radiance into an extinction term:
 $$\partial_sL=L_e+\sigma_s(S_{in}-L)-\sigma_aL=L_e+\sigma_sS_{in}-(\sigma_a+\sigma_s)L=L_e+\sigma_sS_{in}-\sigma_tL$$
+Where $\sigma_{t}=\sigma_{a}+\sigma_{s}$ is the extinction coefficients along the ray.
 The in-scattering term can be expressed as an integral over all incoming radiance:
-$$S_{in}=\intop\nolimits_{S^2} p\left(\omega_{i}\to\omega\right)L\left(\omega_{i}\right)\mathrm{d}\omega_{i}$$
-Where the function $p$ is often called phase function, and it describes what portion the incoming light from a particular direction is scattered into the current one. The $p$ must obey normalization constraint:
-$$\intop\nolimits_{S^2}p\left(\omega_{i}\to\omega\right)\mathrm{d}\omega_{}=1$$
+$$S_{in}=\intop\nolimits_{S} p\left(s_{i}\to s\right)L\left(s_{i}\right)\mathrm{d}s_{i}$$
+The function $p$ is often called phase function, and it describes what portion the incoming light from a particular direction is scattered into the current one. The $p$ must obey normalization constraint:
+$$\intop\nolimits_{S}p\left(s_{i}\to s\right)\mathrm{d}s_{i}=1$$
+Note that the integral is over phase-space state, and not just over all directions. That encompasses that scattering is happening not only in directions, but also in wavelength, polarization. 
 ## RTE Integral form
 Solving RTE in terms of the ray parametrization we get the integral form:
 $$L\left(s\right)=\int_{0}^{\infty}e^{-\intop\nolimits_0^{t}\sigma_{t}\left(x_{u}\right)\mathrm{d}u} [L_e+\sigma_sS_{in}]( x_t)\mathrm{d}t$$
@@ -96,6 +98,8 @@ f(\bar x)=\sum_{i=0}^{k-1} L_e(x_i\to x_{i+1})\left[
 $$T_v(x_i\to x_j)=G(x_i\to x_j)T(x_i\to x_j)$$
 $$L_e(x_i\to x_j)=\int_{x_i}^{x_j} L_e(x)T(x\to x_j)dx$$
 Where $f_j$ is the interaction function corresponding to the scattering at $x_j$ and $G$ is the geometry term encoding cosine attenuation factors.
+
+The path integral also can be [generalized](https://ssteinberg.xyz/2025wt/2025_wave_tracing_low_res.pdf) to describe region-to-region light transport by making $x_i$ represent phase-space regions.
 ## Reciprocity
 [Helmholtz principle](https://en.wikipedia.org/wiki/Helmholtz_reciprocity) states that rays following the same path in opposite directions experience the same events, which is often called the reciprocity constraint. This allows us to choose which way do we measure light - from camera to source or the other way around.
 There are only two functions that depend both on incoming and outgoing light directions - $p(\omega_{i}\to\omega)$ and $f(\omega\to\omega_{i})$. Thus we impose additional constraints on these functions:
@@ -103,12 +107,77 @@ $$\sigma_s(\omega_i)p\left(\omega_{i}\to\omega\right)=\sigma_s(\omega)p\left(\om
 $$\sigma_r(\omega_i)f\left(\omega_{i}\to\omega\right)=\sigma_r(\omega)f\left(\omega\to\omega_{i}\right)$$
 ## Ray path and state
 The ray $x(s)$ in is defined by polarization, light speed and frequency, besides the regular position and direction. It's path is constrained by refractive index and spacetime metric/curvature. Direction, speed and frequency can be combined into a wave-vector. If we also introduce uncertainty, position and wave-vector also gain variance.
-All of these parameters' evolution depend on each other, which means the ray's path is inherently defined by all of them, basically tracing a ray in the whole phase space, not only in regular space.
+All of these parameters' evolution depend on each other, which means the ray's path is inherently defined by all of them, basically tracing in the whole phase space, not only in regular space.
+### Electromagnetism
+it is described by two vector fields $E$ and $H$ for electric and magnetic fields respectively.
+They are dependent and described by Maxwell's equations:
+$$\nabla\cdot E=\frac \rho {\varepsilon_0}$$
+$$\nabla\cdot B=0$$
+$$\nabla \times E=-\partial_t B$$
+$$\nabla \times B=\mu_0(J+\varepsilon_0\partial_tE)$$
+$\rho$ the [electric charge density](https://en.wikipedia.org/wiki/Electric_charge_density "Electric charge density") and $J$ the [current density](https://en.wikipedia.org/wiki/Current_density "Current density"). $\varepsilon_0$ is the [vacuum permittivity](https://en.wikipedia.org/wiki/Vacuum_permittivity "Vacuum permittivity") and $\mu_0$ the [vacuum permeability](https://en.wikipedia.org/wiki/Vacuum_permeability "Vacuum permeability").
+Current density has a [continuity relation](https://en.wikipedia.org/wiki/Current_density#Continuity_equation) as well:
+$$\nabla \cdot J=-\partial_t\rho$$
+We can describe all of the equations above with [geometric algebra notation](https://habr.com/ru/articles/958088/). 
+At the core of geometric algebra is geometric product:
+$$ab=a\cdot b + a\times b$$
+Where dot and cross products are now called inner and outer products.
+Scalars and vectors are generalized to multivectors, expressed in terms of basis vectors:
+$$v=a+(v_1e_1+v_2e_2+v_3e_3)+(b_1e_1e_2+b_2e_2e_3+b_3e_3e_1)+ce_1e_2e_3$$
+First term is called a scalar, second in a vector, third is a bivector, and fourth is trivector. Last two represent oriented areas and volumes respectively. It is also a secret to interpreting 3d rotations as quaternions intuitively.
+
+First define electromagnetic field $F$ as a bivector:
+$$F=E+icB$$
+Where $icB$ becomes a bivector with $i=e_1e_2e_3$.
+We can also collect sources of electric field into a single multivector:
+$$\bar J=c\rho +J=\rho v$$
+And now Maxwell's equations can be compactly written as:
+$$\nabla F=\frac 1 {\varepsilon_0c} \bar J$$
+We can express it as a wave equation by taking one more gradient:
+$$\nabla^2 F=\frac 1 {\varepsilon_0c} \nabla \bar J$$
+Spacetime has Minkowski metric, which means $\nabla^2$ is exactly the Laplacian that would define a wave equation:
+$$\nabla^2=\nabla_x^2-\partial_t^2$$
+And with this we get vector field wave equation. But since current must be conserved, we also get equality $\nabla \cdot \bar J=0$, which means we can reduce RHS to outer product part:
+$$\nabla^2 F=\frac 1 {\varepsilon_0c} \nabla\times \bar J$$
+Now, we can also introduce a potential field, such that its gradient is exactly $F$:
+$$F=\nabla \times A$$
+Substituting in the original equation this gives us:
+$$\nabla (\nabla \times A)=\nabla^2 A-\nabla(\nabla\cdot A)=\frac 1 {\varepsilon_0c} \bar J$$
+Notice that this equation is invariant under so called gauge transformations:
+$$A'= A+\nabla B$$
+$$F'=\nabla \times A'=\nabla \times A+\nabla \times \nabla B=\nabla \times A=F$$
+Since partial derivatives commute, $\nabla \times \nabla B$ vanishes.
+Thus $A$ is unique up to some scalar field $B$, and we can choose $B$ such that it eliminates the $\nabla(\nabla\cdot A)$ in the equation above:
+$$\nabla(\nabla\cdot (A+\nabla B))=0$$
+$$\nabla\cdot (A+\nabla B)=\nabla\cdot A+\nabla\cdot \nabla B=0$$
+$$\nabla\cdot \nabla B=\nabla^2 B-\nabla\times \nabla B=\nabla^2 B=-\nabla\cdot A$$
+For equations of the form $\nabla^2 B=f$ we can always find a solution as long as $\int f(x) dx$ is finite:
+$$B=\int G(x,x')f(x')dx'$$
+Where $G$ is [the Green's function](https://en.wikipedia.org/wiki/Green%27s_function). The particular solution for our case does not matter, since dependence on $B$ vanishes anyway.
+So we can always impose $\nabla\cdot A=0$ to "fix" the potential's base level and eliminate redundant term, leaving pure wave equation:
+$$\nabla^2 A=\frac 1 {\varepsilon_0c} \bar J$$
+Vector potentials $A$ are a bit easier to grasp, since it is a regular vector, and not a bivector.
+#### Lorentz force
+The Maxwell's equations are not enough to describe dynamics of the EM field, since the source term depends on charge distribution, which can change due to EM field itself. Thus we need to introduce [Lorentz force law](https://en.wikipedia.org/wiki/Spacetime_algebra#Maxwell's_equation):
+$$m\dot v=qF\cdot v$$
+Since all electrons are identical, we can express the charge and mass densities through number density:
+$$\rho=q_en,\ \rho_m=m_en$$
+And now Lorentz law can be expressed as force density:
+$$\rho_m\dot v=\rho F\cdot v=F\cdot \bar J$$
+#### Macroscopic equations
+The Maxwell equations assume vacuum, where speed of light and other quantities can be assumed constant. But in a medium the effective values of these constants may change. To account for that They are extended to so called macroscopic equations, that additionally model microscopic interactions as ensemble average, integrated into the equations as magnetization $M$ and polarization $P$. They are, in simple cases, proportional to transformed EM fields, and their coefficients define the speed of light in that medium, as well as index of refraction.
+https://chatgpt.com/c/6910ddc3-47b0-8333-b107-7efe680b95b0
 ### Polarization
 https://en.wikipedia.org/wiki/Polarization_(waves)
 
-Since light is a wave, it oscillates around the ray direction. We can view the oscillations in the plane perpendicular to the ray. We can describe a polarization state in this plane with two values, each containing a phase and amplitude. Complex numbers give a natural way of encoding the state as a 2D complex vector:
-$$s=\left[
+We can express any vector field as a continuum of plane waves:
+$$F(x)=\int\hat F(k)e^{-ik\cdot x}dk$$
+Where $\hat F$ is amplitude and polarization of a particular plane wave with wavevector $k$. By substituting it into Maxwell's equation we get a constraint on $k$ and $\hat F$:
+$$ik\hat F=-\frac 1 {\varepsilon_0c}\hat J$$
+Which defines a plane in which oscillations happen, that makes angle proportional to the transformed source term.
+
+We can describe a polarization state in this plane with two values, each containing a phase and amplitude. Complex numbers give a natural way of encoding the state as a 2D complex vector:
+$$\hat F=s=\left[
 A_xe^{i\varphi_x}\atop
 A_ye^{i\varphi_y}
 \right]=\left[
@@ -131,10 +200,6 @@ This representation allows for easier visualization and computations. Additional
 The light may also be partially polarized, with a fraction of purely polarized light $p$. The other fraction is unpolarized light, that is described by the average coherence matrix. We may assume that unpolarized light has absolutely no correlations, which makes $S_{1,2,3}=0$, and allows us to split the stokes vector into polarized and unpolarized parts. Otherwise we need 3 more values describing which fractions of each parameter belong to unpolarized matrix' parameters. Or we can literally track two such vectors.
 
 One useful basis is based on the plane of incidence, which is the plane defined by incoming propagation direction and surface normal. The term that is parallel to the plane is called *p-like*, and the perpendicular one is *s-like*. Refracted and reflected amount of polarized light from Fresnel equations are defined in terms of this basis.
-
-With this the radiance function $L$ is a Stokes vector, and the RTE now involves matricies instead of simple coefficients:
-
-
 ### Index of Refraction
 Any material's optical response is fundamentally described by an index of refraction (IoR), which is a complex number $\eta(x, \omega, \lambda)=n+ik$ encoding both refraction ratio $n$ and extinction coefficient $k$. The real and complex parts are not independent, they follow [Kramers–Kronig relations](https://en.wikipedia.org/wiki/Kramers%E2%80%93Kronig_relations), since it is the result of a physical process, which makes it a [linear response function](https://en.wikipedia.org/wiki/Linear_response_function). That also means we can derive imaginary part from real, and vice versa. The absorption coefficient used in RTE can be expressed in terms of $k$:
 https://en.wikipedia.org/wiki/Refractive_index#Complex_refractive_index
@@ -216,7 +281,7 @@ $$\sigma_t'(\lambda_0)=G\lambda_0R\sigma_t(\lambda_0G)R^{-1}$$
 
 special relativity is the general relativity with minkowski metric
 minkowski metric:
-$$G=\left[\matrix{
+$$\eta=\left[\matrix{
 1& 0& 0& 0\cr
 0& 1& 0& 0\cr
 0& 0& 1& 0\cr
@@ -224,6 +289,14 @@ $$G=\left[\matrix{
 }
 \right]$$
 
+For rendering purposes we can "abstract away" the curvature of the spacetime in a single metric tensor $g_{ij}(x)$. The laws of physics are invariant to changes of reference frame, so we can always alight it with curvature, basically unwarping the space into a flat one.
+
+We can derive a rotor $R$ such that it aligns some static basis with curved spacetime. Lets say we have static basis $e_i$, such that $e_i\cdot e_j=\eta_{ij}$. Then we can transform them into $e'_i=Re_i\bar R$, such that $e'_i\cdot e'_j=g_{ij}$.
+
+Now given such a rotor, we may define so called covariant derivative:
+$$R\partial \psi\bar R=\nabla (R\psi\bar R)$$
+With it we can generalize all our derivations to curved spacetime. If needed, we can derive the actual operator in terms of the gradient:
+$$\partial=\nabla-(\nabla R)\bar R\times$$
 
 general relativity renderers
 https://iopscience.iop.org/article/10.3847/0004-637X/820/2/105/pdf
@@ -247,10 +320,18 @@ https://ssteinberg.xyz/2023/03/27/rtplt/
 https://en.wikipedia.org/wiki/Wave_equation
 https://dl.acm.org/doi/pdf/10.1145/3450626.3459791
 We can also look at this as a wave propagation problem in an absorbing and emitting medium. Let's consider a function $\psi(x, t)$ in electromagnetic field, satisfying the wave equation:
-$$\frac 1 {c^2} \frac {\partial^2\psi}{\partial t^2}+n \frac {\partial\psi}{\partial t}=\nabla^2\psi+S$$
-It is *damped*, which describes absorption with rate $n$, and has a source $S$, describing emission. 
-From the wave function $\psi$ we can define a Wigner distribution function (WDF):
-$$W(x,k)=\frac 1 {(2\pi)^3}\int\bar{\psi}(x-\frac 1 2x')\psi(x+\frac 1 2x')e^{-ix'\cdot k}dx'$$
+$$\nabla^2\psi=S$$
+It has a source $S$, describing emission. 
+
+For the wave function $\psi$ we can define a cross-correlation function:
+$$\Psi(x,\zeta)=\bar{\psi}(x-\frac \zeta 2)\psi(x+\frac \zeta 2)$$
+This function encodes the wave function up to a constant phase:
+$$\Psi(x,\zeta)=\Psi'(x,\zeta)\iff \psi(x)=e^{i\phi}\psi'(x)$$
+Since global phase is irrelevant, we can safely ignore it and assume it is complete. We can "reconstruct" wave function given some boundary condition at a point $x_0$:
+$$\Psi(x,\zeta)=\psi(x)\bar{\psi}(x-\zeta)=\psi(x)\bar\psi(x_0)$$
+$$\psi(x)=\frac {\Psi(x,x_0-x)}{\bar\psi(x_0)}$$
+And with it we can define a Wigner distribution function (WDF) as a Fourier transform:
+$$W(x,k)=\frac 1 {(2\pi)^3}\int\Psi(x,\zeta)e^{-i\zeta\cdot k}d\zeta$$
 Where a new parameter $k$ is the wave-vector.
 
 A [wave-vector](https://en.wikipedia.org/wiki/Wave_vector) encodes a direction and a frequency of the wave at some point. We can define it as follows:
@@ -258,34 +339,42 @@ $$k=\omega\frac {2\pi\eta} {\lambda}=\omega\ 2\pi\nu\ \eta$$
 Where $\omega$ is the direction of propagation, $\nu$ is the frequency, $\eta$ is the refractive index of the medium.
 With that, WDF describes the direction spread of $\omega$ for a particular frequency $\nu$ at a given position $x$. We can recover the wave function $\psi$ from it up to a global phase shift, which gives a complete description of light.
 
-We can use a gaussian WDF with the following shape:
-$$g_{\beta,\rho}(x, k;x_0, k_0)=\frac 1 {\pi^3}e^{\frac {q(x-x_0,k-k_0)} {\beta^2}}$$
-$$q(x,k)=\beta^2(\beta|k|-\rho|x|)^2+|x|^2$$
-Where $x_0$, $k_0$ are the mean position and wave-vector, $\beta$ is the initial spatial variance of the distribution, and $\rho$ is the correlation parameter, encoding polarizations state. In general, $\rho$ and $\beta$ can be matrices, encoding anisotropy.
-It is also normalized: $\int g(x,k)dx\ dk=1$
+We can use a gaussian WDF with [the following shape](https://ssteinberg.xyz/2025wt/2025_wave_tracing_supplemental.pdf):
+$$g_{\Sigma,\rho}(x, k;x_0, k_0)=\frac 1 {\pi^3}e^{-q(x-x_0,k-k_0)}$$
+$$
+\begin{aligned}
+q(x,k)&=(x-\rho k)^T\Sigma^{-1}(x-\rho k)+k^T\Sigma k\\
+\end{aligned}$$
+$$\int g(x,k)dx\ dk=1$$
+Where $x_0$, $k_0$ are the mean position and wave-vector, $\Sigma$ is the initial spatial variance (symmetric positive definite) matrix of the distribution, and $\rho\ge 0$ is the correlation parameter that depends on propagation distance $z$ (initially $\rho=0$ and it grows linearly with the distance travelled). $\Sigma$ does not change on free-space propagation, but it may mutate upon lightmatter interactions.
+
+The corresponding variances in space and wavevector are as follows:
+$$\sigma_x=\frac {\rho^2} 2\Sigma^{-1}+\frac 1 2\Sigma$$
+$$\sigma_k=\frac 1 2\Sigma$$
+
 This distribution represents a *generalized ray*, which allows us to apply regular raytracing approaches, while still getting wave-optics accurate result.
 
-We can derive a corresponding wave function for a given $g_{\beta,\rho}$:
-$$\psi_{\beta,\rho}(x;x_0,k_0)=\frac 1 {(\pi\beta^2)^{3/4}}e^{q'(x-x_0,k_0)}$$
-$$q'(x,k)=ik\cdot x-\frac 1 {2\beta^2}(1-i\rho)|x|^2$$
+We can derive a corresponding wave function for a given $g_{\Sigma,\rho}$:
+$$\psi_{\Sigma,\rho}(x;x_0,k_0)=\frac {|Re(\Sigma+i\rho I)^{-1}|} {\pi^{3}}e^{q'(x-x_0,k_0)}$$
+$$q'(x,k)=ik\cdot x-\frac 1 2x^T(\Sigma+i\rho I)^{-1}x$$
 With that the measured intensity is computed as follows:
 $$L=\int W(x,k)W_D(x,k)dx\ dk$$
 Where $W_D$ is the detector's WDF.
 If we assume our detectors are classical photoelectric detectors, the $\rho$ is 0. Then detector's WDF is computed as follows:
-$$W_D(x,k)=\int_D \alpha(x_0) g_{\beta,0}(x,k;x_0)dx_0$$
+$$W_D(x,k)=\int_D \alpha(x_0) g_{\Sigma,0}(x,k;x_0)dx_0$$
 Where $\alpha$ is the detection efficiency, and $D$ is the spatial extent of the detector.
 
 Substituting into $L$ and swapping order of integration we get the following expression:
-$$L=\int \alpha(x_0) \int W(x,k)g_{\beta,0}(x,k;x_0)dx\ dk\ dx_0$$
+$$L=\int \alpha(x_0) \int W(x,k)g_{\Sigma,0}(x,k;x_0)dx\ dk\ dx_0$$
 
 We can then apply the ordinary approach of measuring backwards by evolving $W_D$ under time-reversed dynamics. That approach can be characterized as *weakly local* (not a point, but a gaussian in phase space), *linear* (the "rays" do not interfere) and *complete* (fully describes wave-optics).
 
-Consider the WDF $W_s$ of the light source. It interacts with the scene, until it reaches the detector. At that point the WDF transformed into $K\{W_s\}$ by the interaction kernel $K$ as follows:
-$$K\{W_s\}(x,k)=\int K(x',k',x,k)W_s(x',k')dx'dk'$$
+Consider the WDF $W_s$ of the light source. It interacts with the scene, until it reaches the detector. At that point the WDF transformed into $KW_s$ by the interaction kernel $K$ as follows:
+$$KW_s(x,k)=\int K(x',k',x,k)W_s(x',k')dx'dk'$$
 Where $K$ is a kernel representing the change in light distribution.
 
 Since we want to apply this transform in reverse time, the directions change $k\to-k$, and phases get conjugated. Which means that we can express $L$ equivalently as follows:
-$$L=\int \alpha(x_0) \int W(x,k)K^{-1}\{g_{\beta,0}\}(x,k;x_0)dx\ dk\ dx_0$$
+$$L=\int \alpha(x_0) \int W(x,k)K^{-1}g_{\Sigma,0}(x,k;x_0)dx\ dk\ dx_0$$
 Then we further integrate over $k_0$, $\beta$ and $\rho$.
 For a given WDF $W$ and light source WDF $W_s$ we can compute measured light as follows:
 $$L_s=\int W(x,k)W_s(x,k)dx\ dk=\int g_{\beta,\rho}(x,k)W_s(x,k)dx\ dk=\frac 1 {(2\pi)^3}\left|\int \psi_s(x)\bar{\psi}_{\beta,\rho}(x)dx\right|^2$$
@@ -295,14 +384,23 @@ The interaction kernels can be classified in two categories:
 * Diffractive interactions. These are the interactions that heavily depend on interference of the waves, such as scattering by rough surfaces.
 
 Reflection/refraction and free-space propagation fall under simple interactions, which makes them easy to define:
-$$K_{free}\{g_{\beta,\rho}(x_0, k_0)\}=g_{\beta',\rho'}(x_0+\bar zk_0, k_0)$$
-$$K_{r}\{g_{\beta,\rho}(k_0)\}=Rg_{\beta,\rho}(reflect(k_0))$$
-$$K_{t}\{g_{\beta,\rho}(k_0)\}=(1-R)g_{\beta,\rho}(refract(k_0))$$
-$$\bar z = z /|k_0|$$
-$$\beta'^2=\beta^2 + \bar z(2\rho+2\bar z\sigma_k)$$
-$$\rho'=\rho+2\bar z\sigma_k$$
-$$\sigma_k=\frac {1+\rho^2}{2\beta^2}$$
+$$K_{free}g_{\Sigma,\rho}(x_0, k_0)=g_{\Sigma,\rho}(x_0-\bar zk_0, k_0)=g_{\Sigma,\rho'}(x_0, k_0)$$
+$$\bar z = z /|k_0|,\ \rho'=\rho+\bar z$$
+$$K_{r}\{g_{\Sigma,\rho}(k_0)\}=Rg_{\Sigma,\rho}(reflect(k_0))$$
+$$K_{t}\{g_{\Sigma,\rho}(k_0)\}=(1-R)g_{\Sigma,\rho}(refract(k_0))$$
 Where $z$ is the propagation distance.
+
+We can see that as ray travels in completely free space, its spatial extend increases. If we only care about some mass fraction $p$ of the distribution, we can form a cone around mean direction, that starts at mean position as an ellipse. We can define the ellipse as follows:
+$$Cone=\{x|((x-x_0)^T\sigma_x(x-x_0))^{1/2}<p\}$$
+$$p=\sqrt{\chi_3^2(x)}=\sqrt{F^{-1}(x/2)}$$
+$$F(x)=erf(\sqrt {x})-\sqrt {\frac {4x} \pi}e^{-x}$$
+We can project this ellipsis onto plane $P$ orthogonal to the wavevector and get a cross-section of the cone in terms of diameters $a$ and $b$. Given some orthonormal basis $u_x$ and $u_y$ in the plane $P$, we can define a matrix $U=[u_x, u_y]$ that would project onto the plane. The covariance matrix gets projected into plane-variance $S=U^T\Sigma U$, and by getting its eigenvalues $\lambda_1$ and $\lambda_2\ge\lambda_1$ we can compute the diameters:
+$$a=p\sqrt{\lambda_1},\ b=p\sqrt{\lambda_2}$$
+If we can choose $u_x$ and $u_y$ aligned with projected ellipse, eigen values are just diagonals:
+$$\lambda_1=S_{xx},\ \lambda_2=S_{yy}$$
+When 
+
+
 
 With that, rays have the following state:
 * Mean wave-vector + variance
@@ -312,6 +410,59 @@ With that, rays have the following state:
 In general, any interaction that happens between rays and the scene can depend on all of them. But primarily it depends on wavelength, direction and polarization.
 
 Reflection/refraction distribution s for angular extent
+
+With WDF we can derive RTE-like equation from a regular wave equation. Take cross-correlation function $\Psi$, lets label its two components as $\psi_{\pm}=\psi(x\pm\frac \zeta 2)$. We may use similar notation for other terms as well. Each of them satisfy corresponding wave equation:
+$$\nabla_{\pm}^2\psi_{\pm}=S_{\pm}$$
+Where $\nabla_{\pm}=\nabla_{x}\pm\frac 1 2\nabla_{\zeta}$ is just sum of partial derivatives.
+By multiplying them with corresponding conjugates, we can get $\Psi$ function on LHS:
+$$\nabla_{+}^2\Psi=S_{+}\bar\psi_{-}$$
+$$\nabla_{-}^2\Psi=\psi_{+}\bar S_{-}$$
+Now if we combine them into a difference of equations, we get:
+$$(\nabla_{+}^2-\nabla_{-}^2)\Psi=(\nabla_{+}-\nabla_{-})(\nabla_{+}+\nabla_{-})\Psi=2\nabla_{\zeta}\nabla_{x}\Psi=S_{+}\bar\psi_{-}-\bar\psi_{+}S_{-}$$
+Which is cross-correlation equivalent of the wave equation.
+Now if we apply Laplace transform, we get RTE-like form:
+$$2\zeta\cdot \nabla_x W=W_e-W_a$$
+Where $W$ play the role of radiosity, $W_e$ is the emission term, $W_a$ is the absorption term, and $2\zeta$ is the direction term $\omega$. In the actual EM field obeying Maxwell's equation and external forces that can change the EM sources distribution, the emission and absorption terms also contain in- and out-scattering based on the values of $W$.
+When describing full EM field, we also get matrices instead of regular numbers, since cross-correlation now becomes a matrix.
+WDF is also related to the Stokes vectors, used for describing polarization. We can follow similar procedure to get a kind of 4x3x3 tensor, encoding polarization between electric and magnetic parts.
+
+This transport equation can capture the diffraction through curvature or inhomogeneous refractive index, which will generate additional terms when expanded.
+
+The WDF is usually highly oscillatory and may have negative values, which is unphysical for energy-like quantity. We can transform it with a gaussian kernel to get so called [Husimi Q function](https://en.wikipedia.org/wiki/Husimi_Q_representation):
+$$Q(a)=\int W(b)e^{-2(a-b)^2}db$$
+It is complete, since we can transform it back into WDF via inverse. The crucial property if this function is that it is non-negative, which makes it perfect candidate for interpretation as the energy of the field.
+
+https://chatgpt.com/c/690e1f07-ced8-832f-8cc1-83384e59a653
+https://chatgpt.com/c/690da14d-af78-832d-9ba4-bd7f82fb1094
+https://chatgpt.com/c/690cb0f2-4e08-8330-b813-2bd7ced213d6
+https://chatgpt.com/c/690b893c-f368-832c-9879-885ff15dd8f3
+https://chatgpt.com/c/690e1f07-ced8-832f-8cc1-83384e59a653
+https://chatgpt.com/c/6910ddc3-47b0-8333-b107-7efe680b95b0
+### Helmholtz equation
+Equivalently, we can represent wave function if frequency domain with [Helmholtz equation](https://en.wikipedia.org/wiki/Helmholtz_equation):
+$$\nabla^2\widehat\psi+k^2\widehat\psi=\widehat S$$
+$$\widehat\psi=\mathcal{F}_t\psi$$
+$$\widehat S=\mathcal{F}_tS$$
+For this wave function we can derive a [Kirchhoff integral theorem](https://en.wikipedia.org/wiki/Kirchhoff_integral_theorem):
+$$\widehat\psi(x)=\frac 1 {4\pi}\int_{\partial S}\left(\widehat\psi\nabla\frac {e^{iks}} {s}\cdot n-\frac {e^{iks}} {s}\nabla \widehat\psi\cdot n\right)dx'=\frac 1 {4\pi}\int_{\partial S}\left(\widehat\psi\frac {e^{iks}(1-iks)} {s^2}\bar x\cdot n-\frac {e^{iks}} {s}\nabla \widehat\psi\cdot n\right)dx'$$
+Where $s=|x-x'|$, $\bar x=\frac {x-x'} s$, and $n$ is the normal vector to the surface $S$ at $x'$.
+
+We can also apply the [Angular Spectrum Method](https://arxiv.org/pdf/2505.13869) and derive this expression for a plane surface $z=0$, which is easy to represent via Fourier transform:
+$$\widehat\psi(x,y,z)=\mathcal{F^{-1}}_{xy}(P\mathcal{F}_{xy}(\widehat\psi(x,y,0))e^{ik_zz})$$
+Where $P$ encodes interference of components in case of vector field:
+$$P=\left[\matrix{
+1-\omega_x^2&-\omega_x\omega_y&-\omega_x\omega_z\cr
+-\omega_x\omega_y&1-\omega_y^2&-\omega_y\omega_z\cr
+-\omega_x\omega_z&-\omega_y\omega_z&1-\omega_z^2
+}\right]$$
+Otherwise it is 1.
+
+https://www.google.com/search?q=Rayleigh%E2%80%93Sommerfeld+diffraction+formula&rlz=1C1SQJL_enUA1119UA1119&oq=Rayleigh%E2%80%93Sommerfeld+diffraction+formula&gs_lcrp=EgZjaHJvbWUyBggAEEUYOTIGCAEQRRhAMggIAhAAGBYYHjIHCAMQABjvBTIKCAQQABiABBiiBDIKCAUQABiABBiiBDIHCAYQABjvBdIBCDEwNjFqMGo3qAIAsAIA&sourceid=chrome&ie=UTF-8
+https://arxiv.org/pdf/0911.3663
+https://arxiv.org/pdf/2104.04772
+https://www.researchgate.net/publication/269878028_Vector_Fourier_optics_of_anisotropic_materials/link/55b77edf08ae092e965718b8/download
+https://journals.aps.org/prab/pdf/10.1103/PhysRevSTAB.11.012801
+
 # BSDF
 
 https://blog.demofox.org/2020/05/25/casual-shadertoy-path-tracing-1-basic-camera-diffuse-emissive/
@@ -399,17 +550,14 @@ $$p_{HG}(\omega_i\to\omega)=\frac{1-g^2}{(1+g^2-2g\cos\theta)^{3/2}}$$
 * Cornette–Shanks Phase Function:
 Note that it is equivalent to rayleigh when $g=0$
 $$p_{CS}(\omega_i\to\omega)=\frac{3(1+\cos^2\theta)}{2(1+g^2)}p_{HG}=\frac{p_{rayleigh}\ p_{HG}}{(1+g^2)}$$
-* Xiao-Lei Fan:
-https://cornercodes.com/2020/11/04/mie-phase-functions-comparison/
+* [Xiao-Lei Fan](https://cornercodes.com/2020/11/04/mie-phase-functions-comparison/):
 Faster to compute due to removal of square-roots. Better approximates Mie for low $g$. Not physically based, which causes a worse result for larger $g$ values.
 $$p_{XLF}(\omega_i\to\omega)=p_{CS}(1+g^2-2g\cos\theta)^{1/2}+g\cos\theta$$
-* von Mises–Fisher distribution:
-https://persci.mit.edu/pub_pdfs/translucency.pdf
+* [von Mises–Fisher distribution](https://persci.mit.edu/pub_pdfs/translucency.pdf):
 It is found that mixing it with the HG results in better approximations. Allows to approximate sharp peaks in scattering. $\kappa$ is the parameter that controls the sharpness of peaks and plays similar role to $g$, but they are not the same.
 $$p_{vMF}(\omega_i\to\omega)=\frac{\kappa e^{\kappa\cos\theta}}{\sinh\kappa}$$
 $$g_{vMF}=\coth\kappa-1/\kappa\ge 0$$
-* van de Hulst approximations
-https://en.wikipedia.org/wiki/Anomalous_diffraction_theory
+* [van de Hulst approximations](https://en.wikipedia.org/wiki/Anomalous_diffraction_theory)
 chatgpt'd
 These are the asymptotic approximations for Mie phase function when particle size $a\gg1$ and $n-1\ll1$.
 $$p(\omega_i\to\omega)=\frac{1}{\pi a^2}\left(\frac{J_1(2ka\sin\frac{\theta}{2})}{ka\sin\frac{\theta}{2}}\right)^2$$
@@ -829,6 +977,7 @@ https://cseweb.ucsd.edu/~ravir/waveoptics.pdf
 https://backend.orbit.dtu.dk/ws/files/235458057/wptbsdf.pdf
 diffraction shaders
 https://www.dgp.toronto.edu/public_user/stam/reality/Research/pdf/diff.pdf
+
 # Layered Materials
 https://www.pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF
 https://www.pbr-book.org/4ed/Light_Transport_II_Volume_Rendering/Scattering_from_Layered_Materials
@@ -922,15 +1071,46 @@ subsurface scattering
 https://users.cg.tuwien.ac.at/zsolnai/wp/wp-content/uploads/2014/12/ssss.pdf
 https://eugenedeon.com/pdfs/zv2020.pdf
 # Camera
-Overall
-Integrate over "sensor" area
-Sum over lenses
-Integrate over aperture
-Integrate over exposure time
-Integrate over ray state (importance sample by photosensitivity)
-Apply bloom (far-field diffraction pattern)
-lens diffraction? (near-field diffraction pattern)
-Convert collected intensities for each wavelength to rgb
+The cameras are built using multiple lenses, with a "pinhole" in between and a sensor at the end. While its not strictly necessary for creating images, in practice it allows for better exposure times, improved sharpness and zoom capabilities. But that's achievable with a single lens and creates additional problems or imperfections like chromatic abberation, small FoV angles, barrel distortion. Let's dig deeper.
+
+When we are exposing our sensor to scene light, without any additional lenses or even pinholes, the light will come from all directions at once, which will basically give us average illumination from every direction. To fix that we can put our sensor in a box in front of a small hole that would pass light through. Since now it restricts the incoming directions of light, we can get a much less blurred image. Each viewing direction has a smaller footprint on the sensor and by making it proportional to the size of a single sensor, we can get the sharpest possible image in that sense. 
+
+Besides the shape and size of a sensor, now we introduced three more parameters - distance to the pinhole, shape of the pinhole and its area. \[illustration] Distance primarily controls field of view (FoV). Size of the pinhole affects sharpness and exposure - the larger aperture, the more light passes, but at the cost of larger footprint on the sensor, which blurs the image. The shape of the aperture is not really impactful on quality of the image, but can give stylistic control for some effects which are relevant when lenses enter the model.
+
+A technical problem we may face is diffraction. \[illustration] Once pinhole is *too* small (comparable to the wavelength), wave nature of light starts to impact our image. At this scale the wave that is passing through will get spread into a cone with distinct diffraction pattern, which will blur the image.
+
+There are other problems, but they are more about artistic control, like keeping high exposure with low exposure time, have adjustable focus point, wider (panoramic) angles. Larger pinholes also can increase vignetting. \[illustration]
+
+So the first improvement to this is adding a focusing lens after the pinhole. Now the focus length of the lens gives us more control, and since it can stay much closer to the actual pinhole, it helps with capturing more light. This also creates such effects as depth of field and bloom, which are usually undesired, but give artistic control. The lens also may have multiple inner reflections with creates lens flare. And the refraction behavior at the edges may introduce chromatic abberation due to dispersion. \[illustration]
+
+To compensate for these effects cameras use multiple lenses of different shapes, with different materials and coatings, that would effectively "cancel-out" the distortions and capture more light. This also means that there are now *two* apertures - the entrance aperture defined by the shape of the first lens in the system, and aperture stop in the middle of the system. The first one is generally large and is the reason why they can capture more light. But that's still too much, so it needs another aperture that would act as an actual pinhole.
+
+The addition of multiple lenses makes the overall system quite complicated. Each element is now subject to inner reflections, dispersion, etc. The tube inside which the whole system is placed, as well as different mountings and mechanical parts that adjust the lenses, also contribute to the darkening and inner reflections. All of that makes simulation of actual cameras a tricky problem.
+
+Some cameras also involve mirrors, which are used to guide incoming light in a particular direction (like along the phone body). But usually all they do is change direction of the [optical axis](https://en.wikipedia.org/wiki/Optical_axis), which does not affect the actual output image. Only for some specific cases like [catadioptric systems](https://en.wikipedia.org/wiki/Catadioptric_system) they are actually used to form the image, usually as a kind of counterpart to lenses. We can mostly ignore it, simulate as a kind of inverse aperture (block light instead of passing through), or approximate as a regular lens.
+
+All of that motivates the following model \[illustration]:
+1. Camera consists of a list of lenses, an aperture in between and a sensor plane at the end.
+2. Each element has some definite shape, size, material, relative position and orientation.
+3. Lens material is a combination of the lens itself as well as different coatings.
+
+It is quite complete and more than enough to simulate all camera-related effects observable in everyday consumer cameras.
+https://resources.mpi-inf.mpg.de/lensflareRendering/pdf/flare.pdf
+### Paraxial approximation
+Direct simulation of all the physics is really non trivial and computationally expensive. But the actual lens systems are much more determined than some generic scene:
+1. Distances that the light travels between collision events are relatively small.
+2. The rays do not deviate too much from the optical axis.
+3. The system is mostly rotationally symmetric along the optical axis.
+
+All of these conditions justify multiple approximations:
+1. The simulation can use near-field approximations.
+2. All the angles are small, so sine and cosine can be replaced with small-angle approximations (a truncated Taylor series).
+3. The simulation can be evaluated in a single plane along the optical axis.
+
+https://www.ee.bilkent.edu.tr/~haldun/publications/ozaktas074.pdf
+https://aaronlemmer.com/uploads/frac-fourier-xform.pdf
+https://kilyos.ee.bilkent.edu.tr/~billur/publ_list/or94.pdf
+https://disp.ee.ntu.edu.tw/class/The%20Fractional%20Fourier%20Transform%20and%20Its%20Applications.pdf
 ### Spectrum to RGB
 
 https://larswander.com/writing/spectral-ray-tracing/
@@ -1052,13 +1232,19 @@ https://blog.demofox.org/2018/07/04/pathtraced-depth-of-field-bokeh/
 In addition to sensor area, aperture and wavelength integrals required for wavelength-to-rgb conversion for a camera, we also need to integrate over exposure time to get motion blur effects, and... well... total exposure.
 https://raytracing.github.io/books/RayTracingTheNextWeek.html#motionblur
 ### Lens flare
-https://resources.mpi-inf.mpg.de/lensflareRendering/pdf/flare.pdf
+
 https://www.youtube.com/watch?v=IbJfZS0o2kg&ab_channel=GameDevelopersConference
 ### Bloom
 https://www.youtube.com/watch?v=QWqb5Gewbx8&ab_channel=AngeTheGreat
 ### Tonemapping
+Tries to solve brightness imbalance of the image with minimal visual impact.
+
 https://bruop.github.io/tonemapping/
 ### Projections
+Cameras usually capture images through a planar sensor, which gives a rectilinear projection of the scene. Some cameras, like GoPro, capture all directions with what would be a fisheye projection. All of them have different tradeoffs, mostly around the barrel distortion and field of view. All of these projections are just mappings from a sphere to some 2d rectangle (frame) and can be computed purely in software as warping of the image.
+
+The graphics hardware is hyper-optimized for pinhole's rectilinear projection, since it has a relatively straightforward math in terms of linear algebra, compared to others. So the core rendering algorithm will capture a simple pinhole projection and then warp it to match desired result.
+While that sounds simple, it creates a problem when mapping into fisheye projection. Since it may have full 360 degrees view of the scene, and pinhole projection at mist can capture 180 degrees, we would need to combine multiple projections into a single view.
 
 panini projection
 http://tksharpless.net/vedutismo/Pannini/
@@ -1077,3 +1263,7 @@ https://www.cemyuksel.com/research/stitchmeshes/
 https://media.disneyanimation.com/uploads/production/publication_asset/48/asset/s2012_pbs_disney_brdf_notes_v3.pdf
 Reformulation with a different set of parameters, that is much more artist-friendly.
 
+# Summary
+To summarize the document, the "rendering equation" may be simplified to a single integral at the surface point, but it is several layers of approximations deep. If we actually want to accurately simulate light, we need to undo all the approximations and derive everything "from first principles".
+
+Most of these models are augmented with satatistical average models, so that we can also simulate complex media with a simpler model, since we don't need such precision, we can't observe the micro interactions anyway. The only thing we get can observe is the average of the micro interactions over space and time.
