@@ -1,5 +1,7 @@
 https://perso.crans.org/sylvainrey/Biblio%20Physique/Physique/Optique/%5BMax%20Born%5D%20Principles%20of%20Optics%20-%20Electromagnetic%20Theory%20of%20Propagation%2C%20Interference%20and%20Diffraction%20of%20Light.pdf?utm_source=chatgpt.com
 
+https://www.reddit.com/r/GraphicsProgramming/s/a1ErgWWrw3
+
 To describe visual appearance of the scene we have to first define ground rules - what are we actually trying to simulate. Any rendered scene is characterized by scattering events, that happen on the way between a light source and camera sensor. Thus we need to consider when scattering happens and what happens during and in-between scattering.
 
 This process can be view in multiple different perspectives:
@@ -463,6 +465,8 @@ https://arxiv.org/pdf/2104.04772
 https://www.researchgate.net/publication/269878028_Vector_Fourier_optics_of_anisotropic_materials/link/55b77edf08ae092e965718b8/download
 https://journals.aps.org/prab/pdf/10.1103/PhysRevSTAB.11.012801
 
+https://www.reddit.com/r/GraphicsProgramming/s/e2jXE4amob
+
 # BSDF
 
 https://blog.demofox.org/2020/05/25/casual-shadertoy-path-tracing-1-basic-camera-diffuse-emissive/
@@ -598,8 +602,12 @@ https://www.youtube.com/watch?v=43Ilra6fNGc (why normal maps and height maps pro
 https://learnopengl.com/Advanced-Lighting/Parallax-Mapping
 We can represent additional surface detail on the single triangle with a variety of displacement maps, such as height/bump/parallax map. A similar effect is achieved with normal map, which is not strictly a displacement map, since it only *implies* displacement due to its effect on shading. Shell maps
 
+https://www.shlom.dev/articles/geometry-behind-normal-maps/
+
 ### Thin geometry
 Another class of meso-geometry is thin geometry like cloth, fur and hair, that adds further complications to the modelling.
+https://www.reddit.com/r/GraphicsProgramming/s/kiCumycbe5
+
 ### Fibers
 https://shuangz.com/courses/cloth-sa12/cloth-sa12.pdf
 A fiber, represents "building block" of any cloth. A fiber then woven against itself multiple times to create plies. The same way plies form yarns, and yarns form even deeper textiles. In some sense this process can be indefinite in both scaling up and down the fiber size.  Scaling up is both impractical and unrealistic, in a sense that we don't encounter usually such extreme cases. If needed they might be better modelled with explicit geometry.
@@ -1236,6 +1244,7 @@ https://raytracing.github.io/books/RayTracingTheNextWeek.html#motionblur
 https://www.youtube.com/watch?v=IbJfZS0o2kg&ab_channel=GameDevelopersConference
 ### Bloom
 https://www.youtube.com/watch?v=QWqb5Gewbx8&ab_channel=AngeTheGreat
+https://www.reddit.com/r/GraphicsProgramming/s/m5DX1ToVp6
 ### Tonemapping
 Tries to solve brightness imbalance of the image with minimal visual impact.
 

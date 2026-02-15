@@ -16,6 +16,24 @@ By computing the face coverage for a particular pixel square, we could improve o
 
 Non-Euclidean rendering. Since in such geometries the light does not follow straight lines, usual techniques can't be applied. But since all medium are scattering to some degree, we can "keep lines straight" by continuously scattering in the direction of straight lines. That basically just scales light contribution along the path stronger than predicted by Beer's law, but other than that it allows us to reuse all knowledge from a standard Euclidean raytracing.
 
+# Virtualization
+* Geometry
+* World map
+* Textures
+https://www.reddit.com/r/GraphicsProgramming/s/29RNhjh9Wz
+
+https://www.reddit.com/r/GraphicsProgramming/s/4WmQtWGP5d
+https://www.reddit.com/r/GraphicsProgramming/s/QPZlxZiDYZ
+https://www.reddit.com/r/GraphicsProgramming/s/NddZMURAne
+
+https://youtu.be/L4xOCvELWlU
+
+https://www.reddit.com/r/GraphicsProgramming/s/Q3YPEbCvEp
+https://www.reddit.com/r/GraphicsProgramming/s/Sw69EYZny9
+https://www.reddit.com/r/GraphicsProgramming/s/5OJcb7Seu9
+https://www.reddit.com/r/GraphicsProgramming/s/OtpC4YVDHi
+https://www.reddit.com/r/GraphicsProgramming/s/dCu6EndNwI
+
 https://www.reddit.com/r/GraphicsProgramming/s/8M9RchBD2d
 https://www.cemyuksel.com/research/papers/fuzzy_boolean-SIGGRAPH24.pdf
 cone tracing

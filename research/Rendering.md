@@ -76,3 +76,7 @@ https://www.realtimerendering.com/#books-small-table
 Volume Interpolation scheme
 Map uv to a cube surface uv
 Interpolate 3d cube data
+
+https://www.reddit.com/r/GraphicsProgramming/s/dPfSgJMAO6
+
+https://www.reddit.com/r/GraphicsProgramming/s/9IrPULRmjL
