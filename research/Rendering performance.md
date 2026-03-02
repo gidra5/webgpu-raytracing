@@ -22,6 +22,13 @@ Non-Euclidean rendering. Since in such geometries the light does not follow stra
 * Textures
 https://www.reddit.com/r/GraphicsProgramming/s/29RNhjh9Wz
 
+https://www.reddit.com/r/GraphicsProgramming/s/wCvZNw8QI1
+https://alielmorsy.github.io/the-art-of-render-graphs/
+
+https://www.reddit.com/r/GraphicsProgramming/s/TUlQMPuYkp
+https://www.reddit.com/r/GraphicsProgramming/s/F5yleVCLVo
+https://www.reddit.com/r/GraphicsProgramming/s/k12rxUKaO3
+
 https://www.reddit.com/r/GraphicsProgramming/s/4WmQtWGP5d
 https://www.reddit.com/r/GraphicsProgramming/s/QPZlxZiDYZ
 https://www.reddit.com/r/GraphicsProgramming/s/NddZMURAne

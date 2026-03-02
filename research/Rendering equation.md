@@ -632,6 +632,7 @@ A not so sparse field of independent fibers.
 https://www.pbr-book.org/4ed/Reflection_Models/Scattering_from_Hair
 https://www.cemyuksel.com/research/hairmesh_rendering/
 https://www.cs.cornell.edu/~srm/publications/SG03-hair-lr.pdf
+https://www.reddit.com/r/GraphicsProgramming/s/kiCumycbe5
 ### Glint
 glints
 https://cseweb.ucsd.edu/~ravir/glints.pdf
@@ -643,6 +644,7 @@ https://igg.unistra.fr/People/chermain/assets/pdf/Chermain2021ImportanceSampling
 https://cs.uwaterloo.ca/sites/ca.computer-science/files/uploads/files/cs-2024-02.pdf
 https://cs.uwaterloo.ca/sites/default/files/uploads/documents/cs-2024-02_0.pdf
 https://ggx-research.github.io/publication/2023/06/09/publication-glints.html
+https://www.youtube.com/watch?v=j-B8ymGWlIE
 
 more references
 https://www.semanticscholar.org/paper/Importance-Sampling-of-Glittering-BSDFs-based-on-Chermain-Sauvage/f9f6ddb7b159264c9510a51db96321bdea68017f
