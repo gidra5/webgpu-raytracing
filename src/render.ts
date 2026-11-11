@@ -52,6 +52,14 @@ import constants from './shaders/constants';
 import raygen from './shaders/raygen';
 import structs from './shaders/structs';
 import face from './shaders/face';
+import {
+  PROJECT_GEOMETRY_WORKGROUP_SIZE,
+  projectGeometryWGSL,
+} from './shaders/projectGeometry';
+import {
+  depthBinFragmentWGSL,
+  depthBinVertexWGSL,
+} from './depthPeeling/shaders';
 import { Iterator } from 'iterator-js';
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
@@ -205,6 +213,7 @@ const resetDepthPeelingTextures = (encoder: GPUCommandEncoder) => {
         colorAttachments: [
           {
             view: textures.prevDepth.createView({
+              dimension: '2d',
               baseArrayLayer: layer,
               arrayLayerCount: 1,
             }),
@@ -214,6 +223,7 @@ const resetDepthPeelingTextures = (encoder: GPUCommandEncoder) => {
           },
           {
             view: textures.prevCount.createView({
+              dimension: '2d',
               baseArrayLayer: layer,
               arrayLayerCount: 1,
             }),
@@ -223,6 +233,7 @@ const resetDepthPeelingTextures = (encoder: GPUCommandEncoder) => {
           },
           {
             view: textures.currDepth.createView({
+              dimension: '2d',
               baseArrayLayer: layer,
               arrayLayerCount: 1,
             }),
@@ -232,6 +243,7 @@ const resetDepthPeelingTextures = (encoder: GPUCommandEncoder) => {
           },
           {
             view: textures.currCount.createView({
+              dimension: '2d',
               baseArrayLayer: layer,
               arrayLayerCount: 1,
             }),
@@ -1504,10 +1516,12 @@ createEffect(() => {
       fragmentPresentationFormatTarget: {
         blend: {
           color: {
+            operation: 'add',
             srcFactor: 'one',
             dstFactor: 'one-minus-src-alpha',
           },
           alpha: {
+            operation: 'add',
             srcFactor: 'one',
             dstFactor: 'one-minus-src-alpha',
           },
@@ -1666,165 +1680,29 @@ const geometryPass = reactiveRenderPipeline({
 // TODO: culling?
 const outVerticesBuffer = createStorageBuffer(
   verticesBuffer.size,
-  'Out Vertices Buffer'
+  'Out Vertices Buffer',
+  GPUBufferUsage.VERTEX
 );
 const projectGeometryComputePipeline = reactiveComputePipeline({
-  shader: (x) => /* wgsl */ `
-    ${x.bindVarBuffer('read-only-storage', 'vertices: array<vec3f>', verticesBuffer)}
-    ${x.bindVarBuffer('storage', 'outVertices: array<vec3f>', outVerticesBuffer)}
-    ${x.bindVarBuffer('uniform', 'viewProjMatrix: mat4x4f', viewProjBuffer)}
-
-    @compute @workgroup_size(${COMPUTE_WORKGROUP_SIZE_X}, ${COMPUTE_WORKGROUP_SIZE_Y})
-    fn main(@builtin(global_invocation_id) globalInvocationId: vec3<u32>) {
-      let vertexIndex = globalInvocationId.x;
-      if (vertexIndex >= arrayLength(&vertices)) {
-        return;
-      }
-
-      let vertex = vertices[vertexIndex];
-      outVertices[vertexIndex] = viewProjMatrix * vec4(vertex, 1);
-    }
-  `,
+  shader: (x) =>
+    projectGeometryWGSL(`
+      ${x.bindVarBuffer('read-only-storage', 'vertices: array<vec3f>', verticesBuffer)}
+      ${x.bindVarBuffer('storage', 'outVertices: array<vec4f>', outVerticesBuffer)}
+      ${x.bindVarBuffer('uniform', 'viewProjMatrix: mat4x4f', viewProjBuffer)}
+    `),
 });
 
 const depthBinPass = reactiveRenderPipeline({
-  vertexShader: () => /* wgsl */ `
-    @vertex
-    fn main(@location(0) position: vec4f) -> @builtin(position) vec4f {
-      return position;
-    }
-  `,
-  fragmentShader: (x) => /* wgsl */ `
-    ${x.bindTexture('prevDepthTexture', 'float', depthPeelingData().prevDepth, true)}
-    ${x.bindTexture('prevCountTexture', 'float', depthPeelingData().prevCount, true)}
-
-    const layerCount = ${store.gBuffer.layers}u;
-    const epsilon = ${DEPTH_PEELING_EPSILON};
-
-    struct FragmentInput {
-      @builtin(position) fragmentPosition: vec4f,
-    }
-
-    struct FragmentOutput {
-      ${Iterator.natural(store.gBuffer.layers)
-        .map(
-          (i) => /* wgsl */ `
-        @location(${2 * i}) depth${i}: f32,
-        @location(${2 * i + 1}) count${i}: f32,
+  vertexShader: () => depthBinVertexWGSL,
+  fragmentShader: (x) =>
+    depthBinFragmentWGSL(
+      store.gBuffer.layers,
       `
-        )
-        .join('\n')}
-    }
-
-    @fragment
-    fn main(input: FragmentInput) -> FragmentOutput {
-      let pixel = vec2u(input.fragmentPosition.xy);
-      let depth = clamp(input.fragmentPosition.z, 0.0, 1.0);
-
-      var prevDepths: array<f32, layerCount>;
-      var prevCounts: array<u32, layerCount>;
-      var rangeMin: array<f32, layerCount>;
-      var rangeMax: array<f32, layerCount>;
-
-      var totalCount: u32 = 0u;
-      for (var i: u32 = 0u; i < layerCount; i = i + 1u) {
-        let d = textureLoad(prevDepthTexture, pixel, i).r;
-        let c = textureLoad(prevCountTexture, pixel, i).r;
-        prevDepths[i] = clamp(d, 0.0, 1.0);
-        let count = u32(round(max(c, 0.0)));
-        prevCounts[i] = count;
-        totalCount += count;
-      }
-
-      if (totalCount == 0u) {
-        var lower = 0.0;
-        for (var i: u32 = 0u; i < layerCount; i = i + 1u) {
-          let upper = max(lower + epsilon, prevDepths[i]);
-          rangeMin[i] = lower;
-          rangeMax[i] = upper;
-          lower = upper;
-        }
-      } else {
-        var newIndex: u32 = 0u;
-        var lastUpper = 0.0;
-        var i: u32 = 0u;
-        loop {
-          if (i >= layerCount || newIndex >= layerCount) {
-            break;
-          }
-
-          let count = prevCounts[i];
-          if (count == 0u) {
-            lastUpper = max(lastUpper, prevDepths[i]);
-            i = i + 1u;
-            continue;
-          }
-
-          var lower = 0.0;
-          if (i > 0u) {
-            lower = prevDepths[i - 1u];
-          }
-          lower = max(lower, lastUpper);
-          var upper = max(lower + epsilon, prevDepths[i]);
-
-          rangeMin[newIndex] = lower;
-          rangeMax[newIndex] = upper;
-          lastUpper = upper;
-          newIndex = newIndex + 1u;
-
-          if (count > 1u && newIndex < layerCount) {
-            var nextUpper = 1.0;
-            if (i + 1u < layerCount) {
-              nextUpper = max(prevDepths[i + 1u], upper) + epsilon;
-            }
-            let available = layerCount - newIndex;
-            let binsToAllocate = min(count - 1u, available);
-            if (binsToAllocate > 0u) {
-              let step = (nextUpper - upper) / f32(binsToAllocate);
-              var k: u32 = 0u;
-              loop {
-                if (k >= binsToAllocate || newIndex >= layerCount) {
-                  break;
-                }
-                let start = upper + step * f32(k);
-                let finish = upper + step * f32(k + 1u);
-                rangeMin[newIndex] = start;
-                rangeMax[newIndex] = finish;
-                lastUpper = finish;
-                newIndex = newIndex + 1u;
-                k = k + 1u;
-              }
-            }
-          }
-
-          i = i + 1u;
-        }
-
-        while (newIndex < layerCount) {
-          var lower = 0.0;
-          if (newIndex > 0u) {
-            lower = rangeMax[newIndex - 1u];
-          }
-          rangeMin[newIndex] = lower;
-          rangeMax[newIndex] = 1.0;
-          newIndex = newIndex + 1u;
-        }
-      }
-
-      var output: FragmentOutput;
-      ${Iterator.natural(store.gBuffer.layers)
-        .map(
-          (i) => /* wgsl */ `
-        let inRange${i} = depth >= rangeMin[${i}u] && depth <= rangeMax[${i}u];
-        output.depth${i} = select(1.0, depth, inRange${i});
-        output.count${i} = select(0.0, 1.0, inRange${i});
-      `
-        )
-        .join('\n')}
-
-      return output;
-    }
-  `,
+        ${x.bindTexture('prevDepthTexture', 'unfilterable-float', depthPeelingData().prevDepth, true)}
+        ${x.bindTexture('prevCountTexture', 'unfilterable-float', depthPeelingData().prevCount, true)}
+      `,
+      DEPTH_PEELING_EPSILON
+    ),
 
   fragment: {
     targets: Iterator.natural(store.gBuffer.layers)
@@ -1832,8 +1710,8 @@ const depthBinPass = reactiveRenderPipeline({
         {
           format: 'r32float',
           blend: {
-            color: { operation: 'min' },
-            alpha: { operation: 'min' },
+            color: { operation: 'min', srcFactor: 'one', dstFactor: 'one' },
+            alpha: { operation: 'min', srcFactor: 'one', dstFactor: 'one' },
           },
         },
         {
@@ -1919,7 +1797,9 @@ export async function renderFrame(now: number) {
     computeBindGroups.forEach((bindGroup, i) =>
       computePass.setBindGroup(i, bindGroup)
     );
-    computePass.dispatchWorkgroups(verticesCount, 1, 1);
+    computePass.dispatchWorkgroups(
+      Math.ceil(verticesCount / PROJECT_GEOMETRY_WORKGROUP_SIZE)
+    );
   });
 
   resetDepthPeelingTextures(encoder);
@@ -1931,6 +1811,7 @@ export async function renderFrame(now: number) {
       .map<GPURenderPassColorAttachment[]>((layer) => [
         {
           view: textures.currDepth.createView({
+            dimension: '2d',
             baseArrayLayer: layer,
             arrayLayerCount: 1,
           }),
@@ -1940,6 +1821,7 @@ export async function renderFrame(now: number) {
         },
         {
           view: textures.currCount.createView({
+            dimension: '2d',
             baseArrayLayer: layer,
             arrayLayerCount: 1,
           }),
@@ -1963,24 +1845,11 @@ export async function renderFrame(now: number) {
     };
 
     renderPass(encoder, passDescriptor, (renderPass) => {
-      const [pipeline] = depthBinPass();
+      const [pipeline, bindGroups] = depthBinPass();
       renderPass.setPipeline(pipeline);
-
-      const bindGroup = device.createBindGroup({
-        layout: pipeline.getBindGroupLayout(0),
-        entries: [
-          {
-            binding: 0,
-            resource: textures.prevDepth.createView(),
-          },
-          {
-            binding: 1,
-            resource: textures.prevCount.createView(),
-          },
-        ],
-      });
-
-      renderPass.setBindGroup(0, bindGroup);
+      bindGroups.forEach((bindGroup, i) =>
+        renderPass.setBindGroup(i, bindGroup)
+      );
       renderPass.setVertexBuffer(0, outVerticesBuffer);
       renderPass.setIndexBuffer(indicesBuffer, 'uint32');
       renderPass.drawIndexed(facesCount * 3);

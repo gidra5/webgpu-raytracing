@@ -12,7 +12,11 @@ export const getDevice = async (context: GPUCanvasContext) => {
   const adapter = await navigator.gpu.requestAdapter();
   assert(adapter, 'No GPU adapter found');
 
-  const requiredFeatures: GPUFeatureName[] = [];
+  assert(
+    adapter.features.has('float32-blendable'),
+    'Depth peeling requires the float32-blendable WebGPU feature'
+  );
+  const requiredFeatures: GPUFeatureName[] = ['float32-blendable'];
   const canTimestamp = adapter.features.has('timestamp-query');
 
   if (canTimestamp) {
@@ -419,7 +423,15 @@ const createBindingBuilder = () => {
     ) {
       const group = bindings.length - 1;
       const binding = bindings[group].length;
-      bindings[group].push({ kind: 'texture', texture, visibility, type });
+      const dimension =
+        texture.dimension === '2d' && isArray ? '2d-array' : texture.dimension;
+      bindings[group].push({
+        kind: 'texture',
+        texture,
+        visibility,
+        type,
+        dimension,
+      });
       const valueType =
         type === 'float' || type === 'unfilterable-float' ? 'f32' : type;
       const containerType =
@@ -445,6 +457,10 @@ const createBindingBuilder = () => {
         texture,
         visibility,
         access,
+        dimension:
+          texture.dimension === '2d' && isArray
+            ? '2d-array'
+            : texture.dimension,
       });
 
       const containerType =
@@ -502,7 +518,7 @@ const createBindingBuilder = () => {
                 binding: i,
                 visibility: visibility as unknown as number,
                 storageTexture: {
-                  viewDimension: '2d-array',
+                  viewDimension: dimension,
                   access,
                   format: texture.format,
                 },
@@ -532,14 +548,17 @@ const createBindingBuilder = () => {
           layout: pipeline.getBindGroupLayout(i),
           entries: group.map((binding, i): GPUBindGroupEntry => {
             if (binding.kind === 'texture') {
-              const { texture } = binding;
-              return { binding: i, resource: texture.createView() };
-            }
-            if (binding.kind === 'storageTexture') {
-              const { texture } = binding;
+              const { texture, dimension } = binding;
               return {
                 binding: i,
-                resource: texture.createView({ dimension: '2d-array' }),
+                resource: texture.createView({ dimension }),
+              };
+            }
+            if (binding.kind === 'storageTexture') {
+              const { texture, dimension } = binding;
+              return {
+                binding: i,
+                resource: texture.createView({ dimension }),
               };
             }
 
