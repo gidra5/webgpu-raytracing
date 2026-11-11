@@ -110,7 +110,7 @@ const geometryData = createMemo<GeometryData[]>((prev) => {
   const gBufferHeight = store.gBuffer.height ?? height;
   const geometryBufferItemSize = Float32Array.BYTES_PER_ELEMENT * 32;
   const geometryBufferSize =
-    geometryBufferItemSize * gBufferWidth * gBufferHeight;
+    geometryBufferItemSize * gBufferWidth * gBufferHeight * depthOrArrayLayers;
 
   return Iterator.natural(store.gBuffer.frames)
     .map(() => {
@@ -773,76 +773,29 @@ const reproject = () => /* wgsl */ `
 
   // current uv, projected point, latest color for that point
   fn reprojectDirect(cuv: vec2f, p: vec3f, c: vec3f) -> Reprojection {
-    layer = 0;
+    layer = 0u;
     let uv_error = ${store.reprojection.identityErrorCorrection ? 'unprojectPoint(p) - cuv' : 'vec2f(0)'};
-    var reproj = reprojectPrecise(uv_error, p);
-    for (var i = 1u; i < ${store.gBuffer.layers}; i = i + 1u) {
-      layer = i;
-      let uv_error = ${store.reprojection.identityErrorCorrection ? 'unprojectPoint(p) - cuv' : 'vec2f(0)'};
-      let result = reprojectPrecise(uv_error, p);
-      if result.d < reproj.d {
-        reproj = result;
-      }
-    }
-    
-    return reproj;
+    return reprojection(reprojectPoint(p) - uv_error, p);
   }
 
-  // current uv, projected point, latest color for that point
   fn reproject(p: vec3f, c: vec3f) -> Reprojection {
-    layer = 0;
-    var reproj = reprojectPrecise(vec2f(0), p);
-    for (var i = 1u; i < ${store.gBuffer.layers}; i = i + 1u) {
-      layer = i;
-      let result = reprojectPrecise(vec2f(0), p);
-      if result.d < reproj.d {
-        reproj = result;
-      }
-    }
-    
-    return reproj;
+    layer = 0u;
+    return reprojection(reprojectPoint(p), p);
   }
 
-  // current uv, projected point, latest color for that point
   fn reprojectionSample(g: Geometry, reproj: Reprojection, p: vec3f, c: vec3f) -> ReprojectionResult {
-    let faceIdx = g.faceIdx;
-    let objectIdx = g.objectIdx;
-    layer = reproj.layer;
-    
-    if any(reproj.uv < vec2(0)) || any(reproj.uv > vec2(viewportf)) { // outside viewport
-      return ReprojectionResult(vec4f(0));
-    }
-
-    if ${store.reprojection.distanceClamping} && !(reproj.d < threshold) {
-      return ReprojectionResult(vec4f(0));
-    }
-
-    if ${store.reprojection.objectClamping} && reproj.g.objectIdx != objectIdx {
-      return ReprojectionResult(vec4f(0));
-    }
-
-    if ${store.reprojection.faceClamping} && reproj.g.faceIdx != faceIdx {
-      return ReprojectionResult(vec4f(0));
-    }
-
-    if ${store.reprojection.filtering === ReprojectionFiltering.Bilateral} {
-      let color = bilateralFilter(reproj.uv, g, p, c);
-      return ReprojectionResult(color);
-    } else if ${store.reprojection.filtering === ReprojectionFiltering.Average} {
-      let color = sampleImage4(reproj.uv, &prevGeometryBuffer);
-      return ReprojectionResult(color);
-    } else if ${store.reprojection.filtering === ReprojectionFiltering.ErrorWeighted} {
-      let color = sampleImage4(reproj.uv, &prevGeometryBuffer);
-      let q = pow(reproj.d, 0.15);
-      let p = 1/(1+q);
-      return ReprojectionResult(color * max(p, ${store.reprojection.filteringRate}));
-    } else if ${store.reprojection.filtering === ReprojectionFiltering.ExponentialAverage} {
-      let color = sampleImage4(reproj.uv, &prevGeometryBuffer);
+    // All temporal modes share the same validated footprint. Geometry blended
+    // across a primitive edge must not steer or reject that footprint.
+    let color = bilateralFilter(reproj.uv, g, p, c);
+    if ${store.reprojection.filtering === ReprojectionFiltering.ExponentialAverage} {
       return ReprojectionResult(color * ${store.reprojection.filteringRate});
-    } else {
-      let color = sampleImage4(reproj.uv, &prevGeometryBuffer);
-      return ReprojectionResult(color);
     }
+    if ${store.reprojection.filtering === ReprojectionFiltering.ErrorWeighted} {
+      let planeError = abs(dot(normalize(faces[g.faceIdx].plane.xyz), reproj.dp));
+      let quality = 1.0 / (1.0 + pow(planeError * planeError, 0.15));
+      return ReprojectionResult(color * max(quality, ${store.reprojection.filteringRate}));
+    }
+    return ReprojectionResult(color);
   }
 
   fn reprojectFullDirect(cuv: vec2f, p: vec3f, c: vec4f) -> ReprojectionResult {
@@ -1857,47 +1810,36 @@ export async function renderFrame(now: number) {
 
     copyCurrentDepthPeelingToPrevious(encoder);
   }
-  // // raytrace
-  // computePass(encoder, {}, (computePass) => {
-  //   const [_computePipeline, computeBindGroups] = computePipeline();
-  //   computePass.setPipeline(_computePipeline);
-  //   computeBindGroups.forEach((bindGroup, i) =>
-  //     computePass.setBindGroup(i, bindGroup)
-  //   );
-  //   computePass.dispatchWorkgroups(
-  //     Math.ceil(canvas.width / COMPUTE_WORKGROUP_SIZE_X),
-  //     Math.ceil(canvas.height / COMPUTE_WORKGROUP_SIZE_Y),
-  //     store.gBuffer.layers
-  //   );
-  // });
+  computePass(encoder, {}, (pass) => {
+    const [pipeline, bindGroups] = computePipeline();
+    pass.setPipeline(pipeline);
+    bindGroups.forEach((bindGroup, i) => pass.setBindGroup(i, bindGroup));
+    pass.dispatchWorkgroups(
+      Math.ceil(canvas.width / COMPUTE_WORKGROUP_SIZE_X),
+      Math.ceil(canvas.height / COMPUTE_WORKGROUP_SIZE_Y),
+      store.gBuffer.layers
+    );
+  });
 
-  // // TODO: instanced
-  // renderPass(encoder, rpd(), (renderPass) => {
-  //   // const [geometryPipeline, geometryBindGroups] = geometryPass;
-  //   // renderPass.setPipeline(geometryPipeline());
-  //   // geometryBindGroups().forEach((bindGroup, i) =>
-  //   //   renderPass.setBindGroup(i, bindGroup)
-  //   // );
-  //   // renderPass.setVertexBuffer(0, verticesBuffer);
-  //   // renderPass.setIndexBuffer(indicesBuffer, 'uint32');
-  //   // renderPass.drawIndexed(facesCount * 3);
-
-  //   // renderPass.executeBundles([blitRenderBundle()]);
-
-  //   // // debug BVH
-  //   // if (store.debugBVH) {
-  //   //   renderPass.executeBundles([debugBVHRenderBundle()]);
-  //   // }
-  // });
-
-  // renderPass(encoder, rpd(), (renderPass) => {
-  //   renderPass.executeBundles([blitRenderBundle()]);
-
-  //   // debug BVH
-  //   if (store.debugBVH) {
-  //     renderPass.executeBundles([debugBVHRenderBundle()]);
-  //   }
-  // });
+  renderPass(
+    encoder,
+    {
+      colorAttachments: [
+        {
+          view: context.getCurrentTexture().createView(),
+          clearValue: [0, 0, 0, 1],
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+    },
+    (pass) => {
+      pass.executeBundles([blitRenderBundle()]);
+      if (store.debugBVH) {
+        pass.executeBundles([debugBVHRenderBundle()]);
+      }
+    }
+  );
 
   if (updatePrev) {
     encoder.copyBufferToBuffer(jitterBuffer, prevJitterBuffer);

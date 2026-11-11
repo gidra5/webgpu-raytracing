@@ -5,6 +5,7 @@ export default mergeConfig(
   viteConfig,
   defineConfig({
     test: {
+      fileParallelism: false,
       environment: 'jsdom',
       globals: true,
       browser: {
