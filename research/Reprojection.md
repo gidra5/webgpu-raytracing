@@ -83,13 +83,14 @@ The harder to integrate approach is to pass another parameter to bvh intersectio
 A bit easier approach is to pass full interval to intersection test, and just update its min value to get the next closest intersection. It yields much better accuracy during reprojection and requires not too much changes.
 Also sometimes multiple faces will be frontfacing and occluded by each other, so we need to check both nearest backface intersection and frontface and choose the one that is the closest.
 
-With 8 layers if has reasonable coverage for simple scenes, which eliminates a lot of in-view disocclusion ghosting. Although logically you would expect 3 to be enough (one for backface and one for the next frontface intersection) but in reality there might be a lot more layers that would cover full depth of the scene and eliminate most of the ghosting.
+With 8 layers it has reasonable coverage for simple scenes, which eliminates a lot of in-view disocclusion ghosting. Although logically you would expect 3 to be enough (one for backface and one for the next frontface intersection) but in reality there might be a lot more layers that would cover full depth of the scene and eliminate most of the ghosting.
 
 A good news is that adding more layers at some point won't affect perf that much, because most of the rays are already missing the scene completely.
 Bad news is that for even mildly complex scenery it is not really the case.
 
 [reddit post with current progress](https://www.reddit.com/r/GraphicsProgramming/comments/1mpcrtr/temporal_reprojection_without_disocclusion/)
 
+commit de059bc779da81a37f49ba2969b8f7f988cf3fb5
 result so far:
 ![[gmAofKkLc6.mp4]]
 
@@ -246,3 +247,21 @@ https://www.semanticscholar.org/paper/Reflection-reprojection-using-temporal-coh
 https://www.semanticscholar.org/paper/The-real-time-reprojection-cache-Nehab-Sander/c0d92df2423e643bb78c939b9136f7807c464f95
 https://www.semanticscholar.org/paper/Accelerating-real-time-shading-with-reverse-caching-Nehab-Sander/ba59d37ae22053962d75762590a97e75fcb75977
 
+https://www.semanticscholar.org/paper/A-multiview-and-multilayer-approach-for-interactive-Vardis-Vasilakis/9c5e9dae096dbbc199e47ef6060d6efad4450aa8
+https://www.semanticscholar.org/paper/Dual-Camera-Screen-Space-Reflections-Du-Saito/7d2ca4c9310851903d7f10c043c64c973a487bde
+https://www.semanticscholar.org/paper/Multi-Layer-Depth-of-Field-Rendering-with-Tiled-Franke-Hofmann/e1b6b796b440d2d55961daf4a485afd5ef95158d
+
+https://www.semanticscholar.org/paper/Accelerating-real-time-shading-with-reverse-caching-Nehab-Sander/ba59d37ae22053962d75762590a97e75fcb75977?sort=relevance&page=17
+https://www.semanticscholar.org/paper/COMBINING-REPROJECTION-AND-ADAPTIVE-SAMPLING-FOR-ON-Schalk/4cf9c5a0695e4649611ffbf9ade20292120e1568?citedSort=relevance&citedPage=3
+
+https://www.semanticscholar.org/paper/Fast-temporal-reprojection-without-motion-vectors-Hanika-Tessari/1539c644bdb9385828df984a08465c33cbea95b5
+https://www.semanticscholar.org/paper/Exact-Ray-Traced-Animation-Frames-Generated-by-Adelson-Hodges/2aa71a4d58e2f84d3bbc36d260fa61f0b4a3563f
+
+https://www.semanticscholar.org/paper/Reservoir-Splatting-for-Temporal-Path-Resampling-Liu-Lin/069a441e1a1e0774b313641b8db43523c220bb6e
+https://www.semanticscholar.org/paper/A-Survey-of-Multifragment-Rendering-Vasilakis-Vardis/a174586d399e105656ec689a4d5d4cdb1b295385
+https://www.semanticscholar.org/paper/Fragment-History-Volumes-In%C3%A1cio-Springer/d6d568758fd1722fb2f94397e0f62172f3ef3af0
+https://www.semanticscholar.org/paper/DIRT%3A-deferred-image-based-ray-tracing-Vardis-Vasilakis/c0cc7444f3368692cd3d017388b9e1830e91a45b
+https://www.semanticscholar.org/paper/Multi-Fragment-Rendering-for-Glossy-Bounces-on-the-Yoshimura-Tokuyoshi/35b00d03cacde7312ef451d2b23edf9cdadec383
+
+Potential visibility set
+https://www.semanticscholar.org/paper/Potentially-Visible-Set-Generation-with-the-Buffer-K%C3%BCnzel-Geringer/a4621e9780c7ed0f820c4ab516fd82e5c0ea5344

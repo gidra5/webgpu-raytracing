@@ -80,6 +80,11 @@ https://web.archive.org/web/20240717124558/https://ericpolman.com/2016/06/28/lig
 
 https://www.scratchapixel.com/lessons/3d-basic-rendering/volume-rendering-for-developers/volume-rendering-voxel-grids.html
 
+https://www.semanticscholar.org/paper/Diffusion-Restore%3A-Real-Time-Markov-Chain-Monte-Holl-Singh/de9ba73441ef3c1d696a1d0346a4c7c4edd79178
+[Forget Superresolution, Sample Adaptively (when Path Tracing)](https://www.semanticscholar.org/paper/Forget-Superresolution%2C-Sample-Adaptively-(when-B%C3%A1lint-Sala%C3%BCn/32984f79f05451e034b6fccbd1271a4a93165ca2)
+
+[real time MC path guiding](https://www.semanticscholar.org/paper/Real-Time-Markov-Chain-Path-Guiding-for-Global-and-Alber-Hanika/1110129809ebd94a22e6d8d6804ca8c11665202b)
+
 ROBUST MONTE CARLO METHODS FOR LIGHT TRANSPORT SIMULATION
 https://graphics.stanford.edu/papers/veach_thesis/thesis.pdf
 
@@ -121,13 +126,35 @@ https://discourse.threejs.org/t/virtual-textures/53353
 
 https://gamedevnotesblog.wordpress.com/category/algorithms/optimisation/
 
-spatiotemporal upsampling
+spatiotemporal upsampling/restir
 https://www.researchgate.net/publication/220792188_Spatio-temporal_upsampling_on_the_GPU
 https://github.com/lukedan/ReSTIR-Vulkan?tab=readme-ov-file
 https://research.nvidia.com/sites/default/files/pubs/2020-07_Spatiotemporal-reservoir-resampling/ReSTIR.pdf
 https://github.com/jacquespillet/SVGF?tab=readme-ov-file
 https://www.cg.tuwien.ac.at/sites/default/files/course/4411/attachments/08_next%20event%20estimation.pdf
 https://d1qx31qr3h6wln.cloudfront.net/publications/siga21_volumeReSTIR.pdf
+https://www.semanticscholar.org/paper/Ghost-ReSTIR%3A-Volumetric-Resampling-with-Ghost-in-Zhang-Lin/61fa4a9aab1b771d28be2de40b78da87792c6fc0
+https://cescg.org/wp-content/uploads/2018/04/Dundr-Progressive-Spatiotemporal-Variance-Guided-Filtering-2.pdf
+https://www.semanticscholar.org/paper/Area-ReSTIR%3A-Resampling-for-Real-Time-Defocus-and-Zhang-Lin/a25ea55a8d9a12202dd1d07e209c5b04779a6911
+https://www.semanticscholar.org/paper/Generalized-resampled-importance-sampling-Lin-Kettunen/a1b654e7fb62aa329409392313d9bb6f77700bb3
+https://www.semanticscholar.org/paper/Multi-Layer-Reservoir-Splatting-for-Temporal-Reuse-Hong-Zhang/6b6a3793942f824b2613336ef29f54c226a3d723
+https://www.semanticscholar.org/paper/Blue-Noise-Dithering-for-Reservoir-Based-Importance-Shi-Xu/ffbe9f12a32a13a942c063c9b3476058d5ba128f
+https://www.semanticscholar.org/paper/Reservoir-Splatting-for-Temporal-Path-Resampling-Liu-Lin/069a441e1a1e0774b313641b8db43523c220bb6e
+https://www.semanticscholar.org/paper/Efficient-Visibility-Reuse-for-Real-time-ReSTIR-Tokuyoshi/1a0da168da4a3e63a2316bbd3abd4e38bf92d617
+https://www.semanticscholar.org/paper/ReSTIR-PT-with-MCMC-Decoupled-Shading-Lee-Chang/ddfa0a20c099f00063dfc459e3fce524484276c6
+https://www.semanticscholar.org/paper/Guided-Lens-Sampling-for-Efficient-Monte-Carlo-Huang-Zheng/8b18cc9c18878257c32e4f826e8b1dd3a8b1a276
+https://www.semanticscholar.org/paper/Real-Time-Level-of-Detail-rendering-with-ReSTIR-Wang-Kettunen/b233fe57bd97ae16ce75640339be8edd361d5b7f
+https://www.semanticscholar.org/paper/Efficient-Caustics-Rendering-via-Spatial-and-Path-Xu-Wang/8b43c0c44dedf6b708d059c601894fee55a57d5a
+https://www.semanticscholar.org/paper/Spatial-and-Temporal-Resampling-for-Interactive-Dav-Karsakov/1932521865048821c0dfe9c34b4e9ab714f4bf0e
+https://www.semanticscholar.org/paper/ReSTIR-PT-Enhanced%3A-Algorithmic-Advances-for-Faster-Lin-Kettunen/ce50617e11dfac0469f993576ffc9bba421b938f
+https://www.semanticscholar.org/paper/Histogram-Stratification-for-Spatio-Temporal-Sala%C3%BCn-B%C3%A1lint/dcb727251fc646732518d642cc77472c4af3793d
+https://www.semanticscholar.org/paper/Spatio-Temporal-Control-Variates-with-ReSTIR-for-Shi-Wu/15cb5dce6fbcd76302af4b314e4c3d72a920bab8
+https://www.semanticscholar.org/paper/Sample-Space-Partitioning-and-Spatiotemporal-for-Hong-Duan/d78d0482a9b26367485d308261349da846caaaa5
+https://www.semanticscholar.org/paper/Decorrelating-ReSTIR-Samplers-via-MCMC-Mutations-Sawhney-Lin/969acfe8a6838042c96d59cb18fc2a2161d1bad4
+https://www.semanticscholar.org/paper/ReSTIR-BDPT%3A-Bidirectional-ReSTIR-Path-Tracing-with-Hedstrom-Kettunen/5474557db7e97b4048de256f40aeaf613dfa55e5
+https://www.semanticscholar.org/paper/Reservoir-Splatting-for-Temporal-Path-Resampling-Liu-Lin/069a441e1a1e0774b313641b8db43523c220bb6e
+https://www.semanticscholar.org/paper/ReSTIR-Subsurface-Scattering-for-Real-Time-Path-Werner-Sch%C3%BC%C3%9Fler/c103186a00c8b10c5584949023ad770f3bb52bcc
+https://www.semanticscholar.org/paper/Multi-Layer-Reservoir-Splatting-for-Temporal-Reuse-Hong-Zhang/6b6a3793942f824b2613336ef29f54c226a3d723?citedSort=relevance&citedPage=3
 
 acceleration structures
 https://my.eng.utah.edu/~cs6958/papers/thesis_ize.pdf
@@ -168,6 +195,9 @@ https://perso.telecom-paristech.fr/boubek/papers/BCD/BCD_lowres.pdf
 https://web.ece.ucsb.edu/~psen/Papers/Sen15_DenoisingMCRenders.pdf
 https://people.engr.tamu.edu/nimak/Data/EG13_RemovingMCNoiseWithGeneralDenoising.pdf
 https://eheitzresearch.wordpress.com/772-2/
+https://cescg.org/wp-content/uploads/2018/04/Dundr-Progressive-Spatiotemporal-Variance-Guided-Filtering-2.pdf
+https://www.semanticscholar.org/paper/Spatio-Temporal-Control-Variates-with-ReSTIR-for-Shi-Wu/15cb5dce6fbcd76302af4b314e4c3d72a920bab8
+https://www.semanticscholar.org/paper/Denoising-Deep-Monte-Carlo-Renderings-Vicini-Adler/9acccc5a68cea165d088041c985d45053dbe0e65
 
 area light source
 https://eheitzresearch.wordpress.com/415-2/
@@ -180,6 +210,7 @@ https://files.is.tue.mpg.de/black/papers/OpenDR.pdf
 https://www.semanticscholar.org/paper/Lossless-Basis-Expansion-for-Gradient%E2%80%90Domain-Fang-Hachisuka/3a6618b2b68f8b7f3a7ae3bfc70126ee761ed297
 https://cs.uwaterloo.ca/~thachisu/lbegdr.pdf
 https://www.cs.umd.edu/~zwicker/publications/GradientDomainRenderingSTAR-CGF2019.pdf
+https://www.semanticscholar.org/paper/Lossless-Basis-Expansion-for-Gradient%E2%80%90Domain-Fang-Hachisuka/3a6618b2b68f8b7f3a7ae3bfc70126ee761ed297
 
 metropolis
 https://graphics.stanford.edu/papers/metro/
@@ -220,3 +251,20 @@ https://inria.hal.science/hal-02497191/file/differentiable-pt-cov.pdf
 https://shuangz.com/projects/psdr-pixel-sa22/psdr-pixel-sa22.pdf
 https://shuangz.com/projects/psdr-sdf-sg24/psdr-sdf-sg24.pdf
 https://imaging.cs.cmu.edu/path_sampling_differentiable_rendering/index_files/paper.pdf
+
+https://www.semanticscholar.org/paper/Real-time-bidirectional-path-tracing-via-Tokuyoshi-Ogaki/85a69602409499fc9fd3ee15cfec8f451e24c866
+
+https://www.semanticscholar.org/paper/Future-Frame-Synthesis-for-Fast-Monte-Carlo-Li-Marshall/16a2554c87413c39af723610f276098014151a68
+
+https://www.semanticscholar.org/paper/Temporally-Reliable-Motion-Vectors-for-Real%E2%80%90time-Zeng-Liu/2f4ab58e673910606bcb1b1e477cfc755cb21bbd
+https://www.semanticscholar.org/paper/Adaptive-Recurrent-Frame-Prediction-with-Learnable-Wu-Zuo/312635fcae4f1587e9a71fd41bf4b4518c6208be
+https://www.semanticscholar.org/paper/X4Rate%3A-A-Scene-Adaptive-Extrapolation-Framework-4%C3%97-Dixit-Sarangi/972659a7213ed27c3cd6647b3c45a48ba5e91f94
+
+Neural rendering
+https://www.semanticscholar.org/paper/Neural-Rendering-and-Its-Hardware-Acceleration%3A-A-Yan-Xu/f9649d9eaec791118f12ba694134f72f6796b023
+https://www.semanticscholar.org/paper/Geometric-Integration-for-Neural-Control-Variates-Meister-Harada/ba9d8b92a2a7749aa7bb1837d0dfb971a2630a3b
+
+control variates
+https://www.semanticscholar.org/paper/Residual-path-integrals-for-re%E2%80%90rendering-Xu-Li/2641e97ae83d4e155bacc71792a836af2302e234
+https://www.semanticscholar.org/paper/Imperfect-Image-Space-Control-Variates-for-Monte-Yang-Moon/3304c54cabfe68cd8fff7c35d8f671e70a4e4f6d
+https://www.semanticscholar.org/paper/Spatio-Temporal-Control-Variates-with-ReSTIR-for-Shi-Wu/15cb5dce6fbcd76302af4b314e4c3d72a920bab8
